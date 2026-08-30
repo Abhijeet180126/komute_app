@@ -1,0 +1,172 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Komüte – Page Not Found</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;600;700;800&family=DM+Sans:wght@400;500;600&family=Montserrat:wght@700;800&display=swap" rel="stylesheet">
+<style>
+:root{
+  --brand-green:#0D7810;
+  --grad-blue:#0C63B4;
+  --grad-green:#0CB439;
+  --light-bg:#E9F7EE;
+  --white:#ffffff;
+  --text-dark:#121212;
+  --text-muted:#5a7060;
+  --input-border:#c2dfc8;
+}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
+html,body{height:100%;}
+body{
+  font-family:'DM Sans',sans-serif;
+  background:var(--light-bg);
+  display:flex;flex-direction:column;
+  align-items:center;justify-content:center;
+  min-height:100vh;
+  padding:24px;
+  position:relative;
+  overflow:hidden;
+}
+
+/* background blobs */
+.blob{position:absolute;border-radius:50%;pointer-events:none;opacity:.12;}
+.blob-1{width:500px;height:500px;background:var(--grad-blue);top:-120px;left:-140px;}
+.blob-2{width:400px;height:400px;background:var(--grad-green);bottom:-100px;right:-120px;}
+.blob-3{width:260px;height:260px;background:var(--brand-green);top:50%;left:70%;transform:translate(-50%,-50%);}
+
+/* card */
+.card{
+  background:var(--white);
+  border-radius:28px;
+  border:1.5px solid var(--input-border);
+  box-shadow:0 16px 56px rgba(13,120,16,.12);
+  padding:52px 44px 44px;
+  max-width:500px;width:100%;
+  text-align:center;
+  position:relative;
+  z-index:1;
+  animation:popIn .5s cubic-bezier(0.34,1.56,.64,1) both;
+}
+@keyframes popIn{from{opacity:0;transform:scale(.88) translateY(20px)}to{opacity:1;transform:scale(1) translateY(0)}}
+
+/* 404 number */
+.error-code{
+  font-family:'Montserrat',sans-serif;
+  font-weight:800;
+  font-size:7rem;
+  line-height:1;
+  background:linear-gradient(135deg,#0C63B4,#0CB439);
+  -webkit-background-clip:text;
+  -webkit-text-fill-color:transparent;
+  background-clip:text;
+  margin-bottom:6px;
+  letter-spacing:-.04em;
+}
+
+/* icon */
+.icon-wrap{
+  width:72px;height:72px;
+  border-radius:20px;
+  background:linear-gradient(135deg,#0C63B4,#0CB439);
+  display:flex;align-items:center;justify-content:center;
+  margin:0 auto 20px;
+  box-shadow:0 8px 24px rgba(12,99,180,.28);
+}
+.icon-wrap svg{width:34px;height:34px;stroke:white;fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;}
+
+.title{
+  font-family:'Poppins',sans-serif;
+  font-weight:800;font-size:1.5rem;
+  color:var(--text-dark);
+  margin-bottom:10px;
+}
+.subtitle{
+  font-size:.95rem;color:var(--text-muted);
+  line-height:1.65;margin-bottom:32px;
+}
+
+/* actions */
+.actions{display:flex;flex-direction:column;gap:10px;}
+.btn-primary{
+  display:flex;align-items:center;justify-content:center;gap:8px;
+  padding:14px 20px;
+  background:linear-gradient(90deg,#0C63B4,#0CB439);
+  color:white;border:none;border-radius:13px;
+  font-family:'Poppins',sans-serif;font-weight:700;font-size:.95rem;
+  cursor:pointer;text-decoration:none;
+  box-shadow:0 4px 16px rgba(12,99,180,.28);
+  transition:opacity .2s,transform .15s;
+}
+.btn-primary:hover{opacity:.9;transform:translateY(-1px);}
+.btn-primary svg{width:16px;height:16px;stroke:white;fill:none;stroke-width:2.5;stroke-linecap:round;stroke-linejoin:round;}
+.btn-secondary{
+  display:flex;align-items:center;justify-content:center;gap:8px;
+  padding:13px 20px;
+  background:white;color:var(--brand-green);
+  border:2px solid var(--brand-green);border-radius:13px;
+  font-family:'Poppins',sans-serif;font-weight:700;font-size:.95rem;
+  cursor:pointer;text-decoration:none;
+  transition:background .2s,transform .15s;
+}
+.btn-secondary:hover{background:#f0fdf4;transform:translateY(-1px);}
+.btn-secondary svg{width:16px;height:16px;stroke:var(--brand-green);fill:none;stroke-width:2.5;stroke-linecap:round;stroke-linejoin:round;}
+
+/* logo */
+.logo{
+  display:inline-flex;align-items:center;gap:8px;
+  text-decoration:none;margin-bottom:28px;
+}
+.logo-text{
+  font-family:'Montserrat',sans-serif;font-weight:800;font-size:1.1rem;
+  background:linear-gradient(90deg,#0C63B4,#0CB439);
+  -webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;
+  letter-spacing:.07em;
+}
+
+/* divider */
+.divider{
+  display:flex;align-items:center;gap:10px;
+  color:var(--text-muted);font-size:.8rem;margin:4px 0;
+}
+.divider::before,.divider::after{content:'';flex:1;height:1px;background:var(--input-border);}
+</style>
+</head>
+<body>
+<div class="blob blob-1"></div>
+<div class="blob blob-2"></div>
+<div class="blob blob-3"></div>
+
+<div class="card">
+  <a href="/" class="logo">
+    <span class="logo-text">KOMÜTE</span>
+  </a>
+
+  <div class="error-code">404</div>
+
+  <div class="icon-wrap">
+    <svg viewBox="0 0 24 24"><circle cx="12" cy="10" r="3"/><path d="M12 2a8 8 0 0 0-8 8c0 5.25 8 12 8 12s8-6.75 8-12a8 8 0 0 0-8-8z"/><line x1="4" y1="22" x2="20" y2="2" stroke-width="2"/></svg>
+  </div>
+
+  <div class="title">This ride doesn't exist</div>
+  <div class="subtitle">
+    The link you followed may be expired, invalid, or you may not have permission to view it.
+  </div>
+
+  <div class="actions">
+    <a href="/" class="btn-primary">
+      <svg viewBox="0 0 24 24"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
+      Go Home
+    </a>
+    <div class="divider">or</div>
+    <a href="/search-rides/" class="btn-secondary">
+      <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+      Search Rides
+    </a>
+  </div>
+</div>
+</body>
+</html>

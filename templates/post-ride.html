@@ -1,0 +1,1587 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<link rel="icon" type="image/png" href="{% static 'images/icon_white.png' %}">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Komüte – Post a Ride</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800&family=DM+Sans:wght@400;500;600&family=Montserrat:wght@600;700;800&display=swap" rel="stylesheet">
+
+<style>
+/* ── KOMÜTE BRAND TOKENS ── */
+:root {
+  --dark-bg:     #121212;
+  --light-bg:    #E9F7EE;
+  --contrast-lt: #D5FBE5;
+  --brand-green: #0D7810;
+  --grad-blue:   #0C63B4;
+  --grad-green:  #0CB439;
+  --white:       #ffffff;
+  --text-dark:   #121212;
+  --text-muted:  #5a7060;
+  --input-border:#c2dfc8;
+  --input-bg:    #f6fbf7;
+  --card-shadow: 0 4px 24px rgba(13,120,16,0.08);
+}
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  font-family: 'DM Sans', sans-serif;
+  background: var(--light-bg);
+  min-height: 100vh;
+  color: var(--text-dark);
+}
+
+/* ════════════════════════════
+   NAVBAR
+════════════════════════════ */
+nav {
+  background: var(--white);
+  border-bottom: 1px solid #d8eed9;
+  padding: 13px 36px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  box-shadow: 0 2px 12px rgba(0,0,0,0.04);
+}
+.nav-logo { display: flex; align-items: center; gap: 8px; text-decoration: none; }
+.nav-logo img { height: 38px; width: auto; object-fit: contain; }
+.nav-logo-text {
+  font-family: 'Montserrat', sans-serif;
+  font-weight: 800; font-size: 1.05rem;
+  background: linear-gradient(90deg, #0C63B4, #0CB439);
+  -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
+  letter-spacing: 0.07em;
+}
+.nav-right { display: flex; align-items: center; gap: 12px; }
+.user-pill {
+  display: flex; align-items: center; gap: 9px;
+  background: linear-gradient(90deg, #0C63B4, #0CB439);
+  color: white; border-radius: 50px; padding: 5px 18px 5px 5px;
+  font-family: 'DM Sans', sans-serif; font-weight: 600; font-size: 0.9rem; cursor: pointer;
+}
+.user-avatar-nav {
+  width: 32px; height: 32px; border-radius: 50%;
+  background: rgba(255,255,255,0.22); border: 2px solid rgba(255,255,255,0.4);
+  display: flex; align-items: center; justify-content: center;
+}
+.user-avatar-nav svg { width: 16px; height: 16px; stroke: white; fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.logout-btn {
+  width: 38px; height: 38px; border-radius: 10px;
+  background: var(--input-bg); border: 1.5px solid var(--input-border);
+  display: flex; align-items: center; justify-content: center;
+  cursor: pointer; transition: all 0.2s;
+}
+.logout-btn:hover { background: #fee2e2; border-color: #fca5a5; }
+.logout-btn:hover svg { stroke: #dc2626; }
+.logout-btn svg { width: 17px; height: 17px; stroke: var(--text-muted); fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+
+/* ════════════════════════════
+   PAGE LAYOUT
+════════════════════════════ */
+.page-outer {
+  max-width: 900px;
+  margin: 0 auto;
+  padding: 36px 24px 72px;
+}
+
+/* ── PAGE HEADER ── */
+.page-header {
+  display: flex; align-items: flex-start;
+  justify-content: space-between;
+  margin-bottom: 32px; flex-wrap: wrap; gap: 16px;
+}
+.breadcrumb {
+  display: inline-flex; align-items: center; gap: 6px;
+  background: var(--white); border: 1.5px solid var(--input-border);
+  border-radius: 50px; padding: 6px 16px;
+  font-size: 0.8rem; font-weight: 500; color: var(--text-muted);
+  margin-bottom: 14px; text-decoration: none;
+}
+.breadcrumb svg { width: 13px; height: 13px; stroke: var(--brand-green); fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.page-title {
+  font-family: 'Poppins', sans-serif;
+  font-size: 1.9rem; font-weight: 800; color: var(--brand-green);
+  margin-bottom: 4px; line-height: 1.2;
+}
+.page-subtitle {
+  font-size: 0.9rem; color: var(--text-muted);
+  display: flex; align-items: center; gap: 6px;
+}
+.page-subtitle svg { width: 14px; height: 14px; stroke: var(--brand-green); fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+
+/* ── EMPTY STATE (shown when no rides posted) ── */
+.empty-state {
+  background: var(--white);
+  border-radius: 20px;
+  border: 1.5px solid #e2f0e4;
+  box-shadow: var(--card-shadow);
+  padding: 64px 40px;
+  text-align: center;
+  margin-bottom: 28px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+  animation: fadeUp 0.4s ease both;
+}
+.empty-icon-circle {
+  width: 90px; height: 90px;
+  border-radius: 50%;
+  background: var(--brand-green);
+  display: flex; align-items: center; justify-content: center;
+  margin-bottom: 6px;
+}
+.empty-icon-circle svg { width: 46px; height: 46px; stroke: white; fill: none; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.empty-state h2 {
+  font-family: 'Poppins', sans-serif;
+  font-size: 1.7rem; font-weight: 800; color: var(--brand-green);
+}
+.empty-state p { font-size: 0.97rem; color: var(--text-muted); max-width: 380px; line-height: 1.65; }
+
+/* ════════════════════════════
+   SECTION CARDS
+════════════════════════════ */
+.section-card {
+  background: var(--white);
+  border-radius: 18px;
+  border: 1.5px solid #e2f0e4;
+  box-shadow: var(--card-shadow);
+  margin-bottom: 20px;
+  overflow: hidden;
+  animation: fadeUp 0.4s ease both;
+}
+.section-card:nth-child(1) { animation-delay: 0.05s; }
+.section-card:nth-child(2) { animation-delay: 0.12s; }
+.section-card:nth-child(3) { animation-delay: 0.19s; }
+.section-card:nth-child(4) { animation-delay: 0.26s; }
+
+@keyframes fadeUp {
+  from { opacity: 0; transform: translateY(16px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.section-header {
+  display: flex; align-items: center; gap: 12px;
+  padding: 18px 24px; border-bottom: 1.5px solid #edf7ee;
+  background: linear-gradient(135deg, #f8fef9 0%, #f0faf1 100%);
+}
+.section-icon {
+  width: 40px; height: 40px; border-radius: 11px;
+  background: linear-gradient(135deg, #0C63B4, #0CB439);
+  display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+}
+.section-icon svg { width: 20px; height: 20px; stroke: white; fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.section-header-text h3 {
+  font-family: 'Poppins', sans-serif;
+  font-size: 0.98rem; font-weight: 700; color: var(--brand-green); margin-bottom: 1px;
+}
+.section-header-text p { font-size: 0.78rem; color: var(--text-muted); }
+.section-body { padding: 24px; }
+
+/* ════════════════════════════
+   FORM ELEMENTS
+════════════════════════════ */
+.form-grid-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 18px; margin-bottom: 18px; }
+.form-grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; margin-bottom: 18px; }
+.form-grid-1 { display: grid; grid-template-columns: 1fr; gap: 18px; margin-bottom: 18px; }
+.mb-0 { margin-bottom: 0 !important; }
+
+.form-group { display: flex; flex-direction: column; gap: 6px; }
+.form-label {
+  font-size: 0.8rem; font-weight: 600; color: var(--text-dark);
+  display: flex; align-items: center; gap: 5px;
+}
+.required { color: #ef4444; font-size: 0.75rem; }
+
+.input-wrap { position: relative; }
+.input-icon {
+  position: absolute; left: 12px; top: 50%;
+  transform: translateY(-50%); pointer-events: none;
+}
+.input-icon svg { width: 15px; height: 15px; stroke: #9db8a2; fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+
+.date-picker-native {
+  position: absolute; left: 0; top: 0; width: 36px; height: 100%;
+  opacity: 0; border: none; padding: 0; margin: 0; cursor: pointer; z-index: 2;
+}
+.date-picker-native::-webkit-calendar-picker-indicator {
+  position: absolute; left: 0; top: 0; width: 100%; height: 100%; margin: 0; cursor: pointer;
+}
+
+.form-input, .form-select, .form-textarea {
+  width: 100%;
+  padding: 10px 13px 10px 36px;
+  border: 1.5px solid var(--input-border);
+  border-radius: 10px;
+  font-family: 'DM Sans', sans-serif;
+  font-size: 0.88rem; color: var(--text-dark);
+  background: var(--input-bg); outline: none;
+  transition: border-color 0.2s, box-shadow 0.2s, background 0.2s;
+}
+.form-input::placeholder { color: #b0c8b5; }
+.form-input:focus, .form-select:focus, .form-textarea:focus {
+  border-color: var(--brand-green);
+  box-shadow: 0 0 0 3px rgba(13,120,16,0.1);
+  background: var(--white);
+}
+.form-select { appearance: auto; cursor: pointer; }
+
+.form-textarea {
+  padding: 10px 13px 10px 36px;
+  resize: vertical;
+  min-height: 90px;
+  line-height: 1.55;
+}
+
+/* Seat counter */
+.seat-counter {
+  display: flex; align-items: center; gap: 0;
+}
+.seat-btn {
+  width: 38px; height: 40px;
+  border: 1.5px solid var(--input-border);
+  background: var(--input-bg);
+  font-size: 1.2rem; font-weight: 700;
+  color: var(--brand-green);
+  cursor: pointer; display: flex; align-items: center; justify-content: center;
+  transition: background 0.2s;
+  flex-shrink: 0;
+}
+.seat-btn:first-child { border-radius: 10px 0 0 10px; border-right: none; }
+.seat-btn:last-child  { border-radius: 0 10px 10px 0; border-left: none; }
+.seat-btn:hover { background: var(--contrast-lt); }
+.seat-display {
+  flex: 1; height: 40px;
+  border: 1.5px solid var(--input-border);
+  background: var(--white);
+  text-align: center;
+  font-family: 'Montserrat', sans-serif;
+  font-weight: 700; font-size: 1rem;
+  color: var(--brand-green);
+  display: flex; align-items: center; justify-content: center;
+  min-width: 52px;
+}
+
+/* Price input prefix */
+.price-wrap { position: relative; }
+.price-prefix {
+  position: absolute; left: 12px; top: 50%;
+  transform: translateY(-50%);
+  font-family: 'Montserrat', sans-serif;
+  font-weight: 700; font-size: 0.9rem;
+  color: var(--brand-green);
+  pointer-events: none;
+  z-index: 1;
+}
+.price-wrap .form-input { padding-left: 30px; }
+
+/* Recurring toggle */
+.toggle-row {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 14px 16px;
+  background: var(--input-bg);
+  border: 1.5px solid var(--input-border);
+  border-radius: 10px;
+  cursor: pointer;
+  transition: background 0.2s, border-color 0.2s;
+}
+.toggle-row:hover { background: var(--contrast-lt); border-color: var(--brand-green); }
+.toggle-label-wrap { display: flex; flex-direction: column; gap: 2px; }
+.toggle-label-wrap strong { font-size: 0.875rem; font-weight: 600; color: var(--text-dark); }
+.toggle-label-wrap span { font-size: 0.75rem; color: var(--text-muted); }
+
+.toggle-switch {
+  width: 44px; height: 24px; border-radius: 12px;
+  background: #d0e8d2; position: relative;
+  transition: background 0.25s; flex-shrink: 0; cursor: pointer;
+}
+.toggle-switch.on { background: linear-gradient(90deg, #0C63B4, #0CB439); }
+.toggle-knob {
+  width: 18px; height: 18px; border-radius: 50%;
+  background: white; position: absolute;
+  top: 3px; left: 3px;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.18);
+  transition: left 0.25s;
+}
+.toggle-switch.on .toggle-knob { left: 23px; }
+
+/* Days of week pills */
+.days-picker {
+  display: flex; gap: 8px; flex-wrap: wrap;
+  margin-top: 12px;
+}
+.day-pill {
+  width: 40px; height: 40px; border-radius: 50%;
+  border: 1.5px solid var(--input-border);
+  background: var(--input-bg);
+  font-family: 'Poppins', sans-serif;
+  font-size: 0.72rem; font-weight: 700;
+  color: var(--text-muted);
+  display: flex; align-items: center; justify-content: center;
+  cursor: pointer; transition: all 0.18s;
+  user-select: none;
+}
+.day-pill:hover { border-color: var(--brand-green); color: var(--brand-green); background: var(--contrast-lt); }
+.day-pill.active {
+  background: linear-gradient(135deg, #0C63B4, #0CB439);
+  border-color: transparent; color: white;
+}
+
+/* Preference tags */
+.prefs-wrap { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 4px; }
+.pref-tag {
+  display: flex; align-items: center; gap: 6px;
+  padding: 8px 14px;
+  border-radius: 50px;
+  border: 1.5px solid var(--input-border);
+  background: var(--input-bg);
+  font-size: 0.8rem; font-weight: 500; color: var(--text-muted);
+  cursor: pointer; transition: all 0.18s; user-select: none;
+}
+.pref-tag svg { width: 14px; height: 14px; stroke: #9db8a2; fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.pref-tag:hover { border-color: var(--brand-green); color: var(--brand-green); }
+.pref-tag:hover svg { stroke: var(--brand-green); }
+.pref-tag.active {
+  background: linear-gradient(135deg, #0C63B4, #0CB439);
+  border-color: transparent; color: white;
+}
+.pref-tag.active svg { stroke: white; }
+
+/* ════════════════════════════
+   SAVE FOOTER
+════════════════════════════ */
+.save-footer {
+  display: flex; align-items: center; justify-content: space-between;
+  flex-wrap: wrap; gap: 14px;
+  background: var(--white); border-radius: 16px;
+  border: 1.5px solid #e2f0e4; box-shadow: var(--card-shadow);
+  padding: 18px 24px; margin-top: 8px;
+  animation: fadeUp 0.4s 0.3s ease both;
+}
+.save-note {
+  display: flex; align-items: center; gap: 8px;
+  font-size: 0.83rem; color: var(--text-muted);
+}
+.save-note svg { width: 16px; height: 16px; stroke: var(--brand-green); fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; flex-shrink: 0; }
+.save-actions { display: flex; gap: 12px; align-items: center; }
+.btn-cancel {
+  padding: 10px 22px; border-radius: 10px;
+  background: transparent; border: 1.5px solid var(--input-border);
+  font-family: 'DM Sans', sans-serif; font-weight: 600; font-size: 0.9rem;
+  color: var(--text-muted); cursor: pointer; transition: all 0.2s;
+}
+.btn-cancel:hover { background: var(--input-bg); border-color: #9db8a2; }
+.btn-post {
+  display: inline-flex; align-items: center; gap: 8px;
+  padding: 11px 28px; border-radius: 10px;
+  background: linear-gradient(90deg, #0C63B4, #0CB439);
+  color: var(--white); border: none;
+  font-family: 'Poppins', sans-serif; font-weight: 700; font-size: 0.92rem;
+  cursor: pointer; transition: opacity 0.2s, transform 0.15s, box-shadow 0.2s;
+  box-shadow: 0 4px 14px rgba(12,99,180,0.25);
+}
+.btn-post:hover { opacity: 0.9; transform: translateY(-1px); box-shadow: 0 6px 20px rgba(12,99,180,0.32); }
+.btn-post svg { width: 16px; height: 16px; stroke: white; fill: none; stroke-width: 2.5; stroke-linecap: round; stroke-linejoin: round; }
+
+/* ════════════════════════════
+   TOAST
+════════════════════════════ */
+.toast {
+  position: fixed; bottom: 28px; right: 28px;
+  background: var(--brand-green); color: white;
+  padding: 13px 20px; border-radius: 12px;
+  display: flex; align-items: center; gap: 10px;
+  font-family: 'DM Sans', sans-serif; font-weight: 600; font-size: 0.9rem;
+  box-shadow: 0 8px 24px rgba(13,120,16,0.3);
+  transform: translateY(80px); opacity: 0;
+  transition: all 0.3s cubic-bezier(0.34,1.56,0.64,1); z-index: 999;
+}
+.toast.show { transform: translateY(0); opacity: 1; }
+.toast svg { width: 18px; height: 18px; stroke: white; fill: none; stroke-width: 2.5; stroke-linecap: round; stroke-linejoin: round; }
+
+/* ════════════════════════════
+   ROUTE BUILDER
+════════════════════════════ */
+.route-builder {
+  display: flex;
+  flex-direction: column;
+  margin-bottom: 14px;
+}
+
+.route-stop { position: relative; }
+
+.stop-line {
+  display: flex;
+  align-items: flex-start;
+  gap: 0;
+}
+
+/* Left track column */
+.stop-indicator {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: 36px;
+  flex-shrink: 0;
+  padding-top: 30px;
+}
+
+.stop-dot {
+  width: 14px; height: 14px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  position: relative;
+  z-index: 2;
+}
+.origin-dot   { background: var(--brand-green); border: 3px solid white; box-shadow: 0 0 0 2px var(--brand-green); }
+.dest-dot     { background: linear-gradient(135deg, #0C63B4, #0CB439); border: 3px solid white; box-shadow: 0 0 0 2px #0C63B4; }
+.pickup-dot   { background: white; border: 2.5px solid var(--brand-green); }
+.via-dot      { background: white; border: 2.5px solid #0C63B4; }
+
+.stop-track {
+  width: 2px;
+  flex: 1;
+  min-height: 18px;
+  background: repeating-linear-gradient(
+    to bottom,
+    #c2dfc8 0px, #c2dfc8 5px,
+    transparent 5px, transparent 10px
+  );
+  margin-top: 4px;
+}
+
+/* Right content column */
+.stop-content {
+  flex: 1;
+  padding-bottom: 14px;
+}
+
+/* Stop badge label row */
+.stop-badge-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 0;
+}
+.stop-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  font-family: 'Poppins', sans-serif;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  padding: 3px 10px;
+  border-radius: 20px;
+  margin-bottom: 6px;
+}
+.stop-badge.pickup-badge {
+  background: #dcfce7;
+  color: var(--brand-green);
+}
+.stop-badge.dest-badge {
+  background: #dbeafe;
+  color: #1d4ed8;
+}
+
+.remove-stop-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: #fca5a5;
+  padding: 2px 4px;
+  border-radius: 6px;
+  transition: color 0.2s, background 0.2s;
+  display: flex;
+  align-items: center;
+  margin-bottom: 4px;
+}
+.remove-stop-btn:hover { color: #dc2626; background: #fee2e2; }
+.remove-stop-btn svg { width: 14px; height: 14px; stroke: currentColor; fill: none; stroke-width: 2.5; stroke-linecap: round; stroke-linejoin: round; }
+
+/* Add stop buttons */
+.add-stop-row {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-left: 36px;
+  margin-bottom: 4px;
+}
+
+.add-stop-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 16px;
+  border-radius: 50px;
+  font-family: 'DM Sans', sans-serif;
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+  border: 1.5px dashed;
+}
+.add-stop-btn svg { width: 13px; height: 13px; stroke: currentColor; fill: none; stroke-width: 2.5; stroke-linecap: round; stroke-linejoin: round; }
+.add-stop-btn.pickup {
+  color: var(--brand-green);
+  border-color: var(--brand-green);
+  background: #f0fdf4;
+}
+.add-stop-btn.pickup:hover { background: var(--contrast-lt); }
+.add-stop-btn.destination {
+  color: #1d4ed8;
+  border-color: #93c5fd;
+  background: #eff6ff;
+}
+.add-stop-btn.destination:hover { background: #dbeafe; }
+
+/* ════════════════════════════
+   ROUTE SUMMARY STRIP
+════════════════════════════ */
+.route-summary {
+  display: none;
+  align-items: center;
+  gap: 18px;
+  margin: 4px 0 14px 36px;
+  padding: 10px 16px;
+  background: linear-gradient(135deg, #f0fdf4, #eff6ff);
+  border: 1.5px solid #b6dfc0;
+  border-radius: 10px;
+  flex-wrap: wrap;
+}
+.route-summary-item {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-family: 'Poppins', sans-serif;
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: var(--brand-green);
+}
+.route-summary-item svg {
+  width: 15px; height: 15px;
+  stroke: var(--brand-green);
+  fill: none; stroke-width: 2;
+  stroke-linecap: round; stroke-linejoin: round;
+  flex-shrink: 0;
+}
+.route-summary-item.time-item { color: #1d4ed8; }
+.route-summary-item.time-item svg { stroke: #1d4ed8; }
+.route-summary-item.fuel-item { color: #d97706; }
+.route-summary-item.fuel-item svg { stroke: #d97706; }
+.route-summary-item.co2-item { color: #059669; }
+.route-summary-item.co2-item svg { stroke: #059669; }
+.route-summary-loading {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  font-style: italic;
+}
+.route-summary-divider {
+  width: 1px; height: 18px;
+  background: #c2dfc8;
+}
+
+/* ════════════════════════════
+   PHOTON AUTOCOMPLETE
+════════════════════════════ */
+.autocomplete-dropdown {
+  position: absolute; /* top/left/width set by JS */
+  background: var(--white);
+  border: 1.5px solid var(--brand-green);
+  border-radius: 10px;
+  box-shadow: 0 8px 24px rgba(13,120,16,0.14);
+  z-index: 9999;
+  overflow: hidden;
+  max-height: 220px;
+  overflow-y: auto;
+}
+.autocomplete-item {
+  padding: 10px 14px;
+  font-family: 'DM Sans', sans-serif;
+  font-size: 0.85rem;
+  color: var(--text-dark);
+  cursor: pointer;
+  border-bottom: 1px solid #edf7ee;
+  transition: background 0.15s;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.autocomplete-item:last-child { border-bottom: none; }
+.autocomplete-item:hover,
+.autocomplete-item.active { background: var(--contrast-lt); color: var(--brand-green); }
+.autocomplete-item.no-results { color: var(--text-muted); cursor: default; font-style: italic; }
+.autocomplete-item.no-results:hover { background: transparent; color: var(--text-muted); }
+.autocomplete-loading {
+  padding: 10px 14px;
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+/* ── LOCATE ME BUTTON ── */
+.locate-btn {
+  position: absolute;
+  right: 8px;
+  top: 50%;
+  transform: translateY(-50%);
+  background: var(--contrast-lt);
+  border: 1.5px solid var(--brand-green);
+  border-radius: 7px;
+  padding: 4px 9px;
+  font-family: 'DM Sans', sans-serif;
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: var(--brand-green);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  transition: all 0.2s;
+  white-space: nowrap;
+  line-height: 1.4;
+}
+.locate-btn:hover:not(:disabled) { background: var(--brand-green); color: white; }
+.locate-btn:hover:not(:disabled) svg { stroke: white; }
+.locate-btn:disabled { opacity: 0.55; cursor: not-allowed; }
+.locate-btn svg { width: 11px; height: 11px; stroke: var(--brand-green); fill: none; stroke-width: 2.5; stroke-linecap: round; stroke-linejoin: round; transition: stroke 0.2s; }
+@keyframes spin { to { transform: rotate(360deg); } }
+.locate-btn .spin { animation: spin 0.8s linear infinite; }
+
+/* ════════════════════════════
+   RESPONSIVE
+════════════════════════════ */
+@media (max-width: 720px) {
+  .form-grid-3 { grid-template-columns: 1fr 1fr; }
+  .page-header { flex-direction: column; }
+}
+@media (max-width: 520px) {
+  .form-grid-3, .form-grid-2 { grid-template-columns: 1fr; }
+  nav { padding: 12px 16px; }
+  .page-outer { padding: 24px 14px 60px; }
+  .empty-state { padding: 40px 20px; }
+}
+</style>
+</head>
+<body>
+
+<!-- ════ TOAST ════ -->
+<div class="toast" id="toast">
+  <svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>
+  Ride posted successfully! 🎉
+</div>
+
+<!-- ════ NAVBAR ════ -->
+
+{% include 'header.html' %}
+<!-- ════ PAGE ════ -->
+<div class="page-outer">
+
+  <!-- Header -->
+  <div class="page-header">
+    <div class="page-header-left">
+      <a href="#" class="breadcrumb">
+        <svg viewBox="0 0 24 24"><rect x="1" y="3" width="15" height="13" rx="2"/><polygon points="16 8 20 8 23 11 23 16 16 16 16 8"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></svg>
+        Driver Dashboard
+      </a>
+      <h1 class="page-title">Post a New Ride</h1>
+      <p class="page-subtitle">
+        <svg viewBox="0 0 24 24"><path d="M11 20A7 7 0 0 1 9.8 6.1C15.5 5 17 4.48 19 2c1 2 2 4.18 2 8 0 5.5-4.78 10-10 10z"/><path d="M2 21c0-3 1.85-5.36 5.08-6C9.5 14.52 12 13 13 12"/></svg>
+        Post eco-friendly rides and help reduce emissions
+      </p>
+    </div>
+  </div>
+
+  <!-- ── EMPTY STATE (visible by default, hidden when form opens) ── -->
+  <div class="empty-state" id="emptyState">
+    <div class="empty-icon-circle">
+      <svg viewBox="0 0 24 24">
+        <rect x="1" y="3" width="15" height="13" rx="2"/>
+        <polygon points="16 8 20 8 23 11 23 16 16 16 16 8"/>
+        <circle cx="5.5" cy="18.5" r="2.5"/>
+        <circle cx="18.5" cy="18.5" r="2.5"/>
+      </svg>
+    </div>
+    <h2>Ready to Share Your Ride?</h2>
+    <p>Post your available rides and connect with passengers heading your way</p>
+    <button class="btn-post" onclick="showForm()">
+      <svg viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+      Post a New Ride
+    </button>
+  </div>
+
+  <!-- ── POST RIDE FORM (hidden by default) ── -->
+  <div id="rideForm" {% if not show_form %}style="display:none"{% endif %}>
+  <form id="postRideForm" method="POST" novalidate>
+  {% csrf_token %}
+  <input type="hidden" name="duration_seconds" id="duration_seconds" value="0">
+  <input type="hidden" name="depart_utc" id="depart_utc" value="">
+  <input type="hidden" name="tz" id="tz_input" value="">
+
+    <!-- CARD 1: Route Details -->
+    <div class="section-card">
+      <div class="section-header">
+        <div class="section-icon">
+          <svg viewBox="0 0 24 24"><line x1="12" y1="2" x2="12" y2="6"/><line x1="12" y1="18" x2="12" y2="22"/><path d="M4.93 4.93l2.83 2.83"/><path d="M16.24 16.24l2.83 2.83"/><line x1="2" y1="12" x2="6" y2="12"/><line x1="18" y1="12" x2="22" y2="12"/><path d="M4.93 19.07l2.83-2.83"/><path d="M16.24 7.76l2.83-2.83"/></svg>
+        </div>
+        <div class="section-header-text">
+          <h3>Route Details</h3>
+          <p>Where are you going and when?</p>
+        </div>
+      </div>
+      <div class="section-body">
+
+        <!-- ── ROUTE BUILDER ── -->
+        <div class="route-builder" id="routeBuilder">
+
+          <!-- Origin -->
+          <div class="route-stop" id="stop-origin">
+            <div class="stop-line">
+              <div class="stop-indicator origin">
+                <div class="stop-dot origin-dot"></div>
+                <div class="stop-track"></div>
+              </div>
+              <div class="stop-content">
+                <label class="form-label">Starting Point <span class="required">*</span></label>
+                <div class="input-wrap">
+                  <span class="input-icon"><svg viewBox="0 0 24 24"><circle cx="12" cy="10" r="3"/><path d="M12 2a8 8 0 0 0-8 8c0 5.25 8 12 8 12s8-6.75 8-12a8 8 0 0 0-8-8z"/></svg></span>
+                  <input type="text" name="origin" id="origin_input" class="form-input" placeholder="e.g. Downtown Toronto, ON" oninput="updateProgress()" autocomplete="off" style="padding-right:96px">
+                  <input type="hidden" name="origin_lat" id="origin_lat">
+                  <input type="hidden" name="origin_lng" id="origin_lng">
+                  <button type="button" class="locate-btn" id="locateBtn" onclick="locateMe()">
+                    <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/><circle cx="12" cy="12" r="8" stroke-dasharray="none"/></svg>
+                    Locate me
+                  </button>
+                  {% if errors.origin %}<small style="color:#ef4444;font-size:0.78rem;">{{ errors.origin }}</small>{% endif %}
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Pickup stops container -->
+          <div id="pickupStops"></div>
+
+          <!-- Destination stops container -->
+          <div id="destinationStops"></div>
+
+          <!-- Final Destination -->
+          <div class="route-stop" id="stop-final">
+            <div class="stop-line">
+              <div class="stop-indicator destination">
+                <div class="stop-dot dest-dot"></div>
+              </div>
+              <div class="stop-content">
+                <label class="form-label">Final Destination <span class="required">*</span></label>
+                <div class="input-wrap">
+                  <span class="input-icon"><svg viewBox="0 0 24 24"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg></span>
+                  <input type="text" name="destination" id="destination_input" class="form-input" placeholder="e.g. Mississauga, ON" oninput="updateProgress()" autocomplete="off">
+                  <input type="hidden" name="destination_lat" id="destination_lat">
+                  <input type="hidden" name="destination_lng" id="destination_lng">
+                  {% if errors.destination %}<small style="color:#ef4444;font-size:0.78rem;">{{ errors.destination }}</small>{% endif %}
+                </div>
+              </div>
+            </div>
+          </div>
+
+        </div>
+
+        <div id="js-config" style="display:none"
+             data-detour-max-km="{{ stop_detour_max_km }}"
+             data-detour-max-pct="{{ stop_detour_max_pct }}"></div>
+
+        <!-- Route summary (distance + drive time via OSRM) -->
+        <div class="route-summary" id="routeSummary">
+          <span class="route-summary-loading">Calculating route…</span>
+        </div>
+        <div id="stopDetourWarning" style="display:none;margin-top:8px;padding:10px 14px;background:#fffbeb;border:1.5px solid #fcd34d;border-radius:10px;font-size:0.82rem;color:#92400e;line-height:1.5;"></div>
+
+        <!-- Add stop buttons -->
+        <div class="add-stop-row">
+          <button type="button" id="addPickupBtn" class="add-stop-btn pickup" onclick="addStop('pickup')">
+            <svg viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+            Add Pickup Stop
+          </button>
+          <button type="button" id="addDestBtn" class="add-stop-btn destination" onclick="addStop('destination')">
+            <svg viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+            Add Destination Stop
+          </button>
+          <small id="stop-limit-msg" style="display:none;color:#ef4444;font-size:0.78rem;align-self:center">Maximum 5 intermediate stops reached.</small>
+        </div>
+
+        <div class="form-grid-2 mb-0" style="margin-top:18px">
+          <!-- Date -->
+          <div class="form-group">
+            <label class="form-label">Date <span class="required">*</span></label>
+            <div class="input-wrap">
+              <span class="input-icon"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg></span>
+              <input type="text" id="depart_date_display" class="form-input" placeholder="MM-DD-YYYY" maxlength="10" inputmode="numeric" autocomplete="off" oninput="autoDateFmt(this,'depart_date');updateProgress()">
+              <input type="hidden" name="date" id="depart_date">
+              <input type="date" class="date-picker-native" id="depart_date_picker" tabindex="-1" min="{% now 'Y-m-d' %}"
+                onchange="pickNativeDate(this,'depart_date_display','depart_date');updateProgress()">
+              {% if errors.date %}<small style="color:#ef4444;font-size:0.78rem;">{{ errors.date }}</small>{% endif %}
+            </div>
+          </div>
+          <!-- Departure Time -->
+          <div class="form-group">
+            <label class="form-label">Departure Time <span class="required">*</span></label>
+            <div class="input-wrap">
+              <span class="input-icon"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg></span>
+              <input type="time" id="depart_time" name="depart_time" class="form-input" oninput="clearTimeError()">
+            </div>
+            {% if errors.depart_time %}
+            <small id="time-error" style="color:#ef4444;font-size:0.78rem;">{{ errors.depart_time }}</small>
+            {% else %}
+            <small id="time-error" style="color:#ef4444;font-size:0.78rem;display:none"></small>
+            {% endif %}
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- CARD 2: Ride Settings -->
+    <div class="section-card">
+      <div class="section-header">
+        <div class="section-icon">
+          <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/><path d="M4.93 4.93a10 10 0 0 0 0 14.14"/></svg>
+        </div>
+        <div class="section-header-text">
+          <h3>Ride Settings</h3>
+          <p>Seats, price and trip preferences</p>
+        </div>
+      </div>
+      <div class="section-body">
+
+        <!-- Vehicle selector -->
+        <div class="form-group" style="margin-bottom:18px">
+          <label class="form-label">Vehicle <span class="required">*</span></label>
+          <div class="input-wrap">
+            <span class="input-icon"><svg viewBox="0 0 24 24"><rect x="1" y="3" width="15" height="13" rx="2"/><polygon points="16 8 20 8 23 11 23 16 16 16 16 8"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></svg></span>
+            <select class="form-select" name="vehicle">
+              <option value="">— Select Vehicle —</option>
+              {% for v in vehicles %}
+              <option value="{{ v.id }}"{% if not v.vehicle_verified %} disabled{% endif %}>
+                {{ v.year }} {{ v.make }} {{ v.model }} ({{ v.plate }}) — {% if v.vehicle_verified %}✓ Verified{% else %}✗ Not Verified{% endif %}
+              </option>
+              {% endfor %}
+            </select>
+          </div>
+          {% if errors.vehicle %}<small style="color:#ef4444;font-size:0.78rem;">{{ errors.vehicle }}</small>{% endif %}
+        </div>
+
+        <div class="form-grid-3">
+          <!-- Available Seats -->
+          <div class="form-group">
+            <label class="form-label">Available Seats <span class="required">*</span></label>
+            <input type="hidden" name="seats" id="seatInput" value="2">
+            <div class="seat-counter">
+              <button type="button" class="seat-btn" onclick="changeSeat(-1)">−</button>
+              <div class="seat-display" id="seatDisplay">2</div>
+              <button type="button" class="seat-btn" onclick="changeSeat(1)">+</button>
+            </div>
+          </div>
+          <!-- Price per seat -->
+          <div class="form-group">
+            <label class="form-label">Price per Seat (CAD) <span class="required">*</span></label>
+            <div class="input-wrap price-wrap">
+              <span class="price-prefix">$</span>
+              <input type="number" name="price" class="form-input" placeholder="0.00" min="0.01" step="0.5" oninput="updateProgress()">
+            </div>
+            {% if errors.price %}<small style="color:#ef4444;font-size:0.78rem;">{{ errors.price }}</small>{% endif %}
+          </div>
+          <!-- Gender preference -->
+          <div class="form-group">
+            <label class="form-label">Passenger Preference</label>
+            <div class="input-wrap">
+              <span class="input-icon"><svg viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg></span>
+              <select name="passenger_gender_pref" class="form-select">
+                <option value="any">Any</option>
+                <option value="women_only">Women Only</option>
+                <option value="men_only">Men Only</option>
+              </select>
+            </div>
+          </div>
+        </div>
+
+        <!-- Recurring toggle -->
+        <div class="form-group mb-0">
+          <label class="form-label">Recurring Ride</label>
+          <div class="toggle-row" onclick="toggleRecurring()">
+            <div class="toggle-label-wrap">
+              <strong>Make this a recurring ride</strong>
+              <span>Repeat this ride on selected days of the week</span>
+            </div>
+            <div class="toggle-switch" id="recurringToggle">
+              <div class="toggle-knob"></div>
+            </div>
+          </div>
+          <!-- Days picker + end date (shown when recurring is ON) -->
+          <div id="daysSection" style="display:none">
+            <div class="days-picker" style="margin-bottom:14px">
+              <div class="day-pill" data-day="0" onclick="toggleDay(this)">Mon</div>
+              <div class="day-pill" data-day="1" onclick="toggleDay(this)">Tue</div>
+              <div class="day-pill" data-day="2" onclick="toggleDay(this)">Wed</div>
+              <div class="day-pill" data-day="3" onclick="toggleDay(this)">Thu</div>
+              <div class="day-pill" data-day="4" onclick="toggleDay(this)">Fri</div>
+              <div class="day-pill" data-day="5" onclick="toggleDay(this)">Sat</div>
+              <div class="day-pill" data-day="6" onclick="toggleDay(this)">Sun</div>
+            </div>
+            <div class="form-group">
+              <label class="form-label">Repeat Until <span class="required">*</span></label>
+              <div class="input-wrap">
+                <span class="input-icon"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg></span>
+                <input type="text" id="recurringEndDate_display" class="form-input" placeholder="MM-DD-YYYY" maxlength="10" inputmode="numeric" autocomplete="off" oninput="autoDateFmt(this,'recurringEndDate')">
+                <input type="hidden" id="recurringEndDate">
+                <input type="date" class="date-picker-native" id="recurringEndDate_picker" tabindex="-1"
+                  onchange="pickNativeDate(this,'recurringEndDate_display','recurringEndDate')">
+              </div>
+              {% if errors.recurring_end_date %}<small style="color:#ef4444;font-size:0.78rem;">{{ errors.recurring_end_date }}</small>{% endif %}
+              {% if errors.recurring_days %}<small style="color:#ef4444;font-size:0.78rem;">{{ errors.recurring_days }}</small>{% endif %}
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- CARD 3: Ride Notes -->
+    <div class="section-card">
+      <div class="section-header">
+        <div class="section-icon">
+          <svg viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+        </div>
+        <div class="section-header-text">
+          <h3>Ride Notes</h3>
+          <p>Any additional info for your passengers</p>
+        </div>
+      </div>
+      <div class="section-body">
+        <div class="form-group mb-0">
+          <label class="form-label">Notes for Passengers</label>
+          <div class="input-wrap">
+            <span class="input-icon" style="top:14px;transform:none"><svg viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></span>
+            <textarea name="notes" class="form-textarea" placeholder="e.g. I'll pick you up from the main entrance. Music will be on. Please be ready 5 mins early."></textarea>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- CARD 4: Ride Preferences -->
+    <div class="section-card">
+      <div class="section-header">
+        <div class="section-icon">
+          <svg viewBox="0 0 24 24"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+        </div>
+        <div class="section-header-text">
+          <h3>Ride Preferences</h3>
+          <p>Let passengers know what to expect</p>
+        </div>
+      </div>
+      <div class="section-body">
+        <div class="prefs-wrap">
+          <div class="pref-tag" onclick="this.classList.toggle('active')">
+            <svg viewBox="0 0 24 24"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
+            Music OK
+          </div>
+          <div class="pref-tag" onclick="this.classList.toggle('active')">
+            <svg viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+            Chatty Driver
+          </div>
+          <div class="pref-tag" onclick="this.classList.toggle('active')">
+            <svg viewBox="0 0 24 24"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+            Quiet Ride
+          </div>
+          <div class="pref-tag" onclick="this.classList.toggle('active')">
+            <svg viewBox="0 0 24 24"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>
+            Pet Friendly
+          </div>
+          <div class="pref-tag" onclick="this.classList.toggle('active')">
+            <svg viewBox="0 0 24 24"><line x1="1" y1="1" x2="23" y2="23"/><path d="M30 1v4"/><rect x="2" y="7" width="20" height="10" rx="2"/></svg>
+            No Smoking
+          </div>
+          <div class="pref-tag" onclick="this.classList.toggle('active')">
+            <svg viewBox="0 0 24 24"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg>
+            Luggage OK
+          </div>
+          <div class="pref-tag" onclick="this.classList.toggle('active')">
+            <svg viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+            Verified Only
+          </div>
+          <div class="pref-tag" onclick="this.classList.toggle('active')">
+            <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+            On-Time Driver
+          </div>
+          <div class="pref-tag" onclick="this.classList.toggle('active')">
+            <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/></svg>
+            Winter Tires
+          </div>
+          <div class="pref-tag" onclick="this.classList.toggle('active')">
+            <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/><path d="M5 3l2 2M19 3l-2 2M5 21l2-2M19 21l-2-2"/></svg>
+            Flexible with Time
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── SAVE FOOTER ── -->
+    <div class="save-footer">
+      <div class="save-note">
+        <svg viewBox="0 0 24 24"><path d="M11 20A7 7 0 0 1 9.8 6.1C15.5 5 17 4.48 19 2c1 2 2 4.18 2 8 0 5.5-4.78 10-10 10z"/><path d="M2 21c0-3 1.85-5.36 5.08-6C9.5 14.52 12 13 13 12"/></svg>
+        Your ride will be visible to verified riders nearby
+      </div>
+      <div class="save-actions">
+        <button class="btn-cancel" type="button" onclick="cancelForm()">Cancel</button>
+        <button class="btn-post" type="submit">
+          <svg viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+          Post Ride
+        </button>
+      </div>
+    </div>
+
+  <input type="hidden" name="preferences_json" id="prefs_input">
+  <input type="hidden" name="is_recurring" id="is_recurring_input" value="0">
+  <input type="hidden" name="recurring_end_date" id="recurring_end_date_input">
+  <input type="hidden" name="recurring_days" id="recurring_days_input">
+  </form>
+  </div><!-- /rideForm -->
+
+</div>
+
+<script>
+  let seatCount = 2;
+  const MAX_STOPS = 5;
+  const _cfg           = document.getElementById('js-config').dataset;
+  const DETOUR_MAX_KM  = parseInt(_cfg.detourMaxKm,  10);
+  const DETOUR_MAX_DEC = parseInt(_cfg.detourMaxPct, 10) / 100;
+  let pickupCount = 0;
+  let destCount = 0;
+
+  function totalStops() {
+    return document.querySelectorAll('#pickupStops .route-stop, #destinationStops .route-stop').length;
+  }
+
+  function syncStopButtons() {
+    const atLimit = totalStops() >= MAX_STOPS;
+    document.getElementById('addPickupBtn').disabled = atLimit;
+    document.getElementById('addDestBtn').disabled = atLimit;
+    document.getElementById('stop-limit-msg').style.display = atLimit ? 'inline' : 'none';
+  }
+
+  /* ── MULTI-STOP ROUTE BUILDER ── */
+  function addStop(type) {
+    if (totalStops() >= MAX_STOPS) return;
+    const isPickup = type === 'pickup';
+    const container = document.getElementById(isPickup ? 'pickupStops' : 'destinationStops');
+    const id = type + '-' + Date.now();
+    const num = isPickup ? ++pickupCount : ++destCount;
+
+    const label      = isPickup ? `Pickup Stop ${num}` : `Drop-off Stop ${num}`;
+    const badgeClass = isPickup ? 'pickup-badge' : 'dest-badge';
+    const badgeText  = isPickup ? 'Pickup' : 'Drop-off';
+    const dotClass   = isPickup ? 'pickup-dot' : 'via-dot';
+    const placeholder = isPickup
+      ? 'e.g. Union Station, Toronto'
+      : 'e.g. Scarborough Town Centre';
+    const pinSvg = isPickup
+      ? `<svg viewBox="0 0 24 24"><circle cx="12" cy="10" r="3"/><path d="M12 2a8 8 0 0 0-8 8c0 5.25 8 12 8 12s8-6.75 8-12a8 8 0 0 0-8-8z"/></svg>`
+      : `<svg viewBox="0 0 24 24"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>`;
+
+    const div = document.createElement('div');
+    div.className = 'route-stop';
+    div.id = id;
+    div.innerHTML = `
+      <div class="stop-line">
+        <div class="stop-indicator">
+          <div class="stop-dot ${dotClass}"></div>
+          <div class="stop-track"></div>
+        </div>
+        <div class="stop-content">
+          <div class="stop-badge-row">
+            <span class="stop-badge ${badgeClass}">${badgeText} ${num}</span>
+            <button type="button" class="remove-stop-btn" onclick="removeStop('${id}', '${type}')">
+              <svg viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+            </button>
+          </div>
+          <div class="input-wrap">
+            <span class="input-icon">${pinSvg}</span>
+            <input type="text" name="stop_location" class="form-input stop-location-input" placeholder="${placeholder}" oninput="updateProgress()" autocomplete="off">
+            <input type="hidden" name="stop_lat" value="">
+            <input type="hidden" name="stop_lng" value="">
+            <input type="hidden" name="stop_type" value="${type}">
+          </div>
+        </div>
+      </div>`;
+
+    // Animate in
+    div.style.opacity = '0';
+    div.style.transform = 'translateY(10px)';
+    container.appendChild(div);
+    const stopWrap = div.querySelector('.input-wrap');
+    setupAutocomplete(
+      stopWrap.querySelector('[name="stop_location"]'),
+      stopWrap.querySelector('[name="stop_lat"]'),
+      stopWrap.querySelector('[name="stop_lng"]'),
+      fetchRouteInfo
+    );
+    requestAnimationFrame(() => {
+      div.style.transition = 'opacity 0.25s ease, transform 0.25s ease';
+      div.style.opacity = '1';
+      div.style.transform = 'translateY(0)';
+    });
+    syncStopButtons();
+  }
+
+  function removeStop(id, type) {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.style.transition = 'opacity 0.2s ease, transform 0.2s ease';
+    el.style.opacity = '0';
+    el.style.transform = 'translateY(-8px)';
+    setTimeout(() => { el.remove(); syncStopButtons(); fetchRouteInfo(); }, 210);
+  }
+
+  /* ── SHOW / HIDE FORM ── */
+  function showForm() {
+    document.getElementById('emptyState').style.display = 'none';
+    document.getElementById('rideForm').style.display = 'block';
+    document.querySelectorAll('#rideForm .section-card').forEach((c, i) => {
+      c.style.animation = 'none';
+      setTimeout(() => { c.style.animation = `fadeUp 0.4s ${i * 0.07}s ease both`; }, 10);
+    });
+  }
+
+  function cancelForm() {
+    document.getElementById('rideForm').style.display = 'none';
+    document.getElementById('emptyState').style.display = 'flex';
+    // Reset stops
+    document.getElementById('pickupStops').innerHTML = '';
+    document.getElementById('destinationStops').innerHTML = '';
+    pickupCount = 0; destCount = 0;
+  }
+
+  /* ── SEAT COUNTER ── */
+  function changeSeat(delta) {
+    seatCount = Math.min(8, Math.max(1, seatCount + delta));
+    document.getElementById('seatDisplay').textContent = seatCount;
+    document.getElementById('seatInput').value = seatCount;
+  }
+
+  /* ── RECURRING TOGGLE ── */
+  function toggleRecurring() {
+    const t = document.getElementById('recurringToggle');
+    const d = document.getElementById('daysSection');
+    t.classList.toggle('on');
+    const on = t.classList.contains('on');
+    d.style.display = on ? 'block' : 'none';
+    document.getElementById('is_recurring_input').value = on ? '1' : '0';
+    if (on) {
+      const endInput = document.getElementById('recurringEndDate');
+      endInput.setAttribute('min', dateInput.value || getTodayStr());
+    } else {
+      document.getElementById('recurringEndDate').value = '';
+    }
+  }
+
+  /* ── DAY PILLS ── */
+  function toggleDay(el) { el.classList.toggle('active'); }
+
+  /* ── OSRM ROUTE INFO ── */
+  async function fetchRouteInfo() {
+    const lat1 = document.getElementById('origin_lat').value;
+    const lng1 = document.getElementById('origin_lng').value;
+    const lat2 = document.getElementById('destination_lat').value;
+    const lng2 = document.getElementById('destination_lng').value;
+    const strip   = document.getElementById('routeSummary');
+    const warning = document.getElementById('stopDetourWarning');
+
+    if (!lat1 || !lng1 || !lat2 || !lng2) {
+      strip.style.display = 'none';
+      warning.style.display = 'none';
+      return;
+    }
+
+    // Build ordered waypoints: origin → pickup stops → destination stops → final dest
+    const waypoints = [[lng1, lat1]];
+    document.querySelectorAll('#pickupStops .input-wrap, #destinationStops .input-wrap').forEach(wrap => {
+      const sLat = wrap.querySelector('[name="stop_lat"]')?.value;
+      const sLng = wrap.querySelector('[name="stop_lng"]')?.value;
+      if (sLat && sLng) waypoints.push([sLng, sLat]);
+    });
+    waypoints.push([lng2, lat2]);
+
+    strip.style.display = 'flex';
+    strip.innerHTML = '<span class="route-summary-loading">Calculating route…</span>';
+    warning.style.display = 'none';
+
+    try {
+      const coords       = waypoints.map(w => w.join(',')).join(';');
+      const directCoords = `${lng1},${lat1};${lng2},${lat2}`;
+      const hasStops     = waypoints.length > 2;
+
+      const fetches = [fetch(`https://router.project-osrm.org/route/v1/driving/${coords}?overview=false`)];
+      if (hasStops) fetches.push(fetch(`https://router.project-osrm.org/route/v1/driving/${directCoords}?overview=false`));
+
+      const [res, directRes] = await Promise.all(fetches);
+      const data             = await res.json();
+
+      if (data.code !== 'Ok' || !data.routes.length) {
+        strip.innerHTML = '<span style="color:#ef4444;font-size:0.8rem">Could not calculate route.</span>';
+        return;
+      }
+
+      const route   = data.routes[0];
+      document.getElementById('duration_seconds').value = Math.round(route.duration);
+      const distKm  = route.distance / 1000;
+      const km      = distKm.toFixed(1);
+      const mins    = Math.round(route.duration / 60);
+      const hrs     = Math.floor(mins / 60);
+      const rem     = mins % 60;
+      const timeStr = hrs > 0 ? `${hrs}h ${rem}m` : `${mins} min`;
+      const fuelL   = (distKm * 0.09).toFixed(1);
+      const co2Kg   = (distKm * 0.09 * 2.31).toFixed(1);
+      const stopCount = waypoints.length - 2;
+      const stopLabel = stopCount > 0 ? `<div class="route-summary-divider"></div><div class="route-summary-item" style="color:var(--text-muted);font-weight:600"><svg viewBox="0 0 24 24"><circle cx="12" cy="10" r="3"/><path d="M12 2a8 8 0 0 0-8 8c0 5.25 8 12 8 12s8-6.75 8-12a8 8 0 0 0-8-8z"/></svg>${stopCount} stop${stopCount > 1 ? 's' : ''}</div>` : '';
+      strip.innerHTML = `
+        <div class="route-summary-item">
+          <svg viewBox="0 0 24 24"><path d="M3 12h18M3 6h18M3 18h18"/></svg>
+          ${km} km
+        </div>
+        <div class="route-summary-divider"></div>
+        <div class="route-summary-item time-item">
+          <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+          ${timeStr} drive
+        </div>
+        <div class="route-summary-divider"></div>
+        <div class="route-summary-item fuel-item">
+          <svg viewBox="0 0 24 24"><path d="M3 22V7a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v15"/><line x1="2" y1="22" x2="16" y2="22"/><path d="M15 8h2a2 2 0 0 1 2 2v3a2 2 0 0 0 2 2h0a2 2 0 0 0 2-2V9.83a2 2 0 0 0-.59-1.42L19 6"/><rect x="7" y="11" width="4" height="5"/></svg>
+          ~${fuelL} L fuel
+        </div>
+        <div class="route-summary-divider"></div>
+        <div class="route-summary-item co2-item">
+          <svg viewBox="0 0 24 24"><path d="M11 20A7 7 0 0 1 9.8 6.1C15.5 5 17 4.48 19 2c1 2 2 4.18 2 8 0 5.5-4.78 10-10 10z"/><path d="M2 21c0-3 1.85-5.36 5.08-6C9.5 14.52 12 13 13 12"/></svg>
+          ~${co2Kg} kg CO₂
+        </div>
+        ${stopLabel}
+      `;
+
+      // ── Detour warning ──
+      if (hasStops && directRes) {
+        const directData = await directRes.json();
+        if (directData.code === 'Ok' && directData.routes.length) {
+          const directKm  = directData.routes[0].distance / 1000;
+          const detourKm  = route.distance / 1000 - directKm;
+          const inflation = directKm > 0 ? detourKm / directKm : 0;
+          if (detourKm > DETOUR_MAX_KM || inflation > DETOUR_MAX_DEC) {
+            const extraFuelL = (detourKm * 0.09).toFixed(1);
+            const extraCo2Kg = (detourKm * 0.09 * 2.31).toFixed(1);
+            warning.style.display = 'block';
+            warning.innerHTML = `⚠️ <strong>Heads up:</strong> Your stops add a <strong>${detourKm.toFixed(1)} km detour</strong> (${Math.round(inflation * 100)}% longer than the direct route). Make sure your stops are actually along your path — passengers may expect a more direct ride.<br><span style="display:inline-flex;gap:14px;margin-top:6px;font-size:0.8rem"><span style="color:#d97706;font-weight:600">⛽ +${extraFuelL} L extra fuel</span><span style="color:#059669;font-weight:600">🌿 +${extraCo2Kg} kg extra CO₂</span></span>`;
+          }
+        }
+      }
+    } catch (_) {
+      strip.style.display = 'none';
+    }
+  }
+
+  /* ── LOCATE ME ── */
+  function locateMe() {
+    if (!navigator.geolocation) {
+      alert('Geolocation is not supported by your browser.');
+      return;
+    }
+    const btn = document.getElementById('locateBtn');
+    btn.disabled = true;
+    btn.innerHTML = '<svg viewBox="0 0 24 24" class="spin"><circle cx="12" cy="12" r="10" stroke-dasharray="32" stroke-dashoffset="32"/></svg> Locating…';
+
+    navigator.geolocation.getCurrentPosition(
+      async function(pos) {
+        const { latitude, longitude } = pos.coords;
+        try {
+          const res = await fetch(
+            `https://photon.komoot.io/reverse?lat=${latitude}&lon=${longitude}&lang=en`
+          );
+          const data = await res.json();
+          const p = (data.features || [])[0]?.properties || {};
+          const label = [
+            p.street || p.name || p.district,
+            p.city || p.county,
+            p.state,
+            p.country
+          ].filter(Boolean).join(', ');
+
+          document.getElementById('origin_input').value = label;
+          document.getElementById('origin_lat').value   = latitude;
+          document.getElementById('origin_lng').value   = longitude;
+          updateProgress();
+          fetchRouteInfo();
+        } catch (_) {
+          alert('Could not resolve your address. Please type it manually.');
+        }
+        btn.disabled = false;
+        btn.innerHTML = '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/></svg> Locate me';
+      },
+      function(err) {
+        const msg = err.code === 1
+          ? 'Location permission denied. Allow access and try again.'
+          : 'Could not get your location. Please type it manually.';
+        alert(msg);
+        btn.disabled = false;
+        btn.innerHTML = '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/></svg> Locate me';
+      },
+      { timeout: 10000, maximumAge: 60000 }
+    );
+  }
+
+  /* ── PHOTON AUTOCOMPLETE ── */
+  function setupAutocomplete(input, latInput, lngInput, onSelect) {
+    if (!input || !latInput || !lngInput) return;
+    let timer;
+    let dropdown = null;
+
+    function removeDropdown() {
+      if (dropdown) { dropdown.remove(); dropdown = null; }
+    }
+
+    function createDropdown() {
+      removeDropdown();
+      const rect = input.getBoundingClientRect();
+      dropdown = document.createElement('div');
+      dropdown.className = 'autocomplete-dropdown';
+      dropdown.style.top   = (rect.bottom + window.scrollY + 4) + 'px';
+      dropdown.style.left  = (rect.left  + window.scrollX) + 'px';
+      dropdown.style.width = rect.width + 'px';
+      document.body.appendChild(dropdown);
+      return dropdown;
+    }
+
+    input.addEventListener('input', function () {
+      const q = input.value.trim();
+      latInput.value = '';
+      lngInput.value = '';
+      if (q.length < 3) { removeDropdown(); return; }
+      clearTimeout(timer);
+      const dd = createDropdown();
+      dd.innerHTML = '<div class="autocomplete-loading">Searching…</div>';
+      timer = setTimeout(() => {
+        fetch('https://photon.komoot.io/api/?q=' + encodeURIComponent(q) + '&limit=5')
+          .then(r => r.json())
+          .then(data => {
+            removeDropdown();
+            if (!data.features || data.features.length === 0) {
+              const dd2 = createDropdown();
+              dd2.innerHTML = '<div class="autocomplete-item no-results">No results found</div>';
+              return;
+            }
+            const dd2 = createDropdown();
+            data.features.forEach(f => {
+              const p = f.properties;
+              const coords = f.geometry.coordinates; // [lng, lat]
+              const label = [p.name, p.city, p.state, p.country].filter(Boolean).join(', ');
+              const item = document.createElement('div');
+              item.className = 'autocomplete-item';
+              item.textContent = label;
+              item.addEventListener('mousedown', function (e) {
+                e.preventDefault();
+                input.value = label;
+                latInput.value = coords[1];
+                lngInput.value = coords[0];
+                removeDropdown();
+                updateProgress();
+                if (onSelect) onSelect();
+              });
+              dd2.appendChild(item);
+            });
+          })
+          .catch(() => removeDropdown());
+      }, 300);
+    });
+
+    input.addEventListener('blur', () => setTimeout(removeDropdown, 150));
+
+    input.addEventListener('keydown', function (e) {
+      if (!dropdown) return;
+      const items = [...dropdown.querySelectorAll('.autocomplete-item:not(.no-results)')];
+      const active = dropdown.querySelector('.autocomplete-item.active');
+      let idx = items.indexOf(active);
+      if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        if (active) active.classList.remove('active');
+        items[(idx + 1) % items.length].classList.add('active');
+      } else if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        if (active) active.classList.remove('active');
+        items[(idx - 1 + items.length) % items.length].classList.add('active');
+      } else if (e.key === 'Enter' && active) {
+        e.preventDefault();
+        active.dispatchEvent(new MouseEvent('mousedown'));
+      } else if (e.key === 'Tab' && items.length) {
+        e.preventDefault();
+        (active || items[0]).dispatchEvent(new MouseEvent('mousedown'));
+      } else if (e.key === 'Escape') {
+        removeDropdown();
+      }
+    });
+  }
+
+  /* ── PROGRESS ── */
+  function updateProgress() {}
+
+  /* ── INIT AUTOCOMPLETE ── */
+  setupAutocomplete(
+    document.getElementById('origin_input'),
+    document.getElementById('origin_lat'),
+    document.getElementById('origin_lng'),
+    fetchRouteInfo
+  );
+  setupAutocomplete(
+    document.getElementById('destination_input'),
+    document.getElementById('destination_lat'),
+    document.getElementById('destination_lng'),
+    fetchRouteInfo
+  );
+
+  /* ── INIT ── */
+  {% if show_form %}
+  document.getElementById('emptyState').style.display = 'none';
+  document.getElementById('rideForm').style.display = 'block';
+  {% endif %}
+  {% if messages %}{% for message in messages %}{% if 'success' in message.tags %}
+  (function() {
+    const t = document.getElementById('toast');
+    t.classList.add('show');
+    setTimeout(() => t.classList.remove('show'), 3000);
+  })();
+  {% endif %}{% endfor %}{% endif %}
+
+  const dateInput  = document.getElementById('depart_date');
+  const timeInput  = document.getElementById("depart_time");
+
+  // Always use MM-DD-YYYY display regardless of browser locale
+  function autoDateFmt(display, hiddenId) {
+    let raw = display.value.replace(/\D/g, '').substring(0, 8);
+    if (raw.length > 4)      display.value = raw.slice(0,2) + '-' + raw.slice(2,4) + '-' + raw.slice(4);
+    else if (raw.length > 2) display.value = raw.slice(0,2) + '-' + raw.slice(2);
+    else                     display.value = raw;
+    const h = document.getElementById(hiddenId);
+    h.value = raw.length === 8
+      ? raw.slice(4,8) + '-' + raw.slice(0,2) + '-' + raw.slice(2,4)
+      : '';
+    h.dispatchEvent(new Event('change'));
+  }
+
+  /* ── Open the native calendar picker when the text field itself is clicked ── */
+  function openDatePicker(id) {
+    const el = document.getElementById(id);
+    if (el && el.showPicker) {
+      try { el.showPicker(); } catch (e) {}
+    }
+  }
+
+  /* ── Sync native date-picker selection into the display + hidden inputs ── */
+  function pickNativeDate(native, displayId, hiddenId) {
+    if (!native.value) return;
+    const [y, m, d] = native.value.split('-');
+    document.getElementById(displayId).value = `${m}-${d}-${y}`;
+    const hidden = document.getElementById(hiddenId);
+    hidden.value = native.value;
+    hidden.dispatchEvent(new Event('change'));
+  }
+
+  function getMinTime() {
+    const now = new Date();
+    now.setMinutes(now.getMinutes() + 30);
+    return String(now.getHours()).padStart(2, '0') + ':' + String(now.getMinutes()).padStart(2, '0');
+  }
+
+  function getTodayStr() {
+    const d = new Date();
+    return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
+  }
+
+  function applyTimeMin() {
+    if (dateInput.value === getTodayStr()) {
+      const mt = getMinTime();
+      timeInput.setAttribute('min', mt);
+      if (!timeInput.value || timeInput.value < mt) timeInput.value = mt;
+    } else {
+      timeInput.removeAttribute('min');
+    }
+  }
+
+  // Pre-fill date to today in both hidden (YYYY-MM-DD) and display (MM-DD-YYYY) inputs
+  const todayYMD = getTodayStr();
+  dateInput.value = todayYMD;
+  document.getElementById('depart_date_display').value =
+    todayYMD.slice(5,7) + '-' + todayYMD.slice(8,10) + '-' + todayYMD.slice(0,4);
+  document.getElementById('depart_date_picker').value = todayYMD;
+
+  // Pre-fill time to now+30 on load
+  applyTimeMin();
+
+  // Re-evaluate time min whenever the hidden date value changes
+  dateInput.addEventListener('change', applyTimeMin);
+
+  // Capture browser timezone for local-time display in emails
+  document.getElementById('tz_input').value =
+    Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
+
+  function clearTimeError() {
+    const err = document.getElementById('time-error');
+    err.textContent = '';
+    err.style.display = 'none';
+    timeInput.style.borderColor = '';
+  }
+
+  function showTimeError(msg) {
+    const err = document.getElementById('time-error');
+    err.textContent = msg;
+    err.style.display = 'block';
+    timeInput.style.borderColor = '#ef4444';
+    timeInput.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }
+
+  document.getElementById('postRideForm').addEventListener('submit', function(e) {
+    const dateVal = document.getElementById('depart_date').value;
+    const timeVal = document.getElementById('depart_time').value;
+    if (dateVal && timeVal) {
+      const [y, m, d] = dateVal.split('-').map(Number);
+      const [h, min]  = timeVal.split(':').map(Number);
+      document.getElementById('depart_utc').value = new Date(y, m - 1, d, h, min).toISOString();
+    }
+    if (dateInput.value === getTodayStr()) {
+      const min = getMinTime();
+      if (!timeInput.value || timeInput.value < min) {
+        e.preventDefault();
+        showTimeError('Departure must be at least 30 minutes from now.');
+        return;
+      }
+    }
+    const activePrefs = [...document.querySelectorAll('.pref-tag.active')]
+      .map(el => el.textContent.trim());
+    document.getElementById('prefs_input').value = activePrefs.length
+      ? JSON.stringify(activePrefs)
+      : '';
+
+    const isRecurring = document.getElementById('recurringToggle').classList.contains('on');
+    if (isRecurring) {
+      document.getElementById('recurring_end_date_input').value =
+        document.getElementById('recurringEndDate').value;
+      const days = [...document.querySelectorAll('.day-pill.active')]
+        .map(el => el.dataset.day);
+      document.getElementById('recurring_days_input').value = days.join(',');
+    }
+  });
+</script>
+{% include 'footer.html' %}
+</body>
+</html>

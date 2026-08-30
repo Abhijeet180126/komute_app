@@ -1,0 +1,1107 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<link rel="icon" type="image/png" href="{% static 'images/icon_white.png' %}">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+<!-- DJANGO VARIABLE -->
+<title>{{ page_title|default:"Komüte App – Sign Up" }}</title>
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800&family=DM+Sans:wght@400;500;600&family=Montserrat:wght@600;700;800&display=swap" rel="stylesheet">
+
+<style>
+/* ── KOMÜTE BRAND TOKENS ── */
+:root {
+  --dark-bg:     #121212;
+  --light-bg:    #E9F7EE;
+  --contrast-lt: #D5FBE5;
+  --brand-green: #0D7810;
+  --grad-blue:   #0C63B4;
+  --grad-green:  #0CB439;
+  --white:       #ffffff;
+  --text-dark:   #121212;
+  --text-muted:  #4a6350;
+  --input-border:#b8dfc4;
+}
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  font-family: 'DM Sans', sans-serif;
+  min-height: 100vh;
+  background: var(--light-bg);
+  display: flex;
+  flex-direction: column;
+}
+
+.page-content {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 30px 20px;
+}
+
+/* ── CARD ── */
+.card {
+  background: var(--white);
+  border-radius: 20px;
+  padding: 40px 40px 36px;
+  width: 100%;
+  max-width: 420px;
+  box-shadow: 0 8px 40px rgba(12, 99, 180, 0.10);
+  text-align: center;
+  animation: fadeUp 0.45s ease both;
+}
+
+@keyframes fadeUp {
+  from { opacity: 0; transform: translateY(20px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* ── LOGO ── */
+.logo-area {
+  margin-bottom: 22px;
+}
+.logo-area img {
+  height: 56px;
+  width: auto;
+  object-fit: contain;
+}
+.logo-fallback {
+  width: 64px; height: 64px;
+  border-radius: 50%;
+  background: var(--light-bg);
+  border: 2px solid var(--contrast-lt);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0 auto;
+}
+
+/* ── HEADINGS ── */
+.card h1 {
+  font-family: 'Poppins', sans-serif;
+  font-size: 1.65rem;
+  font-weight: 800;
+  color: var(--brand-green);
+  margin-bottom: 6px;
+}
+
+.subtitle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  font-size: 0.925rem;
+  color: var(--text-muted);
+  margin-bottom: 28px;
+}
+
+/* ── FORM ── */
+.form-group {
+  text-align: left;
+  margin-bottom: 16px;
+}
+
+.form-label {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--text-dark);
+  margin-bottom: 7px;
+}
+.form-label svg {
+  width: 15px; height: 15px;
+  stroke: var(--text-muted);
+  fill: none;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  flex-shrink: 0;
+}
+
+.form-input {
+  width: 100%;
+  padding: 11px 14px;
+  border: 1.5px solid var(--input-border);
+  border-radius: 8px;
+  font-family: 'DM Sans', sans-serif;
+  font-size: 0.925rem;
+  color: var(--text-dark);
+  background: var(--white);
+  outline: none;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+.form-input::placeholder { color: #aabcaf; }
+.form-input:focus {
+  border-color: var(--brand-green);
+  box-shadow: 0 0 0 3px rgba(13, 120, 16, 0.1);
+}
+
+/* ── PHONE ROW (country code + number) ── */
+.phone-row {
+  display: flex;
+  gap: 8px;
+}
+.phone-row .country-code-select {
+  flex: 0 0 108px;
+  width: 108px;
+  min-width: 0;
+  font-size: 0.78rem;
+}
+.phone-row .form-input {
+  flex: 1;
+  min-width: 0;
+}
+select.form-input {
+  appearance: none;
+  -webkit-appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%234a6350' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 10px center;
+  background-size: 16px;
+  padding-right: 30px;
+  cursor: pointer;
+}
+
+/* ── SIGNUP BUTTON ── */
+.btn-signup {
+  width: 100%;
+  padding: 13px;
+  background: var(--brand-green);
+  color: var(--white);
+  border: none;
+  border-radius: 8px;
+  font-family: 'Poppins', sans-serif;
+  font-weight: 700;
+  font-size: 1rem;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  margin-top: 8px;
+  transition: opacity 0.2s, transform 0.15s;
+}
+.btn-signup:hover { opacity: 0.88; transform: translateY(-1px); }
+
+/* ── DIVIDER ── */
+.divider-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 18px 0 14px;
+}
+.divider-line {
+  flex: 1;
+  height: 1px;
+  background: var(--input-border);
+}
+.divider-text {
+  font-family: 'DM Sans', sans-serif;
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  letter-spacing: 0.04em;
+}
+
+/* ── SOCIAL BUTTONS ── */
+.social-row {
+  display: flex;
+  gap: 10px;
+}
+.btn-social {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  padding: 12px 14px;
+  border: 1.5px solid var(--input-border);
+  border-radius: 10px;
+  background: #fff;
+  font-family: 'DM Sans', sans-serif;
+  font-size: 0.92rem;
+  font-weight: 600;
+  color: var(--text-dark);
+  cursor: pointer;
+  transition: border-color 0.2s, transform 0.15s, box-shadow 0.2s;
+}
+.btn-social:hover {
+  border-color: var(--brand-green);
+  transform: translateY(-1px);
+  box-shadow: 0 2px 10px rgba(13,120,16,0.06);
+}
+.btn-social svg { flex-shrink: 0; }
+
+/* ── JOIN BANNER ── */
+.join-banner {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  background: var(--light-bg);
+  border: 1.5px solid var(--contrast-lt);
+  border-radius: 10px;
+  padding: 12px 16px;
+  margin-top: 16px;
+  font-size: 0.875rem;
+  color: var(--brand-green);
+  font-weight: 500;
+}
+.join-banner svg {
+  width: 16px; height: 16px;
+  stroke: var(--brand-green);
+  fill: none;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  flex-shrink: 0;
+}
+
+/* ── LOGIN LINK ── */
+.login-row {
+  margin-top: 22px;
+  font-size: 0.9rem;
+  color: var(--text-muted);
+}
+.login-row a {
+  color: var(--brand-green);
+  font-weight: 700;
+  text-decoration: none;
+}
+.login-row a:hover { opacity: 0.75; }
+
+/* DJANGO ERROR MESSAGE STYLING */
+.error-text {
+  color: red;
+  font-size: 0.8rem;
+  margin-top: 4px;
+}
+
+/* ── T&C Checkbox Row ── */
+.tnc-row { margin-top: 4px; margin-bottom: 4px; }
+.tnc-label {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  font-size: 0.875rem;
+  color: var(--text-muted);
+  cursor: pointer;
+  line-height: 1.5;
+}
+.tnc-label input[type="checkbox"] {
+  width: 16px; height: 16px;
+  flex-shrink: 0;
+  margin-top: 2px;
+  accent-color: var(--brand-green);
+  cursor: pointer;
+}
+.tnc-link {
+  background: none; border: none; padding: 0;
+  color: var(--brand-green);
+  font-weight: 700;
+  font-size: 0.875rem;
+  cursor: pointer;
+  text-decoration: underline;
+  font-family: 'DM Sans', sans-serif;
+}
+.tnc-link:hover { opacity: 0.75; }
+.btn-signup:disabled { opacity: 0.45; cursor: not-allowed; transform: none; }
+
+/* ── T&C Full-screen Modal ── */
+.tnc-overlay {
+  display: none;
+  position: fixed;
+  inset: 0;
+  z-index: 3000;
+  background: rgba(10, 20, 12, 0.65);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+}
+.tnc-overlay.open { display: flex; flex-direction: column; }
+.tnc-modal { display: flex; flex-direction: column; width: 100%; height: 100%; background: var(--light-bg); }
+.tnc-modal-hd {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 28px;
+  background: linear-gradient(135deg, #0D7810 0%, #0C63B4 100%);
+  flex-shrink: 0;
+}
+.tnc-modal-hd-title {
+  display: flex; align-items: center; gap: 10px;
+  font-family: 'Poppins', sans-serif;
+  font-weight: 700; font-size: 1.05rem; color: white;
+}
+.tnc-modal-hd-title svg { width: 18px; height: 18px; stroke: white; fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.tnc-modal-close {
+  width: 36px; height: 36px;
+  background: rgba(255,255,255,0.15);
+  border: 1px solid rgba(255,255,255,0.25);
+  border-radius: 8px; cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  transition: background 0.15s;
+}
+.tnc-modal-close:hover { background: rgba(255,255,255,0.28); }
+.tnc-modal-close svg { width: 14px; height: 14px; stroke: white; fill: none; stroke-width: 2.5; stroke-linecap: round; stroke-linejoin: round; }
+.tnc-modal-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 32px 24px 16px;
+  -webkit-overflow-scrolling: touch;
+}
+.tnc-modal-content { max-width: 820px; margin: 0 auto; }
+.tnc-modal-ft {
+  flex-shrink: 0;
+  padding: 14px 28px;
+  background: white;
+  border-top: 1.5px solid var(--input-border);
+  display: flex; align-items: center;
+  gap: 16px; flex-wrap: wrap;
+}
+.tnc-scroll-msg {
+  font-size: 0.84rem; color: var(--text-muted);
+  display: flex; align-items: center; gap: 6px;
+}
+.tnc-scroll-msg svg { width: 13px; height: 13px; stroke: var(--text-muted); fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; flex-shrink: 0; }
+.tnc-accept-btn {
+  background: var(--brand-green); color: white; border: none;
+  padding: 11px 22px; border-radius: 8px;
+  font-family: 'Poppins', sans-serif; font-weight: 700; font-size: 0.92rem;
+  cursor: pointer; display: flex; align-items: center; gap: 7px;
+  transition: opacity 0.2s, transform 0.15s; white-space: nowrap;
+  margin-left: auto;
+}
+.tnc-accept-btn:disabled { opacity: 0.38; cursor: not-allowed; transform: none; }
+.tnc-accept-btn:not(:disabled):hover { opacity: 0.88; transform: translateY(-1px); }
+.tnc-accept-btn svg { width: 14px; height: 14px; stroke: white; fill: none; stroke-width: 2.5; stroke-linecap: round; stroke-linejoin: round; }
+
+/* Policy content reused inside modal */
+.tnc-modal-content .policy-intro {
+  background: white; border: 1.5px solid var(--input-border);
+  border-radius: 16px; padding: 22px 26px; margin-bottom: 24px;
+  box-shadow: 0 4px 20px rgba(13,120,16,0.07);
+  display: flex; gap: 16px; align-items: flex-start;
+}
+.tnc-modal-content .policy-intro-icon {
+  width: 40px; height: 40px; border-radius: 10px;
+  background: linear-gradient(135deg, var(--grad-blue), var(--grad-green));
+  display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+}
+.tnc-modal-content .policy-intro-icon svg { width: 18px; height: 18px; stroke: white; fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.tnc-modal-content .policy-intro p { font-size: 0.93rem; color: var(--text-muted); line-height: 1.7; }
+.tnc-modal-content .policy-section {
+  background: white; border: 1.5px solid var(--input-border);
+  border-radius: 16px; margin-bottom: 12px;
+  overflow: hidden; box-shadow: 0 4px 20px rgba(13,120,16,0.07);
+}
+.tnc-modal-content .policy-section-head {
+  display: flex; align-items: center; gap: 14px;
+  padding: 16px 22px; border-bottom: 1.5px solid var(--input-border);
+}
+.tnc-modal-content .policy-num {
+  width: 32px; height: 32px; border-radius: 8px;
+  background: var(--contrast-lt);
+  display: flex; align-items: center; justify-content: center;
+  font-family: 'Montserrat', sans-serif; font-weight: 800; font-size: 0.8rem;
+  color: var(--brand-green); flex-shrink: 0;
+}
+.tnc-modal-content .policy-section-title { font-family: 'Poppins', sans-serif; font-weight: 700; font-size: 0.95rem; color: var(--text-dark); }
+.tnc-modal-content .policy-section-body { padding: 16px 22px; font-size: 0.92rem; color: #3d5444; line-height: 1.75; }
+.tnc-modal-content .policy-section-body p { margin-bottom: 12px; }
+.tnc-modal-content .policy-section-body p:last-child { margin-bottom: 0; }
+.tnc-modal-content .policy-section-body ul { margin: 10px 0 4px 0; padding: 0; list-style: none; }
+.tnc-modal-content .policy-section-body ul li { position: relative; padding-left: 20px; margin-bottom: 7px; }
+.tnc-modal-content .policy-section-body ul li:last-child { margin-bottom: 0; }
+.tnc-modal-content .policy-section-body ul li::before { content: ''; position: absolute; left: 0; top: 9px; width: 6px; height: 6px; border-radius: 50%; background: var(--brand-green); }
+.tnc-bottom-note {
+  text-align: center; margin-top: 28px; margin-bottom: 20px;
+  padding: 18px; border-radius: 12px;
+  background: white; border: 1.5px solid var(--input-border);
+  color: var(--text-muted); font-size: 0.87rem; font-weight: 500;
+}
+.tnc-bottom-note strong { color: var(--brand-green); }
+.tnc-modal-content h3 {
+  font-family: 'Poppins', sans-serif; font-weight: 600; font-size: 0.95rem;
+  color: var(--brand-green); margin: 16px 0 6px;
+}
+.tnc-modal-content .callout {
+  display: flex; gap: 14px; background: var(--contrast-lt);
+  border-radius: 13px; padding: 16px 18px; margin: 16px 0;
+}
+.tnc-modal-content .callout svg { flex-shrink: 0; margin-top: 2px; }
+.tnc-modal-content .callout p { margin: 0; font-size: 0.9rem; color: #244229; }
+.tnc-modal-content .callout p strong { color: var(--brand-green); }
+
+@media (max-width: 600px) {
+  .tnc-modal-hd { padding: 14px 18px; }
+  .tnc-modal-body { padding: 20px 16px 12px; }
+  .tnc-modal-ft { padding: 12px 18px; flex-direction: column; align-items: stretch; }
+  .tnc-accept-btn { justify-content: center; }
+}
+</style>
+</head>
+<body>
+{% include 'header.html' %}
+<div class="page-content">
+<div class="card">
+
+  <!-- Logo -->
+  <div class="logo-area">
+
+    <!-- DJANGO STATIC FILE -->
+    <img src="{% static 'images/logo_round_white.png' %}" 
+         alt="Komüte"
+         onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">
+
+    <div class="logo-fallback" style="display:none">
+      <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+        <defs>
+          <linearGradient id="lgLogo" x1="0%" y1="0%" x2="100%" y2="0%">
+            <stop offset="0%" stop-color="#0C63B4"/>
+            <stop offset="100%" stop-color="#0CB439"/>
+          </linearGradient>
+        </defs>
+        <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" stroke="url(#lgLogo)"/>
+        <circle cx="9" cy="7" r="4" stroke="url(#lgLogo)"/>
+        <path d="M23 21v-2a4 4 0 0 0-3-3.87" stroke="url(#lgLogo)"/>
+        <path d="M16 3.13a4 4 0 0 1 0 7.75" stroke="url(#lgLogo)"/>
+      </svg>
+    </div>
+  </div>
+
+  <!-- Heading -->
+
+  <!-- DJANGO VARIABLE -->
+  <h1>{{ heading|default:"Welcome to Komute" }}</h1>
+
+  <div class="subtitle">
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#0D7810" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M11 20A7 7 0 0 1 9.8 6.1C15.5 5 17 4.48 19 2c1 2 2 4.18 2 8 0 5.5-4.78 10-10 10z"/>
+      <path d="M2 21c0-3 1.85-5.36 5.08-6C9.5 14.52 12 13 13 12"/>
+    </svg>
+
+    <!-- DJANGO VARIABLE -->
+    {{ subtitle|default:"Start your eco-friendly journey" }}
+  </div>
+
+  <!-- DJANGO FORM -->
+  <form method="POST" action="{% url 'signup' %}">
+    
+    <!-- DJANGO CSRF TOKEN -->
+    {% csrf_token %}
+
+    {% if errors.rate_limit %}
+      <div class="error-text">{{ errors.rate_limit }}</div>
+    {% endif %}
+
+    <!-- Full Name -->
+    <div class="form-group">
+      <label class="form-label">
+        <svg viewBox="0 0 24 24">
+          <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
+          <circle cx="12" cy="7" r="4"/>
+        </svg>
+        Full Name
+      </label>
+      <input type="text"
+             name="full_name"
+             class="form-input"
+             placeholder="John Doe"
+             value="{{ form.full_name }}"
+             required>
+      {% if errors.full_name %}
+        <div class="error-text">{{ errors.full_name }}</div>
+      {% endif %}
+    </div>
+
+    <!-- Email -->
+    <div class="form-group">
+      <label class="form-label">
+        <svg viewBox="0 0 24 24">
+          <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/>
+          <polyline points="22,6 12,13 2,6"/>
+        </svg>
+        Email Address
+      </label>
+      <input type="email"
+             name="email"
+             class="form-input"
+             placeholder="john@example.com"
+             value="{{ form.email }}"
+             required>
+      {% if errors.email %}
+        <div class="error-text">{{ errors.email }}</div>
+      {% endif %}
+    </div>
+
+    <!-- Phone -->
+    <div class="form-group">
+      <label class="form-label">
+        <svg viewBox="0 0 24 24">
+          <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07A19.5 19.5 0 0 1 4.69 12 19.79 19.79 0 0 1 1.62 3.38 2 2 0 0 1 3.59 1h3a2 2 0 0 1 2 1.72c.127.96.361 1.903.7 2.81a2 2 0 0 1-.45 2.11L7.91 8.56a16 16 0 0 0 6.07 6.07l.96-.96a2 2 0 0 1 2.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0 1 22 16.92z"/>
+        </svg>
+        Phone Number
+      </label>
+      <div class="phone-row">
+        <select name="country_code" class="form-input country-code-select" required>
+          <option value="" {% if not form.country_code %}selected{% endif %}>Country Code</option>
+          {% for c in priority_countries %}
+            <option value="{{ c.dial_code }}" {% if form.country_code == c.dial_code %}selected{% endif %}>{{ c.dial_code }} {{ c.name }}</option>
+          {% endfor %}
+          <option disabled>──────────</option>
+          {% for c in countries %}
+            <option value="{{ c.dial_code }}" {% if form.country_code == c.dial_code %}selected{% endif %}>{{ c.dial_code }} {{ c.name }}</option>
+          {% endfor %}
+        </select>
+        <input type="tel"
+               name="phone_number"
+               class="form-input"
+               placeholder="4155552671"
+               value="{{ form.phone_number }}"
+               inputmode="numeric"
+               required>
+      </div>
+      {% if errors.country_code %}
+        <div class="error-text">{{ errors.country_code }}</div>
+      {% endif %}
+      {% if errors.phone_number %}
+        <div class="error-text">{{ errors.phone_number }}</div>
+      {% endif %}
+    </div>
+
+    <!-- Password -->
+    <div class="form-group">
+      <label class="form-label">
+        <svg viewBox="0 0 24 24">
+          <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
+          <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+        </svg>
+        Password
+      </label>
+      <input type="password"
+             name="password"
+             class="form-input"
+             placeholder="••••••••••••"
+             required>
+      {% if errors.password %}
+        <div class="error-text">{{ errors.password }}</div>
+      {% endif %}
+    </div>
+
+    <!-- Confirm Password -->
+    <div class="form-group">
+      <label class="form-label">
+        <svg viewBox="0 0 24 24">
+          <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
+          <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+        </svg>
+        Confirm Password
+      </label>
+      <input type="password"
+             name="confirm_password"
+             class="form-input"
+             placeholder="••••••••••••"
+             required>
+      {% if errors.confirm_password %}
+        <div class="error-text">{{ errors.confirm_password }}</div>
+      {% endif %}
+    </div>
+
+    <!-- T&C Checkbox -->
+    <div class="form-group tnc-row">
+      <label class="tnc-label">
+        <input type="checkbox" id="tncCheckbox" name="agreed_to_terms" value="1"
+               {% if form.agreed_to_terms %}checked{% endif %}>
+        <span>I have read and agree to the
+          <button type="button" class="tnc-link" onclick="openTncModal()">Terms &amp; Conditions</button>
+        </span>
+      </label>
+      {% if errors.agreed_to_terms %}
+        <div class="error-text">{{ errors.agreed_to_terms }}</div>
+      {% endif %}
+    </div>
+
+    <button class="btn-signup" type="submit" id="signupBtn">
+      Sign Up
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+        <line x1="5" y1="12" x2="19" y2="12"/>
+        <polyline points="12 5 19 12 12 19"/>
+      </svg>
+    </button>
+
+    <!-- Divider -->
+    <!-- <div class="divider-row">
+      <span class="divider-line"></span>
+      <span class="divider-text">or sign up with</span>
+      <span class="divider-line"></span>
+    </div> -->
+
+    <!-- Social signup buttons -->
+    <!-- <div class="social-row"> -->
+
+      <!-- DJANGO URL  -->
+   
+        <!-- Google
+      </a> -->
+
+      <!-- DJANGO URL -->
+
+        <!-- Apple
+      </a>
+	  -->
+    </div>
+
+    <div class="join-banner">
+      <svg viewBox="0 0 24 24">
+        <path d="M11 20A7 7 0 0 1 9.8 6.1C15.5 5 17 4.48 19 2c1 2 2 4.18 2 8 0 5.5-4.78 10-10 10z"/>
+        <path d="M2 21c0-3 1.85-5.36 5.08-6C9.5 14.52 12 13 13 12"/>
+      </svg>
+
+      <!-- DJANGO VARIABLE -->
+      {{ join_text|default:"Join 25,000+ eco-conscious commuters" }}
+    </div>
+
+  </form>
+
+</div>
+
+<!-- Login link -->
+<div class="login-row" style="margin-top:20px">
+  Already have an account?
+  <a href="{% url 'login' %}">Login</a>
+</div>
+</div><!-- /page-content -->
+<!-- ══ T&C Full-screen Modal ══ -->
+<div id="tncOverlay" class="tnc-overlay" role="dialog" aria-modal="true" aria-label="Terms and Conditions">
+  <div class="tnc-modal">
+
+    <!-- Header -->
+    <div class="tnc-modal-hd">
+      <div class="tnc-modal-hd-title">
+        <svg viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+        Terms &amp; Conditions
+      </div>
+      <button type="button" class="tnc-modal-close" onclick="closeTncModal()" aria-label="Close">
+        <svg viewBox="0 0 24 24"><line x1="6" y1="6" x2="18" y2="18"/><line x1="6" y1="18" x2="18" y2="6"/></svg>
+      </button>
+    </div>
+
+    <!-- Scrollable content -->
+    <div class="tnc-modal-body" id="tncBody">
+      <div class="tnc-modal-content">
+
+        <div class="policy-intro">
+          <div class="policy-intro-icon">
+            <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+          </div>
+          <p><strong>Welcome to Komüte.</strong> Komüte is a peer-to-peer carpooling platform operated by Indus Network LLC. These Terms &amp; Conditions govern your access to and use of the Komüte website, applications, and services (together, &ldquo;the Platform&rdquo;). If you do not agree with any part of these terms, please do not use the Platform.</p>
+        </div>
+
+        <div class="policy-section">
+          <div class="policy-section-head">
+            <div class="policy-num">1</div>
+            <div class="policy-section-title">Acceptance of Terms</div>
+          </div>
+          <div class="policy-section-body">
+            <p>By creating an account, posting a trip, booking a seat, or otherwise using Komüte, you confirm that you have read, understood, and agree to be bound by these Terms &amp; Conditions and our <a href="{% url 'privacy-policy' %}" style="color:var(--brand-green);font-weight:600">Privacy Policy</a> and <a href="{% url 'community-guidelines' %}" style="color:var(--brand-green);font-weight:600">Community Guidelines</a>.</p>
+            <p>Komüte is operated by Indus Network LLC (&ldquo;Komüte&rdquo;, &ldquo;we&rdquo;, &ldquo;us&rdquo;, &ldquo;our&rdquo;). These terms form a legally binding agreement between you and Komüte.</p>
+          </div>
+        </div>
+
+        <div class="policy-section">
+          <div class="policy-section-head">
+            <div class="policy-num">2</div>
+            <div class="policy-section-title">Eligibility</div>
+          </div>
+          <div class="policy-section-body">
+            <p>To use Komüte, you must:</p>
+            <ul>
+              <li>Be at least <strong>18 years of age</strong>.</li>
+              <li>Provide accurate, current, and complete information when registering.</li>
+              <li>Have the legal capacity to enter into a binding agreement.</li>
+              <li>Not have been previously suspended or removed from the Platform for cause.</li>
+            </ul>
+            <p style="margin-top:14px">To act as a <strong>driver</strong>, you must additionally hold a valid government-issued driver&rsquo;s licence and operate a vehicle that is roadworthy and covered by valid insurance.</p>
+          </div>
+        </div>
+
+        <div class="policy-section">
+          <div class="policy-section-head">
+            <div class="policy-num">3</div>
+            <div class="policy-section-title">Nature of the Service</div>
+          </div>
+          <div class="policy-section-body">
+            <p>Komüte is a <strong>free peer-to-peer carpooling platform</strong> — a medium that connects drivers and passengers travelling in the same direction so they can share a trip together. Our purpose is to bring people together, reduce empty seats on the road, and make commuting greener and more social.</p>
+            <div class="callout">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="10" stroke="#0D7810" stroke-width="2"/><path d="M12 8v5M12 16h.01" stroke="#0D7810" stroke-width="2" stroke-linecap="round"/></svg>
+              <p><strong>Komüte is free to use and is not a taxi service</strong>, a transportation network company, or a for-hire carrier. We charge no fees or commissions. Drivers are everyday commuters and travellers, not professional drivers, and are not employees, agents, or contractors of Komüte. Every trip is an independent arrangement between a driver and a passenger.</p>
+            </div>
+            <p>Komüte facilitates introductions and communication only. We do not provide transportation, do not process payments, and are not a party to any trip arranged through the Platform.</p>
+          </div>
+        </div>
+
+        <div class="policy-section">
+          <div class="policy-section-head">
+            <div class="policy-num">4</div>
+            <div class="policy-section-title">Accounts &amp; Security</div>
+          </div>
+          <div class="policy-section-body">
+            <ul>
+              <li>You are responsible for keeping your password and account credentials confidential.</li>
+              <li>You are responsible for all activity that occurs under your account.</li>
+              <li>You must notify us immediately of any unauthorised access or security breach.</li>
+              <li>One person may not maintain more than one account. One account may not be shared between people.</li>
+              <li>You may sign in using email and password or through a supported provider such as Google or Apple.</li>
+            </ul>
+          </div>
+        </div>
+
+        <div class="policy-section">
+          <div class="policy-section-head">
+            <div class="policy-num">5</div>
+            <div class="policy-section-title">User Responsibilities</div>
+          </div>
+          <div class="policy-section-body">
+            <h3>Drivers must</h3>
+            <ul>
+              <li>Hold a valid driver&rsquo;s licence and required vehicle insurance throughout every trip.</li>
+              <li>Maintain their vehicle in safe, roadworthy operating condition.</li>
+              <li>Drive in compliance with all applicable traffic laws.</li>
+              <li>Never drive under the influence of alcohol or any impairing substance.</li>
+              <li>Complete posted trips in good faith and cancel only when truly necessary.</li>
+            </ul>
+            <h3>Passengers must</h3>
+            <ul>
+              <li>Arrive on time at the agreed pickup point.</li>
+              <li>Honour any cost-sharing contribution agreed with the driver.</li>
+              <li>Behave respectfully toward the driver and any other passengers.</li>
+              <li>Not bring illegal substances, weapons, or hazardous items into the vehicle.</li>
+            </ul>
+          </div>
+        </div>
+
+        <div class="policy-section">
+          <div class="policy-section-head">
+            <div class="policy-num">6</div>
+            <div class="policy-section-title">Cost-Sharing &amp; Payments</div>
+          </div>
+          <div class="policy-section-body">
+            <div class="callout">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none"><path d="M12 2l2.6 6.6L21 9.3l-5 4.4L17.5 21 12 17.3 6.5 21 8 13.7l-5-4.4 6.4-.7L12 2z" stroke="#0D7810" stroke-width="2" stroke-linejoin="round"/></svg>
+              <p><strong>Komüte is completely free to use.</strong> We do not charge booking fees, commissions, subscriptions, or any other fees — to drivers or to passengers — now or in the future as a condition of using the core platform.</p>
+            </div>
+            <ul>
+              <li>Any contribution a passenger makes is agreed <strong>directly between the driver and the passenger</strong>, and may be discussed in the in-app chat before the trip.</li>
+              <li>Any agreed amount is a fair <strong>contribution toward the real cost of the trip</strong> — such as fuel — and is not a commercial fare. Drivers must not profit from trips.</li>
+              <li>Payment of any agreed contribution is arranged <strong>directly between the driver and the passenger</strong>. Komüte does not process, hold, or transfer money, and does not take any cut.</li>
+              <li>Because Komüte is a free connection service, we are not responsible for any payment, non-payment, or dispute over money exchanged between users.</li>
+            </ul>
+          </div>
+        </div>
+
+        <div class="policy-section">
+          <div class="policy-section-head">
+            <div class="policy-num">7</div>
+            <div class="policy-section-title">Cancellations</div>
+          </div>
+          <div class="policy-section-body">
+            <p>Because Komüte does not charge fees or process payments, cancelling a trip on the Platform costs you nothing. We still ask everyone to cancel responsibly:</p>
+            <ul>
+              <li>Cancel as <strong>early as possible</strong> when your plans change, so the other person has time to adjust.</li>
+              <li>Always let the other party know through the in-app chat when you cancel.</li>
+              <li><strong>Drivers</strong> who cancel a posted trip should notify all confirmed passengers promptly.</li>
+              <li>Repeated last-minute cancellations may affect your rating and your continued access to the Platform.</li>
+              <li>Any contribution exchanged directly between users is settled between those users — Komüte is not involved.</li>
+            </ul>
+          </div>
+        </div>
+
+        <div class="policy-section">
+          <div class="policy-section-head">
+            <div class="policy-num">8</div>
+            <div class="policy-section-title">Prohibited Conduct</div>
+          </div>
+          <div class="policy-section-body">
+            <p>You may not use the Platform to:</p>
+            <ul>
+              <li>Charge a commercial fare or profit from trips beyond genuine cost-sharing.</li>
+              <li>Harass, threaten, discriminate against, or endanger any user.</li>
+              <li>Misrepresent your identity, vehicle, licence, or trip details.</li>
+              <li>Transport minors without parental consent and an accompanying adult.</li>
+              <li>Transport commercial cargo, livestock, or hazardous materials.</li>
+              <li>Operate a commercial taxi or ride-hailing service through the Platform.</li>
+              <li>Post false, misleading, or fraudulent listings or reviews.</li>
+              <li>Interfere with, disrupt, or attempt to gain unauthorised access to the Platform.</li>
+            </ul>
+            <p style="margin-top:14px">Violation of these rules may result in suspension or permanent removal from the Platform.</p>
+          </div>
+        </div>
+
+        <div class="policy-section">
+          <div class="policy-section-head">
+            <div class="policy-num">9</div>
+            <div class="policy-section-title">Verification</div>
+          </div>
+          <div class="policy-section-body">
+            <p>Drivers must complete identity verification before posting their first trip. Verification uses optical character recognition on the driver&rsquo;s licence and a facial match against a selfie.</p>
+            <p>You agree to provide genuine, unedited documents. Submitting falsified documents is grounds for immediate and permanent removal, and may be reported to the relevant authorities.</p>
+            <p>Facial comparison during verification may involve the collection of biometric information. Before any biometric data is collected, you will be shown a separate biometric consent notice describing the purpose and retention period, and collection will proceed only with your express written (electronic) consent, as described in our <a href="{% url 'privacy-policy' %}" style="color:var(--brand-green);font-weight:600">Privacy Policy</a>. Verification does not guarantee the identity, character, driving ability, or conduct of any user, and Komüte makes no representation or warranty based on verification status. You remain responsible for exercising your own judgment when interacting with other users.</p>
+          </div>
+        </div>
+
+        <div class="policy-section">
+          <div class="policy-section-head">
+            <div class="policy-num">10</div>
+            <div class="policy-section-title">Assumption of Risk &amp; Release</div>
+          </div>
+          <div class="policy-section-body">
+            <p>Carpooling with other private individuals involves inherent risks, including the risk of traffic accidents, property damage, personal injury, delays, and disagreements between users. By using the Platform, you acknowledge these risks and agree that you use the Platform and participate in any trip <strong>voluntarily and at your own risk</strong>.</p>
+            <p>Komüte does not conduct criminal background checks, does not inspect vehicles, does not supervise trips, and has no control over the conduct of drivers or passengers. Each trip is an independent, private arrangement between the users involved.</p>
+            <p>To the maximum extent permitted by applicable law, you release Komüte and Indus Network LLC, and their officers, directors, employees, and agents, from all claims, demands, and damages of every kind arising out of or connected with disputes between users or the acts or omissions of other users, including personal injury, death, or property damage occurring during or in connection with a trip.</p>
+            <div class="callout">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="10" stroke="#0D7810" stroke-width="2"/><path d="M12 8v5M12 16h.01" stroke="#0D7810" stroke-width="2" stroke-linecap="round"/></svg>
+              <p><strong>Nothing in this section limits rights that cannot be waived by law</strong> — including statutory consumer rights in the European Union, United Kingdom, Quebec, or elsewhere, or liability for death or personal injury caused by our own negligence where such liability cannot legally be excluded.</p>
+            </div>
+          </div>
+        </div>
+
+        <div class="policy-section">
+          <div class="policy-section-head">
+            <div class="policy-num">11</div>
+            <div class="policy-section-title">Limitation of Liability</div>
+          </div>
+          <div class="policy-section-body">
+            <p>Komüte is a marketplace that connects drivers and passengers. To the maximum extent permitted by law, Komüte and Indus Network LLC are not liable for any direct, indirect, incidental, special, punitive, exemplary, or consequential damages — including loss of data, loss of goodwill, personal injury, or property damage — arising from any trip, interaction, content, or use of (or inability to use) the Platform, even if we have been advised of the possibility of such damages.</p>
+            <p>The Platform is provided on an &ldquo;as is&rdquo; and &ldquo;as available&rdquo; basis, without warranties of any kind, whether express or implied, including implied warranties of merchantability, fitness for a particular purpose, and non-infringement. We do not guarantee the conduct, reliability, or suitability of any user, nor that the Platform will be uninterrupted, secure, or error-free.</p>
+            <p>To the maximum extent permitted by law, the total aggregate liability of Komüte and Indus Network LLC for all claims relating to the Platform shall not exceed <strong>one hundred US dollars (US $100)</strong>, given that the Platform is provided free of charge.</p>
+            <p>Some jurisdictions — including EU member states, the United Kingdom, and certain US states and Canadian provinces — do not allow the exclusion of certain warranties or the limitation of certain damages. In those jurisdictions, the above exclusions and limitations apply only to the fullest extent permitted, and you may have additional statutory rights that these Terms do not affect.</p>
+          </div>
+        </div>
+
+        <div class="policy-section">
+          <div class="policy-section-head">
+            <div class="policy-num">12</div>
+            <div class="policy-section-title">Indemnification</div>
+          </div>
+          <div class="policy-section-body">
+            <p>To the maximum extent permitted by applicable law, you agree to indemnify, defend, and hold harmless Komüte, Indus Network LLC, and their officers, directors, employees, and agents from and against any claims, liabilities, damages, losses, and expenses (including reasonable legal fees) arising out of or connected with:</p>
+            <ul>
+              <li>Your use of the Platform or participation in any trip.</li>
+              <li>Your violation of these Terms, the <a href="{% url 'community-guidelines' %}" style="color:var(--brand-green);font-weight:600">Community Guidelines</a>, or any applicable law or regulation (including traffic, insurance, and tax laws).</li>
+              <li>Your violation of the rights of any third party, including other users.</li>
+              <li>Content you post or share on the Platform.</li>
+              <li>Any inaccurate or fraudulent information you provide, including during verification.</li>
+            </ul>
+            <p style="margin-top:14px">This obligation does not apply to the extent a claim arises from our own breach of these Terms or our own negligence or wilful misconduct, and it does not apply where such indemnification is prohibited by mandatory consumer protection law in your jurisdiction.</p>
+          </div>
+        </div>
+
+        <div class="policy-section">
+          <div class="policy-section-head">
+            <div class="policy-num">13</div>
+            <div class="policy-section-title">Insurance</div>
+          </div>
+          <div class="policy-section-body">
+            <p>Drivers are solely responsible for ensuring their personal vehicle insurance covers carpooling and cost-sharing activity in their jurisdiction, and for confirming that accepting cost contributions does not void their coverage. Komüte does not provide, broker, or verify insurance coverage for trips arranged through the Platform. Passengers are encouraged to confirm a driver&rsquo;s coverage where relevant.</p>
+          </div>
+        </div>
+
+        <div class="policy-section">
+          <div class="policy-section-head">
+            <div class="policy-num">14</div>
+            <div class="policy-section-title">Intellectual Property &amp; User Content</div>
+          </div>
+          <div class="policy-section-body">
+            <p>The Platform — including its software, design, logos, trademarks, and content created by Komüte — is owned by Indus Network LLC or its licensors and is protected by intellectual property laws. We grant you a limited, non-exclusive, non-transferable, revocable licence to use the Platform for personal, non-commercial carpooling purposes in accordance with these Terms. You may not copy, modify, reverse engineer, scrape, or create derivative works of the Platform except as permitted by law.</p>
+            <p>You retain ownership of content you post (such as profile information, trip listings, messages, and reviews). By posting content, you grant Komüte a worldwide, non-exclusive, royalty-free licence to host, store, display, and distribute that content solely to operate, improve, and promote the Platform. You represent that you have the rights to any content you post and that it does not infringe the rights of others.</p>
+            <p>We respect intellectual property rights. If you believe content on the Platform infringes your copyright, send a notice to <strong>legal@komute.net</strong> including the identification of the work, the allegedly infringing material, your contact details, and a statement of good-faith belief, consistent with the US Digital Millennium Copyright Act (DMCA) or equivalent local law. We may remove content and terminate repeat infringers.</p>
+          </div>
+        </div>
+
+        <div class="policy-section">
+          <div class="policy-section-head">
+            <div class="policy-num">15</div>
+            <div class="policy-section-title">Termination &amp; Suspension</div>
+          </div>
+          <div class="policy-section-body">
+            <ul>
+              <li>You may stop using the Platform and close your account at any time through account settings or by contacting support.</li>
+              <li>We may suspend or terminate your account, remove content, or restrict access — with or without notice — if we reasonably believe you have violated these Terms, the Community Guidelines, or applicable law, or if your conduct creates risk or possible legal exposure for us or other users.</li>
+              <li>Where reasonable, we will give you notice and an opportunity to respond; for serious safety violations, fraud, or legal requirements, we may act immediately.</li>
+              <li>Sections that by their nature should survive termination — including Assumption of Risk &amp; Release, Limitation of Liability, Indemnification, Dispute Resolution, and Governing Law — survive termination of your account or these Terms.</li>
+            </ul>
+          </div>
+        </div>
+
+        <div class="policy-section">
+          <div class="policy-section-head">
+            <div class="policy-num">16</div>
+            <div class="policy-section-title">Dispute Resolution &amp; Arbitration</div>
+          </div>
+          <div class="policy-section-body">
+            <h3>Step 1 — Informal resolution</h3>
+            <p>Disputes between users should first be raised directly in the in-app chat. Disputes with Komüte should first be sent to <strong>support@komute.net</strong> with a description of the issue; both parties agree to attempt in good faith to resolve any dispute informally for at least 60 days before starting formal proceedings.</p>
+            <h3>Step 2 — Binding arbitration (US and Canada)</h3>
+            <p>If informal resolution fails, and to the maximum extent permitted by applicable law, you and Komüte agree that any dispute, claim, or controversy arising out of or relating to these Terms or the Platform will be resolved by <strong>final and binding individual arbitration</strong>, rather than in court, except that either party may (a) bring an individual claim in small-claims court, or (b) seek injunctive relief for infringement or misuse of intellectual property.</p>
+            <ul>
+              <li><strong>United States:</strong> arbitration will be administered by the American Arbitration Association (AAA) under its Consumer Arbitration Rules, seated in Delaware or conducted remotely, and governed by the US Federal Arbitration Act.</li>
+              <li><strong>Canada:</strong> arbitration will be administered by the ADR Institute of Canada under its Arbitration Rules, seated in Toronto, Ontario, or conducted remotely. Nothing in this section limits non-waivable rights under provincial consumer protection legislation, including in Quebec and Ontario, where consumers may retain the right to bring claims in court.</li>
+              <li><strong>Costs:</strong> for consumer claims, Komüte will pay arbitration filing and administration fees that exceed the cost of filing the same claim in court.</li>
+            </ul>
+            <h3>Class action waiver</h3>
+            <p>To the maximum extent permitted by applicable law, you and Komüte each waive the right to a trial by jury and the right to participate in a class action, class arbitration, or other representative proceeding. All claims must be brought in the parties&rsquo; individual capacity. If this waiver is found unenforceable as to a particular claim, that claim (and only that claim) shall proceed in court.</p>
+            <h3>Opt-out</h3>
+            <p>You may opt out of this arbitration agreement and class action waiver by emailing <strong>legal@komute.net</strong> within 30 days of first accepting these Terms, stating your name, account email, and your intent to opt out. Opting out does not affect any other part of these Terms.</p>
+            <h3>European Union &amp; United Kingdom users</h3>
+            <p>If you reside in the EU, EEA, or UK, the arbitration agreement and class action waiver above do not apply to you. You may bring claims in the courts of your country of residence, and you retain all mandatory consumer rights under local law. EU residents may also use the alternative dispute resolution bodies available in their member state.</p>
+          </div>
+        </div>
+
+        <div class="policy-section">
+          <div class="policy-section-head">
+            <div class="policy-num">17</div>
+            <div class="policy-section-title">Governing Law</div>
+          </div>
+          <div class="policy-section-body">
+            <ul>
+              <li><strong>United States users:</strong> these Terms are governed by the laws of the State of Delaware, USA, without regard to its conflict-of-law rules.</li>
+              <li><strong>Canadian users:</strong> these Terms are governed by the laws of the Province of Ontario and the federal laws of Canada applicable therein.</li>
+              <li><strong>EU / EEA / UK users:</strong> these Terms are governed by the law identified above only to the extent it does not deprive you of the protection of mandatory provisions of the law of your country of habitual residence, which continue to apply.</li>
+            </ul>
+          </div>
+        </div>
+
+        <div class="policy-section">
+          <div class="policy-section-head">
+            <div class="policy-num">18</div>
+            <div class="policy-section-title">General Provisions</div>
+          </div>
+          <div class="policy-section-body">
+            <ul>
+              <li><strong>Severability:</strong> if any provision of these Terms is held invalid or unenforceable, it will be enforced to the maximum extent permissible and the remaining provisions will remain in full force.</li>
+              <li><strong>Entire agreement:</strong> these Terms, together with the Privacy Policy and Community Guidelines, constitute the entire agreement between you and Komüte regarding the Platform and supersede all prior agreements on that subject.</li>
+              <li><strong>No waiver:</strong> our failure to enforce any right or provision is not a waiver of that right or provision.</li>
+              <li><strong>Assignment:</strong> you may not assign or transfer these Terms without our prior written consent. We may assign these Terms in connection with a merger, acquisition, reorganization, or sale of assets, or by operation of law.</li>
+              <li><strong>Force majeure:</strong> we are not liable for any delay or failure to perform resulting from causes beyond our reasonable control, including natural disasters, war, terrorism, labour disputes, governmental action, internet or utility failures.</li>
+              <li><strong>No relationship:</strong> nothing in these Terms creates any partnership, joint venture, employment, or agency relationship between you and Komüte, or between Komüte and any driver or passenger.</li>
+              <li><strong>Third-party services:</strong> the Platform may rely on third-party services (such as sign-in providers and geocoding services). We are not responsible for the availability or conduct of third-party services, which are governed by their own terms.</li>
+            </ul>
+          </div>
+        </div>
+
+        <div class="policy-section">
+          <div class="policy-section-head">
+            <div class="policy-num">19</div>
+            <div class="policy-section-title">Changes to These Terms</div>
+          </div>
+          <div class="policy-section-body">
+            <p>We may update these Terms &amp; Conditions from time to time. Material changes will be communicated by email at least 30 days before they take effect. Your continued use of the Platform after changes take effect constitutes acceptance of the revised terms. If you do not agree with a change, you must stop using the Platform and may close your account before the change takes effect. Changes will not apply retroactively to disputes that arose before the effective date of the change.</p>
+          </div>
+        </div>
+
+        <div class="policy-section">
+          <div class="policy-section-head">
+            <div class="policy-num">20</div>
+            <div class="policy-section-title">Contact</div>
+          </div>
+          <div class="policy-section-body">
+            <p>Questions about these Terms &amp; Conditions can be sent to <strong>legal@komute.net</strong>, or through our <a href="{% url 'contact-us' %}" style="color:var(--brand-green);font-weight:600">Contact page</a>.</p>
+            <p style="margin-top:14px;color:var(--text-muted)">Indus Network LLC &middot; Operator of the Komüte platform.</p>
+          </div>
+        </div>
+
+        <div class="tnc-bottom-note">
+          <strong>© KOMUTE 2026</strong> &nbsp;·&nbsp; All rights reserved. &nbsp;·&nbsp; Last updated: July 9, 2026
+        </div>
+
+      </div>
+    </div>
+
+    <!-- Footer: scroll message + accept button -->
+    <div class="tnc-modal-ft">
+      <p class="tnc-scroll-msg" id="tncScrollMsg">
+        <svg viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><polyline points="19 12 12 19 5 12"/></svg>
+        Scroll to the bottom to enable acceptance
+      </p>
+      <button type="button" id="tncAcceptBtn" class="tnc-accept-btn" disabled onclick="acceptTnc()">
+        I Accept
+        <svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>
+      </button>
+    </div>
+
+  </div>
+</div>
+
+<script>
+(function () {
+  var overlay   = document.getElementById('tncOverlay');
+  var body      = document.getElementById('tncBody');
+  var acceptBtn = document.getElementById('tncAcceptBtn');
+  var scrollMsg = document.getElementById('tncScrollMsg');
+  var checkbox  = document.getElementById('tncCheckbox');
+  var signupBtn = document.getElementById('signupBtn');
+
+  function checkScroll() {
+    var atBottom = body.scrollTop + body.clientHeight >= body.scrollHeight - 20;
+    acceptBtn.disabled = !atBottom;
+    scrollMsg.style.display = atBottom ? 'none' : '';
+  }
+
+  window.openTncModal = function () {
+    overlay.classList.add('open');
+    document.body.style.overflow = 'hidden';
+    body.scrollTop = 0;
+    acceptBtn.disabled = true;
+    scrollMsg.style.display = '';
+    setTimeout(checkScroll, 60);
+  };
+
+  window.closeTncModal = function () {
+    overlay.classList.remove('open');
+    document.body.style.overflow = '';
+  };
+
+  window.acceptTnc = function () {
+    tncAccepted = true;
+    checkbox.checked = true;
+    signupBtn.disabled = false;
+    closeTncModal();
+  };
+
+  body.addEventListener('scroll', checkScroll, { passive: true });
+
+  // Track whether the user actually scrolled through the modal
+  var tncAccepted = checkbox.checked;
+
+  // Intercept direct checkbox click — must go through the modal
+  checkbox.addEventListener('click', function (e) {
+    if (!tncAccepted) {
+      e.preventDefault();
+      openTncModal();
+    } else if (!this.checked) {
+      // User unchecked — require re-reading next time
+      tncAccepted = false;
+      signupBtn.disabled = true;
+    }
+  });
+
+  document.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape' && overlay.classList.contains('open')) closeTncModal();
+  });
+
+  // Disable submit on load if checkbox is not pre-checked
+  if (!checkbox.checked) signupBtn.disabled = true;
+})();
+</script>
+
+{% include 'footer.html' %}
+</body>
+</html>

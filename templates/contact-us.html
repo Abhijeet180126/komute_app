@@ -1,0 +1,529 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Contact Us — Komüte</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800&family=DM+Sans:wght@400;500;600;700&family=Montserrat:wght@700;800&display=swap">
+<style>
+  :root{
+    --brand-green:#0D7810;
+    --grad-blue:#0C63B4;
+    --grad-green:#0CB439;
+    --light-bg:#E9F7EE;
+    --contrast-lt:#D5FBE5;
+    --card-border:#E2F0E4;
+    --input-border:#C2DFC8;
+    --input-bg:#F6FBF7;
+    --nav-border:#D8EED9;
+    --text-dark:#121212;
+    --text-muted:#5A7060;
+    --danger:#DC2626;
+  }
+  *{margin:0;padding:0;box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  body{
+    font-family:'DM Sans',sans-serif;
+    background:var(--light-bg);
+    color:var(--text-dark);
+    line-height:1.7;
+    -webkit-font-smoothing:antialiased;
+  }
+  a{color:inherit;text-decoration:none}
+
+  /* ---------- NAV ---------- */
+  .nav{
+    position:sticky;top:0;z-index:100;
+    background:rgba(255,255,255,.92);
+    backdrop-filter:blur(10px);
+    border-bottom:1px solid var(--nav-border);
+  }
+  .nav-inner{
+    max-width:1180px;margin:0 auto;padding:14px 24px;
+    display:flex;align-items:center;justify-content:space-between;
+  }
+  .brand{display:flex;align-items:center;gap:10px}
+  .brand-mark{
+    width:38px;height:38px;border-radius:11px;
+    background:linear-gradient(135deg,var(--grad-blue),var(--grad-green));
+    display:grid;place-items:center;flex-shrink:0;
+  }
+  .brand-mark svg{width:24px;height:24px}
+  .brand-name{
+    font-family:'Montserrat',sans-serif;font-weight:800;font-size:21px;
+    letter-spacing:.04em;
+    background:linear-gradient(90deg,var(--grad-blue),var(--grad-green));
+    -webkit-background-clip:text;background-clip:text;color:transparent;
+  }
+  .nav-links{display:flex;gap:30px;align-items:center}
+  .nav-links a{font-weight:500;font-size:15px;color:var(--text-muted);transition:color .2s}
+  .nav-links a:hover{color:var(--brand-green)}
+  .nav-links a.active{color:var(--brand-green);font-weight:600}
+  .nav-cta{
+    font-family:'Poppins',sans-serif;font-weight:600;font-size:14px;
+    color:#fff!important;padding:9px 20px;border-radius:9px;
+    background:var(--brand-green);transition:transform .15s,box-shadow .2s;
+  }
+  .nav-cta:hover{transform:translateY(-1px);box-shadow:0 6px 16px rgba(13,120,16,.28)}
+  .burger{display:none;background:none;border:0;cursor:pointer;padding:6px}
+  .burger span{display:block;width:24px;height:2.5px;background:var(--text-dark);
+    border-radius:2px;margin:5px 0;transition:.3s}
+
+  /* ---------- HERO ---------- */
+  .hero{
+    position:relative;overflow:hidden;
+    background:linear-gradient(135deg,var(--grad-blue),var(--grad-green));
+    color:#fff;padding:74px 24px 110px;text-align:center;
+  }
+  .hero::before,.hero::after{content:"";position:absolute;border-radius:50%;background:rgba(255,255,255,.09)}
+  .hero::before{width:360px;height:360px;top:-170px;right:-100px}
+  .hero::after{width:250px;height:250px;bottom:-150px;left:-80px}
+  .hero-inner{max-width:680px;margin:0 auto;position:relative;z-index:2}
+  .crumb{font-size:13px;font-weight:500;letter-spacing:.05em;text-transform:uppercase;opacity:.85;margin-bottom:14px}
+  .crumb a:hover{text-decoration:underline}
+  .hero h1{
+    font-family:'Poppins',sans-serif;font-weight:800;
+    font-size:clamp(34px,5.5vw,54px);line-height:1.1;margin-bottom:14px;
+  }
+  .hero p{font-size:17px;opacity:.94}
+
+  /* ---------- LAYOUT ---------- */
+  .wrap{
+    max-width:1180px;margin:-70px auto 0;padding:0 24px 90px;
+    position:relative;z-index:5;
+    display:grid;grid-template-columns:1fr 1.25fr;gap:26px;align-items:start;
+  }
+
+  /* ---------- INFO COLUMN ---------- */
+  .info-card{
+    background:#fff;border:1px solid var(--card-border);border-radius:18px;
+    padding:30px 26px;box-shadow:0 4px 24px rgba(13,120,16,.07);
+    margin-bottom:22px;
+  }
+  .info-card h2{
+    font-family:'Poppins',sans-serif;font-weight:700;font-size:19px;margin-bottom:6px;
+  }
+  .info-card > p{font-size:14px;color:var(--text-muted);margin-bottom:20px}
+  .channel{
+    display:flex;gap:14px;align-items:flex-start;
+    padding:14px;border-radius:13px;transition:background .18s;
+    margin:0 -8px;
+  }
+  .channel:hover{background:var(--light-bg)}
+  .channel + .channel{margin-top:4px}
+  .ch-ico{
+    width:44px;height:44px;border-radius:12px;flex-shrink:0;
+    background:var(--contrast-lt);display:grid;place-items:center;
+  }
+  .ch-text h3{
+    font-family:'Poppins',sans-serif;font-weight:600;font-size:14.5px;
+    margin-bottom:2px;
+  }
+  .ch-text a,.ch-text span{font-size:13.8px;color:var(--text-muted);display:block}
+  .ch-text a:hover{color:var(--brand-green)}
+
+  .hours-card{
+    background:linear-gradient(135deg,var(--grad-blue),var(--grad-green));
+    border-radius:18px;padding:26px;color:#fff;
+  }
+  .hours-card h3{
+    font-family:'Poppins',sans-serif;font-weight:700;font-size:16px;
+    display:flex;align-items:center;gap:9px;margin-bottom:14px;
+  }
+  .hours-row{
+    display:flex;justify-content:space-between;font-size:14px;
+    padding:7px 0;border-bottom:1px solid rgba(255,255,255,.18);
+  }
+  .hours-row:last-child{border-bottom:0}
+  .hours-row span:last-child{font-weight:600}
+
+  .socials{display:flex;gap:10px;margin-top:18px}
+  .socials a{
+    width:40px;height:40px;border-radius:11px;
+    background:rgba(255,255,255,.16);border:1px solid rgba(255,255,255,.25);
+    display:grid;place-items:center;transition:background .2s,transform .15s;
+  }
+  .socials a:hover{background:rgba(255,255,255,.3);transform:translateY(-2px)}
+
+  /* ---------- FORM CARD ---------- */
+  .form-card{
+    background:#fff;border:1px solid var(--card-border);border-radius:18px;
+    padding:38px clamp(22px,3.5vw,40px);
+    box-shadow:0 4px 24px rgba(13,120,16,.07);
+  }
+  .form-card h2{
+    font-family:'Poppins',sans-serif;font-weight:700;font-size:23px;margin-bottom:4px;
+  }
+  .form-card .sub{font-size:14.5px;color:var(--text-muted);margin-bottom:26px}
+  .field{margin-bottom:18px}
+  .field label{
+    display:block;font-family:'Poppins',sans-serif;font-weight:500;
+    font-size:13.5px;margin-bottom:7px;color:var(--text-dark);
+  }
+  .field label .req{color:var(--danger)}
+  .field input,.field select,.field textarea{
+    width:100%;font-family:'DM Sans',sans-serif;font-size:14.5px;
+    padding:12px 14px;border:1.5px solid var(--input-border);
+    border-radius:10px;background:var(--input-bg);color:var(--text-dark);
+    transition:border-color .18s,box-shadow .18s;
+  }
+  .field input:focus,.field select:focus,.field textarea:focus{
+    outline:none;border-color:var(--brand-green);
+    box-shadow:0 0 0 3px rgba(13,120,16,.12);
+  }
+  .field textarea{resize:vertical;min-height:130px;line-height:1.6}
+  .row-2{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+  .char-count{
+    font-size:12px;color:var(--text-muted);text-align:right;margin-top:5px;
+  }
+  .char-count.over{color:var(--danger);font-weight:600}
+  .submit-btn{
+    width:100%;font-family:'Poppins',sans-serif;font-weight:600;font-size:15.5px;
+    color:#fff;background:var(--brand-green);
+    border:0;border-radius:11px;padding:15px;cursor:pointer;
+    display:flex;align-items:center;justify-content:center;gap:9px;
+    transition:transform .15s,box-shadow .2s,background .2s;margin-top:6px;
+  }
+  .submit-btn:hover{transform:translateY(-2px);box-shadow:0 8px 22px rgba(13,120,16,.3)}
+  .submit-btn:active{transform:translateY(0)}
+  .form-note{
+    font-size:12.5px;color:var(--text-muted);text-align:center;margin-top:14px;
+  }
+  .form-note a{color:var(--brand-green);font-weight:600}
+  /* success state */
+  .success{
+    display:none;text-align:center;padding:30px 10px;
+  }
+  .success.show{display:block}
+  .success .check{
+    width:74px;height:74px;border-radius:50%;
+    background:var(--contrast-lt);display:grid;place-items:center;
+    margin:0 auto 18px;
+  }
+  .success h3{
+    font-family:'Poppins',sans-serif;font-weight:700;font-size:21px;margin-bottom:8px;
+  }
+  .success p{font-size:14.5px;color:var(--text-muted);max-width:340px;margin:0 auto}
+  .success button{
+    margin-top:20px;font-family:'Poppins',sans-serif;font-weight:600;font-size:14px;
+    background:none;border:1.5px solid var(--input-border);color:var(--text-dark);
+    padding:11px 22px;border-radius:10px;cursor:pointer;transition:border-color .18s;
+  }
+  .success button:hover{border-color:var(--brand-green);color:var(--brand-green)}
+
+  /* ---------- FAQ ---------- */
+  .faq-wrap{max-width:1180px;margin:0 auto;padding:0 24px 90px}
+  .faq-head{text-align:center;margin-bottom:30px}
+  .faq-head h2{
+    font-family:'Poppins',sans-serif;font-weight:800;
+    font-size:clamp(24px,3.5vw,32px);margin-bottom:6px;
+  }
+  .faq-head p{font-size:15px;color:var(--text-muted)}
+  .faq-list{max-width:760px;margin:0 auto;display:flex;flex-direction:column;gap:12px}
+  .faq{
+    background:#fff;border:1px solid var(--card-border);border-radius:14px;
+    overflow:hidden;transition:box-shadow .2s;
+  }
+  .faq[open]{box-shadow:0 6px 20px rgba(13,120,16,.1)}
+  .faq summary{
+    list-style:none;cursor:pointer;padding:18px 22px;
+    font-family:'Poppins',sans-serif;font-weight:600;font-size:15px;
+    display:flex;justify-content:space-between;align-items:center;gap:14px;
+  }
+  .faq summary::-webkit-details-marker{display:none}
+  .faq summary .plus{
+    width:26px;height:26px;border-radius:8px;flex-shrink:0;
+    background:var(--contrast-lt);display:grid;place-items:center;
+    transition:transform .25s;
+  }
+  .faq[open] summary .plus{transform:rotate(45deg)}
+  .faq p{
+    padding:0 22px 20px;font-size:14.3px;color:#2c3a30;line-height:1.65;
+  }
+
+  /* ---------- FOOTER ---------- */
+  .foot{background:var(--text-dark);color:#cdd9d0;padding:54px 24px 30px}
+  .foot-inner{max-width:1180px;margin:0 auto;display:flex;flex-wrap:wrap;gap:40px;justify-content:space-between}
+  .foot-brand{max-width:300px}
+  .foot-brand .brand-name{font-size:23px}
+  .foot-brand p{font-size:14px;color:#9fb0a4;margin-top:12px}
+  .foot-col h4{font-family:'Poppins',sans-serif;font-size:14px;font-weight:600;color:#fff;margin-bottom:14px}
+  .foot-col a{display:block;font-size:14px;color:#9fb0a4;margin-bottom:9px;transition:color .2s}
+  .foot-col a:hover{color:var(--grad-green)}
+  .foot-bottom{
+    max-width:1180px;margin:38px auto 0;padding-top:22px;border-top:1px solid #2a3a2e;
+    display:flex;flex-wrap:wrap;gap:12px;justify-content:space-between;font-size:13px;color:#7f9085;
+  }
+
+  /* ---------- RESPONSIVE ---------- */
+  @media(max-width:880px){
+    .wrap{grid-template-columns:1fr}
+  }
+  @media(max-width:680px){
+    .nav-links{
+      display:none;position:absolute;top:100%;left:0;right:0;
+      flex-direction:column;gap:0;background:#fff;
+      border-bottom:1px solid var(--nav-border);padding:8px 0;
+    }
+    .nav-links.open{display:flex}
+    .nav-links a{padding:13px 24px;width:100%}
+    .nav-links .nav-cta{margin:8px 24px;text-align:center}
+    .burger{display:block}
+    .row-2{grid-template-columns:1fr}
+  }
+</style>
+</head>
+<body>
+
+<!-- ============ NAV ============ -->
+{% include 'header.html' %}
+<!-- ============ HERO ============ -->
+<header class="hero">
+  <div class="hero-inner">
+    <div class="crumb"><a href="{% url 'home' %}">Home</a> &nbsp;/&nbsp; Contact</div>
+    <h1>Get in Touch</h1>
+    <p>Questions, feedback, or need a hand with a ride? The Komüte team is here to help — reach out and we&rsquo;ll get back to you fast.</p>
+  </div>
+</header>
+
+<!-- ============ BODY ============ -->
+<div class="wrap">
+
+  <!-- INFO COLUMN -->
+  <div class="info-col">
+    <div class="info-card">
+      <h2>Contact channels</h2>
+      <p>Pick whichever way is easiest for you.</p>
+
+      <div class="channel">
+        <div class="ch-ico">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none"><rect x="3" y="5" width="18" height="14" rx="3" stroke="#0D7810" stroke-width="2"/><path d="M4 7l8 6 8-6" stroke="#0D7810" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </div>
+        <div class="ch-text">
+          <h3>General Support</h3>
+          <a href="mailto:support@komute.net">support@komute.net</a>
+        </div>
+      </div>
+
+      <div class="channel">
+        <div class="ch-ico">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none"><path d="M12 2l8 3v6c0 5-3.4 9-8 11-4.6-2-8-6-8-11V5l8-3z" stroke="#0D7810" stroke-width="2" stroke-linejoin="round"/><path d="M9 12l2 2 4-4" stroke="#0D7810" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </div>
+        <div class="ch-text">
+          <h3>Trust &amp; Safety</h3>
+          <a href="mailto:safety@komute.net">safety@komute.net</a>
+        </div>
+      </div>
+
+      <div class="channel">
+        <div class="ch-ico">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none"><path d="M4 5h16v11H7l-3 3V5z" stroke="#0D7810" stroke-width="2" stroke-linejoin="round"/><path d="M8 9h8M8 12h5" stroke="#0D7810" stroke-width="2" stroke-linecap="round"/></svg>
+        </div>
+        <div class="ch-text">
+          <h3>Legal &amp; Privacy</h3>
+          <a href="mailto:legal@komute.net">legal@komute.net</a>
+        </div>
+      </div>
+
+      <div class="channel">
+        <div class="ch-ico">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none"><path d="M12 21s-7-4.6-9.5-9C1 9 2.6 5 7 5c2.2 0 3.8 1.2 5 3 1.2-1.8 2.8-3 5-3 4.4 0 6 4 4.5 7-2.5 4.4-9.5 9-9.5 9z" stroke="#0D7810" stroke-width="2" stroke-linejoin="round"/></svg>
+        </div>
+        <div class="ch-text">
+          <h3>Partnerships</h3>
+          <a href="mailto:hello@komute.net">hello@komute.net</a>
+        </div>
+      </div>
+    </div>
+
+    <div class="hours-card">
+      <h3>
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="9" stroke="#fff" stroke-width="2"/><path d="M12 7v5l3.5 2.5" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        Support Hours
+      </h3>
+      <div class="hours-row"><span>Monday &ndash; Friday</span><span>8:00 AM &ndash; 8:00 PM</span></div>
+      <div class="hours-row"><span>Saturday</span><span>9:00 AM &ndash; 5:00 PM</span></div>
+      <div class="hours-row"><span>Sunday</span><span>10:00 AM &ndash; 4:00 PM</span></div>
+      <div class="hours-row"><span>Times shown</span><span>Eastern Time</span></div>
+      <!-- Social links disabled until real accounts exist (same as footer.html)
+      <div class="socials">
+        <a href="#" aria-label="Instagram"><svg width="18" height="18" viewBox="0 0 24 24" fill="none"><rect x="3" y="3" width="18" height="18" rx="5" stroke="#fff" stroke-width="2"/><circle cx="12" cy="12" r="4" stroke="#fff" stroke-width="2"/><circle cx="17.5" cy="6.5" r="1.3" fill="#fff"/></svg></a>
+        <a href="#" aria-label="X"><svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M4 4l16 16M20 4L4 20" stroke="#fff" stroke-width="2.4" stroke-linecap="round"/></svg></a>
+        <a href="#" aria-label="LinkedIn"><svg width="18" height="18" viewBox="0 0 24 24" fill="none"><rect x="3" y="3" width="18" height="18" rx="3" stroke="#fff" stroke-width="2"/><path d="M7 10v7M7 7v.01M11 17v-4a2 2 0 014 0v4" stroke="#fff" stroke-width="2" stroke-linecap="round"/></svg></a>
+        <a href="#" aria-label="Facebook"><svg width="18" height="18" viewBox="0 0 24 24" fill="none"><path d="M14 8h2.5V4.5H14c-2.2 0-3.5 1.5-3.5 3.8V10H8v3.5h2.5V21H14v-7.5h2.6L17 10h-3V8.7c0-.5.3-.7.9-.7z" stroke="#fff" stroke-width="1.8" stroke-linejoin="round"/></svg></a>
+      </div>
+      -->
+    </div>
+  </div>
+
+  <!-- FORM CARD -->
+  <div class="form-card">
+    <div id="formView">
+      <h2>Send us a message</h2>
+      <p class="sub">Fill in the form below and we&rsquo;ll reply to your email within one business day.</p>
+
+      <form id="contactForm" novalidate method="post" action="{% url 'contact-us' %}">
+        {% csrf_token %}
+        <div class="row-2">
+          <div class="field">
+            <label for="name">Full name <span class="req">*</span></label>
+            <input type="text" id="name" name="name" placeholder="Jordan Lee" required>
+          </div>
+          <div class="field">
+            <label for="email">Email address <span class="req">*</span></label>
+            <input type="email" id="email" name="email" placeholder="you@example.com" required>
+          </div>
+        </div>
+
+        <div class="row-2">
+          <div class="field">
+            <label for="role">I am a</label>
+            <select id="role" name="role">
+              <option value="">Select&hellip;</option>
+              <option>Passenger</option>
+              <option>Driver</option>
+              <option>Both</option>
+              <option>Not a user yet</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="topic">Topic <span class="req">*</span></label>
+            <select id="topic" name="topic" required>
+              <option value="">Select a topic&hellip;</option>
+              <option>General question</option>
+              <option>Help with a booking</option>
+              <option>Account &amp; verification</option>
+              <option>Cost-sharing question</option>
+              <option>Report a safety concern</option>
+              <option>Partnership / press</option>
+              <option>Feedback &amp; suggestions</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="field">
+          <label for="subject">Subject <span class="req">*</span></label>
+          <input type="text" id="subject" name="subject" placeholder="Brief summary of your message" required>
+        </div>
+
+        <div class="field">
+          <label for="message">Message <span class="req">*</span></label>
+          <textarea id="message" name="message" maxlength="1000" placeholder="Tell us how we can help&hellip;" required></textarea>
+          <div class="char-count" id="charCount">0 / 1000</div>
+        </div>
+
+        <button type="submit" class="submit-btn">
+          Send Message
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none"><path d="M4 12h15M13 5l7 7-7 7" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </button>
+        <p class="form-note">By submitting, you agree to our <a href="{% url 'terms-condition' %}">Terms</a> and <a href="{% url 'privacy-policy' %}">Privacy Policy</a>.</p>
+      </form>
+    </div>
+
+    <!-- success state -->
+    <div class="success" id="successView">
+      <div class="check">
+        <svg width="36" height="36" viewBox="0 0 24 24" fill="none"><path d="M5 13l4 4L19 7" stroke="#0D7810" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </div>
+      <h3>Message sent!</h3>
+      <p>Thanks for reaching out. A member of the Komüte team will reply to your email shortly.</p>
+      <button id="resetForm">Send another message</button>
+    </div>
+  </div>
+</div>
+
+<!-- ============ FAQ ============ -->
+<section class="faq-wrap">
+  <div class="faq-head">
+    <h2>Quick answers</h2>
+    <p>You might find what you need right here.</p>
+  </div>
+  <div class="faq-list">
+    <details class="faq">
+      <summary>How fast will I get a reply?<span class="plus"><svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M12 5v14M5 12h14" stroke="#0D7810" stroke-width="2.4" stroke-linecap="round"/></svg></span></summary>
+      <p>We aim to respond to all messages within one business day. Safety-related reports are prioritised and reviewed as soon as they arrive.</p>
+    </details>
+    <details class="faq">
+      <summary>How do I report an unsafe driver or passenger?<span class="plus"><svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M12 5v14M5 12h14" stroke="#0D7810" stroke-width="2.4" stroke-linecap="round"/></svg></span></summary>
+      <p>Choose &ldquo;Report a safety concern&rdquo; as the topic in the form above, or email safety@komute.net directly. Every report is confidential and reviewed by our Trust &amp; Safety team. For more on what we expect from users, see our <a href="{% url 'community-guidelines' %}" style="color:var(--brand-green);font-weight:600">Community Guidelines</a>.</p>
+    </details>
+    <details class="faq">
+      <summary>Is Komüte really free to use?<span class="plus"><svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M12 5v14M5 12h14" stroke="#0D7810" stroke-width="2.4" stroke-linecap="round"/></svg></span></summary>
+      <p>Yes — Komüte is completely free for both drivers and passengers. We don&rsquo;t charge booking fees, commissions, or subscriptions. Komüte is simply a medium that connects people travelling the same way. Any fuel cost-sharing is agreed and settled directly between the driver and passenger.</p>
+    </details>
+    <details class="faq">
+      <summary>I need help with a booking.<span class="plus"><svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M12 5v14M5 12h14" stroke="#0D7810" stroke-width="2.4" stroke-linecap="round"/></svg></span></summary>
+      <p>Select &ldquo;Help with a booking&rdquo; as your topic and include the trip details. Since Komüte is free and doesn&rsquo;t process payments, any cost-sharing is arranged directly between you and the other traveller — see our <a href="{% url 'terms-condition' %}" style="color:var(--brand-green);font-weight:600">Terms &amp; Conditions</a> for how cost-sharing works.</p>
+    </details>
+    <details class="faq">
+      <summary>How do I become a verified driver?<span class="plus"><svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M12 5v14M5 12h14" stroke="#0D7810" stroke-width="2.4" stroke-linecap="round"/></svg></span></summary>
+      <p>Create an account, switch your role to Driver, and complete identity verification by uploading your driver&rsquo;s licence and a selfie. Most drivers are verified within minutes.</p>
+    </details>
+    <details class="faq">
+      <summary>Do you offer partnerships or press enquiries?<span class="plus"><svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M12 5v14M5 12h14" stroke="#0D7810" stroke-width="2.4" stroke-linecap="round"/></svg></span></summary>
+      <p>Absolutely. Email hello@komute.net or choose &ldquo;Partnership / press&rdquo; as your topic, and the right team will get back to you.</p>
+    </details>
+  </div>
+</section>
+
+<!-- ============ FOOTER ============ -->
+{% include 'footer.html' %}
+<script>
+  /* char counter */
+  const msg=document.getElementById('message');
+  const count=document.getElementById('charCount');
+  msg.addEventListener('input',()=>{
+    const n=msg.value.length;
+    count.textContent=n+' / 1000';
+    count.classList.toggle('over',n>1000);
+  });
+
+  /* form submit */
+  const form=document.getElementById('contactForm');
+  const formView=document.getElementById('formView');
+  const successView=document.getElementById('successView');
+  const submitBtn=form.querySelector('.submit-btn');
+  form.addEventListener('submit', async e=>{
+    e.preventDefault();
+    if(!form.checkValidity()){form.reportValidity();return;}
+
+    const originalHTML=submitBtn.innerHTML;
+    submitBtn.disabled=true;
+    submitBtn.innerHTML='Sending…';
+
+    try{
+      const fd=new FormData(form);
+      const res=await fetch(form.action,{
+        method:'POST',
+        headers:{'X-CSRFToken':fd.get('csrfmiddlewaretoken')},
+        body:fd,
+      });
+      const data=await res.json();
+      if(!res.ok){
+        alert(data.error||'Something went wrong. Please try again.');
+        submitBtn.disabled=false;
+        submitBtn.innerHTML=originalHTML;
+        return;
+      }
+      formView.style.display='none';
+      successView.classList.add('show');
+      window.scrollTo({top:formView.offsetTop-120,behavior:'smooth'});
+    }catch(_){
+      alert('Network error. Please check your connection and try again.');
+      submitBtn.disabled=false;
+      submitBtn.innerHTML=originalHTML;
+    }
+  });
+
+  document.getElementById('resetForm').addEventListener('click',()=>{
+    form.reset();
+    count.textContent='0 / 1000';
+    count.classList.remove('over');
+    successView.classList.remove('show');
+    formView.style.display='block';
+  });
+</script>
+</body>
+</html>

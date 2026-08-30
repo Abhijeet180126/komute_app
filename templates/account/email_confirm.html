@@ -1,0 +1,248 @@
+{% extends "allauth/layouts/base.html" %}
+{% load static %}
+
+{% block head_title %}Komüte – Confirm Your Email{% endblock %}
+
+{% block extra_head %}
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800&family=DM+Sans:wght@400;500;600&family=Montserrat:wght@600;700;800&display=swap" rel="stylesheet">
+<style>
+:root {
+  --light-bg:    #E9F7EE;
+  --contrast-lt: #D5FBE5;
+  --brand-green: #0D7810;
+  --grad-blue:   #0C63B4;
+  --grad-green:  #0CB439;
+  --white:       #ffffff;
+  --text-dark:   #121212;
+  --text-muted:  #4a6350;
+  --input-border:#b8dfc4;
+}
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  font-family: 'DM Sans', sans-serif;
+  min-height: 100vh;
+  background: var(--light-bg);
+  color: var(--text-dark);
+  display: flex;
+  flex-direction: column;
+}
+
+.page-content {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 56px 24px;
+}
+
+/* ── Confirmation card ── */
+.confirm-card {
+  background: var(--white);
+  border-radius: 20px;
+  border: 1.5px solid #e2f0e4;
+  box-shadow: 0 8px 32px rgba(13,120,16,0.10);
+  padding: 48px 42px;
+  width: 100%;
+  max-width: 460px;
+  text-align: center;
+  animation: fadeUp 0.4s ease both;
+}
+@keyframes fadeUp {
+  from { opacity: 0; transform: translateY(16px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* ── Icon circle ── */
+.confirm-icon {
+  width: 76px; height: 76px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0 auto 24px;
+}
+.confirm-icon.success { background: var(--contrast-lt); }
+.confirm-icon.error   { background: #fff1f1; }
+.confirm-icon svg {
+  width: 36px; height: 36px;
+  fill: none; stroke-width: 2.2;
+  stroke-linecap: round; stroke-linejoin: round;
+}
+.confirm-icon.success svg { stroke: var(--brand-green); }
+.confirm-icon.error   svg { stroke: #dc2626; }
+
+/* ── Text ── */
+.confirm-title {
+  font-family: 'Poppins', sans-serif;
+  font-size: 1.5rem;
+  font-weight: 800;
+  color: var(--text-dark);
+  margin-bottom: 10px;
+  line-height: 1.25;
+}
+.confirm-sub {
+  font-size: 0.92rem;
+  color: var(--text-muted);
+  line-height: 1.65;
+  margin-bottom: 24px;
+}
+
+/* ── Email chip ── */
+.email-chip {
+  display: inline-block;
+  background: var(--contrast-lt);
+  color: var(--brand-green);
+  font-family: 'DM Sans', sans-serif;
+  font-weight: 700;
+  font-size: 0.88rem;
+  padding: 5px 16px;
+  border-radius: 50px;
+  margin-bottom: 28px;
+  word-break: break-all;
+}
+
+/* ── Primary button ── */
+.btn-confirm {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  padding: 13px 24px;
+  border-radius: 12px;
+  background: linear-gradient(90deg, var(--grad-blue), var(--grad-green));
+  color: #fff;
+  font-family: 'Poppins', sans-serif;
+  font-weight: 700;
+  font-size: 1rem;
+  border: none;
+  cursor: pointer;
+  text-decoration: none;
+  transition: opacity 0.2s, transform 0.15s, box-shadow 0.2s;
+  box-shadow: 0 4px 14px rgba(12,99,180,0.25);
+}
+.btn-confirm:hover {
+  opacity: 0.9;
+  transform: translateY(-1px);
+  box-shadow: 0 6px 20px rgba(12,99,180,0.32);
+}
+.btn-confirm svg {
+  width: 17px; height: 17px;
+  stroke: white; fill: none;
+  stroke-width: 2.5; stroke-linecap: round; stroke-linejoin: round;
+}
+
+/* ── Secondary button ── */
+.btn-secondary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  margin-top: 12px;
+  width: 100%;
+  padding: 11px 24px;
+  border-radius: 12px;
+  background: transparent;
+  border: 1.5px solid var(--input-border);
+  color: var(--text-muted);
+  font-family: 'DM Sans', sans-serif;
+  font-weight: 600;
+  font-size: 0.92rem;
+  text-decoration: none;
+  transition: background 0.15s, border-color 0.15s;
+}
+.btn-secondary:hover { background: var(--light-bg); border-color: #9db8a2; }
+
+/* ── Divider ── */
+.divider {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 20px 0 0;
+  color: #b0c8b5;
+  font-size: 0.78rem;
+}
+.divider::before, .divider::after {
+  content: ''; flex: 1;
+  height: 1px; background: #e2f0e4;
+}
+
+@media (max-width: 500px) {
+  .confirm-card { padding: 36px 20px; }
+  .confirm-title { font-size: 1.25rem; }
+}
+</style>
+{% endblock %}
+
+{% block body %}
+
+{% include 'header.html' %}
+
+<div class="page-content">
+  <div class="confirm-card">
+
+    {% if confirmation %}
+      {% if can_confirm %}
+
+        <!-- Valid link — confirm -->
+        <div class="confirm-icon success">
+          <svg viewBox="0 0 24 24"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
+        </div>
+        <h1 class="confirm-title">Confirm Your Email</h1>
+        <p class="confirm-sub">Tap the button below to verify this address and unlock all Komüte features.</p>
+        <div class="email-chip">{{ confirmation.email_address.email }}</div>
+        <form method="post" action="{% url 'account_confirm_email' confirmation.key %}">
+          {% csrf_token %}
+          {{ redirect_field }}
+          <button type="submit" class="btn-confirm">
+            <svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>
+            Confirm Email Address
+          </button>
+        </form>
+        <div class="divider">or</div>
+        <a href="{% url 'profile' %}" class="btn-secondary">Back to Home</a>
+
+      {% else %}
+
+        <!-- Email taken by another account -->
+        <div class="confirm-icon error">
+          <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>
+        </div>
+        <h1 class="confirm-title">Already in Use</h1>
+        <p class="confirm-sub">This email address is already verified by a different account and cannot be added to yours.</p>
+        <a href="{% url 'profile' %}" class="btn-confirm">
+          <svg viewBox="0 0 24 24"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+          Go to My Profile
+        </a>
+        <div class="divider">or</div>
+        <a href="{% url 'home' %}" class="btn-secondary">Back to Home</a>
+
+      {% endif %}
+
+    {% else %}
+
+      <!-- Expired or invalid link -->
+      <div class="confirm-icon error">
+        <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+      </div>
+      <h1 class="confirm-title">Link Expired</h1>
+      <p class="confirm-sub">This confirmation link has expired or is invalid. Go to your profile and click <strong>Not Verified</strong> to request a fresh one.</p>
+      <a href="{% url 'profile' %}" class="btn-confirm">
+        <svg viewBox="0 0 24 24"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+        Go to My Profile
+      </a>
+      <div class="divider">or</div>
+      <a href="{% url 'home' %}" class="btn-secondary">Back to Home</a>
+
+    {% endif %}
+
+  </div>
+</div>
+
+{% include 'footer.html' %}
+
+{% endblock %}

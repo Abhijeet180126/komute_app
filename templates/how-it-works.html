@@ -1,0 +1,813 @@
+{% load static %}
+<!DOCTYPE html>
+
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<link rel="icon" type="image/png" href="{% static 'images/icon_white.png' %}">
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>How It Works — Komüte</title>
+<link href="https://fonts.googleapis.com" rel="preconnect"/>
+<link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/>
+<link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800&amp;family=DM+Sans:wght@400;500;600;700&amp;family=Montserrat:wght@700;800&amp;display=swap" rel="stylesheet"/>
+<style>
+  :root {
+    --brand-green: #0D7810;
+    --grad-blue:   #0C63B4;
+    --grad-green:  #0CB439;
+    --light-bg:    #E9F7EE;
+    --contrast-lt: #D5FBE5;
+    --input-border:#c2dfc8;
+    --text-dark:   #121212;
+    --text-muted:  #5a7060;
+    --card-border: #e2f0e4;
+    --dark-bg:     #1a2e1b;
+    --amber:       #f59e0b;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body {
+    font-family: 'DM Sans', sans-serif;
+    background: var(--light-bg);
+    color: var(--text-dark);
+    overflow-x: hidden;
+  }
+  img { max-width: 100%; display: block; }
+  h1, h2, h3, h4, h5 { font-family: 'Poppins', sans-serif; }
+  .gradient-text {
+    background: linear-gradient(90deg, var(--grad-blue), var(--grad-green));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+
+  /* ═══ HERO ═══ */
+  .hero {
+    padding: 90px 5% 70px;
+    text-align: center;
+    background:
+      radial-gradient(circle at 15% 30%, rgba(12,180,57,0.10) 0%, transparent 45%),
+      radial-gradient(circle at 85% 70%, rgba(12,99,180,0.08) 0%, transparent 45%),
+      var(--light-bg);
+  }
+  .hero-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    background: white;
+    border: 1.5px solid var(--contrast-lt);
+    color: var(--brand-green);
+    padding: 8px 16px;
+    border-radius: 50px;
+    font-size: 0.84rem;
+    font-weight: 600;
+    margin-bottom: 22px;
+  }
+  .hero h1 {
+    font-size: clamp(2.2rem, 5vw, 3.4rem);
+    font-weight: 800;
+    line-height: 1.15;
+    margin-bottom: 18px;
+  }
+  .hero p {
+    max-width: 660px;
+    margin: 0 auto;
+    font-size: 1.08rem;
+    line-height: 1.6;
+    color: var(--text-muted);
+  }
+
+  /* ═══ FLOWCHART ═══ */
+  .flowchart-section {
+    padding: 80px 5% 100px;
+    background: white;
+  }
+  .flowchart-heading {
+    text-align: center;
+    max-width: 680px;
+    margin: 0 auto 50px;
+  }
+  .flowchart-heading h2 {
+    font-size: 2.2rem;
+    font-weight: 800;
+    margin-bottom: 12px;
+  }
+  .flowchart-heading p {
+    color: var(--text-muted);
+    font-size: 1rem;
+    line-height: 1.55;
+  }
+
+  .flow-wrap {
+    max-width: 1200px;
+    margin: 0 auto;
+    position: relative;
+  }
+  .flow-track {
+    display: grid;
+    grid-template-columns: 1fr auto 1fr;
+    gap: 30px;
+    align-items: flex-start;
+  }
+  .flow-column h3 {
+    text-align: center;
+    font-size: 1.1rem;
+    font-weight: 700;
+    padding: 14px 22px;
+    border-radius: 50px;
+    margin-bottom: 36px;
+    display: inline-flex;
+    align-items: center;
+    gap: 9px;
+  }
+  .flow-column.driver h3 {
+    background: linear-gradient(90deg, var(--grad-blue), var(--grad-green));
+    color: white;
+  }
+  .flow-column.rider h3 {
+    background: var(--brand-green);
+    color: white;
+  }
+  .flow-column.driver h3 svg, .flow-column.rider h3 svg { stroke: white; fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+
+  .flow-column { text-align: center; }
+
+  .flow-step {
+    background: white;
+    border: 1.5px solid var(--card-border);
+    border-radius: 18px;
+    padding: 22px 22px;
+    margin: 0 auto 18px;
+    max-width: 380px;
+    box-shadow: 0 4px 18px rgba(13,120,16,0.05);
+    text-align: left;
+    position: relative;
+    transition: transform 0.2s, box-shadow 0.2s, border-color 0.2s;
+  }
+  .flow-step:hover {
+    transform: translateY(-3px);
+    box-shadow: 0 10px 30px rgba(13,120,16,0.12);
+    border-color: var(--brand-green);
+  }
+  .flow-step-head {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 10px;
+  }
+  .flow-step-num {
+    flex-shrink: 0;
+    width: 38px; height: 38px;
+    border-radius: 50%;
+    background: var(--contrast-lt);
+    color: var(--brand-green);
+    font-family: 'Montserrat', sans-serif;
+    font-weight: 800;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.95rem;
+  }
+  .flow-column.driver .flow-step-num {
+    background: rgba(12,99,180,0.12);
+    color: var(--grad-blue);
+  }
+  .flow-step-icon {
+    flex-shrink: 0;
+    width: 38px; height: 38px;
+    border-radius: 10px;
+    background: linear-gradient(135deg, var(--grad-blue), var(--grad-green));
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .flow-step-icon svg { stroke: white; fill: none; stroke-width: 1.9; stroke-linecap: round; stroke-linejoin: round; width: 20px; height: 20px; }
+
+  .flow-step h4 {
+    font-size: 1rem;
+    font-weight: 700;
+    margin-bottom: 5px;
+  }
+  .flow-step p {
+    color: var(--text-muted);
+    font-size: 0.88rem;
+    line-height: 1.55;
+  }
+
+  /* Vertical connector arrows */
+  .flow-step::after {
+    content: '';
+    position: absolute;
+    bottom: -19px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 2px;
+    height: 18px;
+    background: linear-gradient(to bottom, var(--brand-green), transparent);
+  }
+  .flow-step:last-child::after { display: none; }
+
+  /* Center "Connect" pillar */
+  .flow-connector {
+    align-self: center;
+    background: linear-gradient(135deg, var(--grad-blue), var(--grad-green));
+    color: white;
+    border-radius: 18px;
+    padding: 28px 26px;
+    text-align: center;
+    width: 220px;
+    box-shadow: 0 14px 40px rgba(13,120,16,0.25);
+    position: sticky;
+    top: 100px;
+  }
+  .flow-connector-icon {
+    width: 60px; height: 60px;
+    border-radius: 50%;
+    background: rgba(255,255,255,0.18);
+    margin: 0 auto 14px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    animation: pulse 2.4s ease-in-out infinite;
+  }
+  @keyframes pulse {
+    0%, 100% { transform: scale(1); }
+    50% { transform: scale(1.08); box-shadow: 0 0 0 12px rgba(255,255,255,0); }
+  }
+  .flow-connector-icon svg { stroke: white; fill: none; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; width: 28px; height: 28px; }
+  .flow-connector h4 {
+    font-size: 1.15rem;
+    font-weight: 800;
+    margin-bottom: 8px;
+  }
+  .flow-connector p {
+    font-size: 0.85rem;
+    opacity: 0.9;
+    line-height: 1.5;
+  }
+
+  /* Horizontal arrows from each side into the connector */
+  .flow-arrow {
+    display: none; /* hidden by default — desktop only */
+  }
+
+  @media (min-width: 901px) {
+    .flow-column.driver .flow-step,
+    .flow-column.rider .flow-step {
+      position: relative;
+    }
+  }
+
+  @media (max-width: 900px) {
+    .flow-track { grid-template-columns: 1fr; }
+    .flow-connector {
+      width: 100%;
+      max-width: 380px;
+      position: static;
+      order: 0;
+      margin: 32px auto;
+    }
+    .flow-column { order: 2; }
+    .flow-column.rider { order: 3; }
+  }
+
+  /* ═══ DETAILED STEPS (with hero images) ═══ */
+  .detail-section {
+    padding: 90px 5%;
+    background: var(--light-bg);
+  }
+  .detail-heading {
+    text-align: center;
+    max-width: 680px;
+    margin: 0 auto 60px;
+  }
+  .detail-heading h2 {
+    font-size: 2.2rem;
+    font-weight: 800;
+    margin-bottom: 14px;
+  }
+  .detail-heading p { color: var(--text-muted); font-size: 1rem; line-height: 1.55; }
+
+  .detail-step {
+    max-width: 1180px;
+    margin: 0 auto 80px;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 60px;
+    align-items: center;
+  }
+  .detail-step:nth-child(even) { direction: rtl; }
+  .detail-step:nth-child(even) > * { direction: ltr; }
+  .detail-step:last-child { margin-bottom: 0; }
+
+  .detail-img-wrap {
+    border-radius: 24px;
+    overflow: hidden;
+    aspect-ratio: 4/3;
+    box-shadow: 0 20px 50px rgba(13,120,16,0.16);
+    position: relative;
+  }
+  .detail-img-wrap img { width: 100%; height: 100%; object-fit: cover; }
+  .detail-badge {
+    position: absolute;
+    top: 16px; left: 16px;
+    background: rgba(255,255,255,0.95);
+    backdrop-filter: blur(8px);
+    padding: 8px 14px;
+    border-radius: 50px;
+    font-family: 'Montserrat', sans-serif;
+    font-weight: 800;
+    font-size: 0.85rem;
+    color: var(--brand-green);
+  }
+  .detail-tag {
+    display: inline-block;
+    background: var(--contrast-lt);
+    color: var(--brand-green);
+    padding: 5px 14px;
+    border-radius: 50px;
+    font-size: 0.76rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    margin-bottom: 12px;
+  }
+  .detail-content h3 {
+    font-size: 1.8rem;
+    font-weight: 800;
+    margin-bottom: 14px;
+    line-height: 1.2;
+  }
+  .detail-content > p {
+    color: var(--text-muted);
+    line-height: 1.65;
+    margin-bottom: 18px;
+    font-size: 1rem;
+  }
+  .detail-list { list-style: none; padding: 0; }
+  .detail-list li {
+    display: flex;
+    gap: 11px;
+    padding: 9px 0;
+    border-bottom: 1px dashed var(--input-border);
+    align-items: flex-start;
+  }
+  .detail-list li:last-child { border-bottom: none; }
+  .detail-list .check {
+    flex-shrink: 0;
+    width: 22px; height: 22px;
+    border-radius: 50%;
+    background: var(--contrast-lt);
+    color: var(--brand-green);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-top: 1px;
+  }
+  .detail-list .check svg { stroke: var(--brand-green); fill: none; stroke-width: 3; stroke-linecap: round; stroke-linejoin: round; }
+  .detail-list-text {
+    font-size: 0.96rem;
+    color: var(--text-dark);
+    line-height: 1.55;
+  }
+
+  /* ═══ FAQ ═══ */
+  .faq {
+    padding: 80px 5% 100px;
+    background: white;
+  }
+  .faq-heading {
+    text-align: center;
+    max-width: 600px;
+    margin: 0 auto 40px;
+  }
+  .faq-heading h2 {
+    font-size: 2.2rem;
+    font-weight: 800;
+    margin-bottom: 12px;
+  }
+  .faq-heading p { color: var(--text-muted); line-height: 1.55; }
+  .faq-list {
+    max-width: 720px;
+    margin: 0 auto;
+  }
+  .faq-item {
+    background: var(--light-bg);
+    border: 1px solid var(--input-border);
+    border-radius: 14px;
+    margin-bottom: 12px;
+    transition: border-color 0.2s;
+  }
+  .faq-item[open] { border-color: var(--brand-green); }
+  .faq-summary {
+    list-style: none;
+    cursor: pointer;
+    padding: 18px 22px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 14px;
+    font-family: 'Poppins', sans-serif;
+    font-weight: 600;
+    font-size: 1rem;
+    color: var(--text-dark);
+  }
+  .faq-summary::-webkit-details-marker { display: none; }
+  .faq-toggle {
+    flex-shrink: 0;
+    width: 28px; height: 28px;
+    border-radius: 50%;
+    background: white;
+    border: 1.5px solid var(--input-border);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.2rem;
+    color: var(--brand-green);
+    transition: transform 0.25s;
+  }
+  .faq-item[open] .faq-toggle { transform: rotate(45deg); background: var(--brand-green); color: white; border-color: var(--brand-green); }
+  .faq-body {
+    padding: 0 22px 18px;
+    color: var(--text-muted);
+    line-height: 1.65;
+    font-size: 0.95rem;
+  }
+
+  /* ═══ CTA ═══ */
+  .cta {
+    padding: 90px 5%;
+    background:
+      linear-gradient(135deg, rgba(13,120,16,0.94), rgba(12,99,180,0.94)),
+      url('https://images.unsplash.com/photo-1469854523086-cc02fe5d8800?w=1600&q=80') center/cover;
+    color: white;
+    text-align: center;
+  }
+  .cta h2 { font-size: clamp(2rem, 4.5vw, 2.7rem); font-weight: 800; margin-bottom: 14px; line-height: 1.15; }
+  .cta p { font-size: 1.05rem; opacity: 0.9; margin-bottom: 30px; max-width: 600px; margin-left: auto; margin-right: auto; }
+  .cta-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 14px 28px;
+    border-radius: 50px;
+    background: white;
+    color: var(--brand-green);
+    text-decoration: none;
+    font-weight: 700;
+    font-size: 1rem;
+    transition: opacity 0.2s, transform 0.15s;
+  }
+  .cta-btn:hover { opacity: 0.9; transform: translateY(-2px); }
+
+  @media (max-width: 900px) {
+    .detail-step { grid-template-columns: 1fr; gap: 36px; }
+    .detail-step:nth-child(even) { direction: ltr; }
+  }
+  @media (max-width: 560px) {
+    .hero { padding: 60px 22px 50px; }
+    .flowchart-section, .detail-section, .faq, .cta { padding: 60px 22px; }
+  }
+</style>
+</head>
+<body>
+<div data-active="how" id="komute-header"></div>
+<!-- ══ HERO ══ -->
+ {% include 'header.html' %}
+<section class="hero">
+<div class="hero-badge">
+<svg fill="none" height="14" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" viewbox="0 0 24 24" width="14">
+<circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline>
+</svg>
+    Takes about 4 minutes to read
+  </div>
+<h1>How Komüte works, <span class="gradient-text">in plain English</span></h1>
+<p>From signing up to arriving at your destination — here's every step, illustrated and broken down for both drivers and riders.</p>
+</section>
+<!-- ══ FLOWCHART ══ -->
+<section class="flowchart-section">
+<div class="flowchart-heading">
+<h2>The complete journey — <span class="gradient-text">at a glance</span></h2>
+<p>Two paths, one platform. Drivers post trips, riders find them, and Komüte is the bridge in the middle that makes them connect.</p>
+</div>
+<div class="flow-wrap">
+<div class="flow-track">
+<!-- DRIVER COLUMN -->
+<div class="flow-column driver">
+<h3>
+<svg height="20" viewbox="0 0 24 24" width="20"><rect height="13" rx="2" width="15" x="1" y="3"></rect><polygon points="16 8 20 8 23 11 23 16 16 16 16 8"></polygon><circle cx="5.5" cy="18.5" r="2.5"></circle><circle cx="18.5" cy="18.5" r="2.5"></circle></svg>
+          Driver Journey
+        </h3>
+<div class="flow-step">
+<div class="flow-step-head">
+<div class="flow-step-num">1</div>
+<div class="flow-step-icon"><svg viewbox="0 0 24 24"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg></div>
+</div>
+<h4>Create an account</h4>
+<p>Sign up with your name, email, mobile and password — or one tap with Google / Apple.</p>
+</div>
+<div class="flow-step">
+<div class="flow-step-head">
+<div class="flow-step-num">2</div>
+<div class="flow-step-icon"><svg viewbox="0 0 24 24"><rect height="16" rx="2" width="22" x="1" y="4"></rect><line x1="1" x2="23" y1="10" y2="10"></line></svg></div>
+</div>
+<h4>Verify your identity</h4>
+<p>Upload your driver's licence and a selfie. Our OCR + face match confirms it's really you — usually in seconds.</p>
+</div>
+<div class="flow-step">
+<div class="flow-step-head">
+<div class="flow-step-num">3</div>
+<div class="flow-step-icon"><svg viewbox="0 0 24 24"><rect height="13" rx="2" width="15" x="1" y="3"></rect><polygon points="16 8 20 8 23 11 23 16 16 16 16 8"></polygon><circle cx="5.5" cy="18.5" r="2.5"></circle><circle cx="18.5" cy="18.5" r="2.5"></circle></svg></div>
+</div>
+<h4>Add your vehicle</h4>
+<p>Make, model, year, plate, and a clear photo with the number plate visible.</p>
+</div>
+<div class="flow-step">
+<div class="flow-step-head">
+<div class="flow-step-num">4</div>
+<div class="flow-step-icon"><svg viewbox="0 0 24 24"><line x1="12" x2="12" y1="5" y2="19"></line><line x1="5" x2="19" y1="12" y2="12"></line></svg></div>
+</div>
+<h4>Post a trip</h4>
+<p>From, to, date, time, seats, price. Add up to 5 stops along the way to pick up more passengers.</p>
+</div>
+<div class="flow-step">
+<div class="flow-step-head">
+<div class="flow-step-num">5</div>
+<div class="flow-step-icon"><svg viewbox="0 0 24 24"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg></div>
+</div>
+<h4>Wait for ride requests</h4>
+<p>Riders find your trip in search results. You'll see their requests in My Posted Rides.</p>
+</div>
+</div>
+<!-- CONNECTOR -->
+<div class="flow-connector">
+<div class="flow-connector-icon">
+<svg viewbox="0 0 24 24"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline></svg>
+</div>
+<h4>Komüte connects you</h4>
+<p>Chat, agree a fair price, confirm the booking. We handle the matching — you handle the journey.</p>
+</div>
+<!-- RIDER COLUMN -->
+<div class="flow-column rider">
+<h3>
+<svg height="20" viewbox="0 0 24 24" width="20"><circle cx="12" cy="7" r="4"></circle><path d="M5 21v-2a7 7 0 0 1 14 0v2"></path></svg>
+          Rider Journey
+        </h3>
+<div class="flow-step">
+<div class="flow-step-head">
+<div class="flow-step-num">1</div>
+<div class="flow-step-icon"><svg viewbox="0 0 24 24"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg></div>
+</div>
+<h4>Create an account</h4>
+<p>Same simple sign-up. As a rider you don't need a licence — just a profile so drivers know who they're meeting.</p>
+</div>
+<div class="flow-step">
+<div class="flow-step-head">
+<div class="flow-step-num">2</div>
+<div class="flow-step-icon"><svg viewbox="0 0 24 24"><circle cx="11" cy="11" r="8"></circle><line x1="21" x2="16.65" y1="21" y2="16.65"></line></svg></div>
+</div>
+<h4>Search for a ride</h4>
+<p>Enter where you're starting, where you're going, and when. Komüte shows you every matching trip.</p>
+</div>
+<div class="flow-step">
+<div class="flow-step-head">
+<div class="flow-step-num">3</div>
+<div class="flow-step-icon"><svg viewbox="0 0 24 24"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path><circle cx="12" cy="10" r="3"></circle></svg></div>
+</div>
+<h4>Pick a driver</h4>
+<p>Compare ratings, vehicles, and prices. Tap a trip to see the full route and driver profile.</p>
+</div>
+<div class="flow-step">
+<div class="flow-step-head">
+<div class="flow-step-num">4</div>
+<div class="flow-step-icon"><svg viewbox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg></div>
+</div>
+<h4>Chat &amp; agree on a price</h4>
+<p>Negotiate openly in the in-app chat — or book at the listed price if it works for you.</p>
+</div>
+<div class="flow-step">
+<div class="flow-step-head">
+<div class="flow-step-num">5</div>
+<div class="flow-step-icon"><svg viewbox="0 0 24 24"><polyline points="20 6 9 17 4 12"></polyline></svg></div>
+</div>
+<h4>Hop in and travel</h4>
+<p>Meet at the agreed pickup spot. Sit back, enjoy the trip, then rate each other at the end.</p>
+</div>
+</div>
+</div>
+</div>
+</section>
+<!-- ══ DETAILED STEP 1 ══ -->
+<section class="detail-section">
+<div class="detail-heading">
+<h2>Each step, <span class="gradient-text">in more detail</span></h2>
+<p>A closer look at the moments that matter most — from your first sign-up to your first review.</p>
+</div>
+<!-- Step 1: Sign Up -->
+<div class="detail-step">
+<div class="detail-img-wrap">
+<img alt="Young people signing up on a rideshare app" onerror="this.parentElement.style.background='linear-gradient(135deg,var(--grad-blue),var(--grad-green))';this.style.display='none'" src="https://images.unsplash.com/photo-1521791136064-7986c2920216?w=1200&amp;q=80"/>
+<div class="detail-badge">Step 1</div>
+</div>
+<div class="detail-content">
+<span class="detail-tag">Sign Up</span>
+<h3>Get on board in under a minute</h3>
+<p>Sign up takes about 60 seconds. You can use email and password, or skip the typing entirely with Google or Apple one-tap login.</p>
+<ul class="detail-list">
+<li>
+<span class="check"><svg height="11" viewbox="0 0 24 24" width="11"><polyline points="20 6 9 17 4 12"></polyline></svg></span>
+<span class="detail-list-text">No credit card. No subscriptions. Just an account.</span>
+</li>
+<li>
+<span class="check"><svg height="11" viewbox="0 0 24 24" width="11"><polyline points="20 6 9 17 4 12"></polyline></svg></span>
+<span class="detail-list-text">You're 18+? You're in.</span>
+</li>
+<li>
+<span class="check"><svg height="11" viewbox="0 0 24 24" width="11"><polyline points="20 6 9 17 4 12"></polyline></svg></span>
+<span class="detail-list-text">Pick whether you want to drive or ride — switch any time.</span>
+</li>
+</ul>
+</div>
+</div>
+<!-- Step 2: Verify -->
+<div class="detail-step">
+<div class="detail-img-wrap">
+<img alt="Driver verifying identity on mobile app" onerror="this.parentElement.style.background='linear-gradient(135deg,var(--grad-blue),var(--grad-green))';this.style.display='none'" src="https://images.unsplash.com/photo-1516321318423-f06f85e504b3?w=1200&amp;q=80"/>
+<div class="detail-badge">Step 2</div>
+</div>
+<div class="detail-content">
+<span class="detail-tag">Verification (Drivers Only)</span>
+<h3>Identity verified in seconds</h3>
+<p>Drivers upload a clear photo of their licence plus a selfie. Komüte's OCR reads the licence text, and our face match confirms the photo on the licence matches the selfie.</p>
+<ul class="detail-list">
+<li>
+<span class="check"><svg height="11" viewbox="0 0 24 24" width="11"><polyline points="20 6 9 17 4 12"></polyline></svg></span>
+<span class="detail-list-text">Most drivers are auto-approved in under 30 seconds.</span>
+</li>
+<li>
+<span class="check"><svg height="11" viewbox="0 0 24 24" width="11"><polyline points="20 6 9 17 4 12"></polyline></svg></span>
+<span class="detail-list-text">Borderline matches go to a real human reviewer.</span>
+</li>
+<li>
+<span class="check"><svg height="11" viewbox="0 0 24 24" width="11"><polyline points="20 6 9 17 4 12"></polyline></svg></span>
+<span class="detail-list-text">Riders see a green verified badge on every approved driver.</span>
+</li>
+</ul>
+</div>
+</div>
+<!-- Step 3: Post -->
+<div class="detail-step">
+<div class="detail-img-wrap">
+<img alt="Driver posting a ride while sitting in car" onerror="this.parentElement.style.background='linear-gradient(135deg,var(--grad-blue),var(--grad-green))';this.style.display='none'" src="https://images.unsplash.com/photo-1502877338535-766e1452684a?w=1200&amp;q=80"/>
+<div class="detail-badge">Step 3</div>
+</div>
+<div class="detail-content">
+<span class="detail-tag">Post or Search</span>
+<h3>Drivers post. Riders search. They meet in the middle.</h3>
+<p>Drivers post their trip — origin, destination, optional stops, departure time, available seats, and a starting price. Riders search for the same route on the same day, and matching trips show up instantly.</p>
+<ul class="detail-list">
+<li>
+<span class="check"><svg height="11" viewbox="0 0 24 24" width="11"><polyline points="20 6 9 17 4 12"></polyline></svg></span>
+<span class="detail-list-text">Up to 5 intermediate stops on one trip — pick up more riders along the way.</span>
+</li>
+<li>
+<span class="check"><svg height="11" viewbox="0 0 24 24" width="11"><polyline points="20 6 9 17 4 12"></polyline></svg></span>
+<span class="detail-list-text">Recurring trips — set it up once for your weekly commute.</span>
+</li>
+<li>
+<span class="check"><svg height="11" viewbox="0 0 24 24" width="11"><polyline points="20 6 9 17 4 12"></polyline></svg></span>
+<span class="detail-list-text">Smart Route Demand panel shows drivers which corridors are hot.</span>
+</li>
+</ul>
+</div>
+</div>
+<!-- Step 4: Chat & negotiate -->
+<div class="detail-step">
+<div class="detail-img-wrap">
+<img alt="Passengers chatting and coordinating a shared ride" onerror="this.parentElement.style.background='linear-gradient(135deg,var(--grad-blue),var(--grad-green))';this.style.display='none'" src="https://images.unsplash.com/photo-1522202176988-66273c2fd55f?w=1200&amp;q=80"/>
+<div class="detail-badge">Step 4</div>
+</div>
+<div class="detail-content">
+<span class="detail-tag">Chat &amp; Agree</span>
+<h3>Negotiate openly. No surge, no surprises.</h3>
+<p>Open chat with the driver, ask questions, and use the negotiation widget to propose a fair price. When you both agree, the booking confirms automatically.</p>
+<ul class="detail-list">
+<li>
+<span class="check"><svg height="11" viewbox="0 0 24 24" width="11"><polyline points="20 6 9 17 4 12"></polyline></svg></span>
+<span class="detail-list-text">A single passenger can chat with multiple drivers at once.</span>
+</li>
+<li>
+<span class="check"><svg height="11" viewbox="0 0 24 24" width="11"><polyline points="20 6 9 17 4 12"></polyline></svg></span>
+<span class="detail-list-text">A driver can fill multiple seats from multiple chats simultaneously.</span>
+</li>
+<li>
+<span class="check"><svg height="11" viewbox="0 0 24 24" width="11"><polyline points="20 6 9 17 4 12"></polyline></svg></span>
+<span class="detail-list-text">Counter-offers, accepts, declines — all tracked in the chat.</span>
+</li>
+</ul>
+</div>
+</div>
+<!-- Step 5: Travel & review -->
+<div class="detail-step">
+<div class="detail-img-wrap">
+<img alt="Friends enjoying a shared road trip" onerror="this.parentElement.style.background='linear-gradient(135deg,var(--grad-blue),var(--grad-green))';this.style.display='none'" src="https://images.unsplash.com/photo-1500530855697-b586d89ba3ee?w=1200&amp;q=80"/>
+<div class="detail-badge">Step 5</div>
+</div>
+<div class="detail-content">
+<span class="detail-tag">Travel &amp; Review</span>
+<h3>Hit the road. Then keep the trust loop going.</h3>
+<p>Meet at the pickup spot, share the trip, and arrive together. Once the ride is done, you both leave a quick rating and review — building each other's reputation for next time.</p>
+<ul class="detail-list">
+<li>
+<span class="check"><svg height="11" viewbox="0 0 24 24" width="11"><polyline points="20 6 9 17 4 12"></polyline></svg></span>
+<span class="detail-list-text">CO₂ savings calculated and added to your eco stats.</span>
+</li>
+<li>
+<span class="check"><svg height="11" viewbox="0 0 24 24" width="11"><polyline points="20 6 9 17 4 12"></polyline></svg></span>
+<span class="detail-list-text">Star ratings keep the community safe and welcoming.</span>
+</li>
+<li>
+<span class="check"><svg height="11" viewbox="0 0 24 24" width="11"><polyline points="20 6 9 17 4 12"></polyline></svg></span>
+<span class="detail-list-text">Frequent riders earn priority status with verified drivers.</span>
+</li>
+</ul>
+</div>
+</div>
+</section>
+<!-- ══ FAQ ══ -->
+<section class="faq">
+<div class="faq-heading">
+<h2>Frequently asked questions</h2>
+<p>The short answers to the questions most people ask before their first ride.</p>
+</div>
+<div class="faq-list">
+<details class="faq-item" open="">
+<summary class="faq-summary">
+        Is Komüte a taxi?
+        <span class="faq-toggle">+</span>
+</summary>
+<div class="faq-body">
+        No — Komüte is a peer-to-peer carpooling platform. Drivers are everyday commuters and travellers offering empty seats on trips they were already taking. Komüte simply makes the introduction.
+      </div>
+</details>
+<details class="faq-item">
+<summary class="faq-summary">
+        How is the price decided?
+        <span class="faq-toggle">+</span>
+</summary>
+<div class="faq-body">
+        The driver suggests a starting price when they post the trip. Riders can either book at that price, or open chat to negotiate. When both parties accept a price, the booking is confirmed automatically.
+      </div>
+</details>
+<details class="faq-item">
+<summary class="faq-summary">
+        How does Komüte verify drivers?
+        <span class="faq-toggle">+</span>
+</summary>
+<div class="faq-body">
+        Drivers upload their driver's licence and a selfie during sign-up. Komüte runs OCR to read the licence and a face-match model to confirm the photo and the selfie are the same person. Verified drivers get a green badge.
+      </div>
+</details>
+<details class="faq-item">
+<summary class="faq-summary">
+        Can I be both a driver and a rider?
+        <span class="faq-toggle">+</span>
+</summary>
+<div class="faq-body">
+        Yes — every account can switch roles at any time from the profile page. Many users are passengers during the week and drivers on weekends.
+      </div>
+</details>
+<details class="faq-item">
+<summary class="faq-summary">
+        What if my trip is cancelled?
+        <span class="faq-toggle">+</span>
+</summary>
+<div class="faq-body">
+        Passengers who cancel more than 24 hours before departure get a full refund of the contribution. Cancellations under 24 hours forfeit the contribution. If the driver cancels, passengers always get a full refund.
+      </div>
+</details>
+<details class="faq-item">
+<summary class="faq-summary">
+        Is Komüte available in my city?
+        <span class="faq-toggle">+</span>
+</summary>
+<div class="faq-body">
+        Komüte is launching in Canada — Toronto, Montreal, Vancouver, Calgary, Ottawa, Edmonton — and expanding into the US through 2026 and 2027. Don't see your city yet? Sign up anyway and we'll let you know the moment we land.
+      </div>
+</details>
+</div>
+</section>
+<!-- ══ CTA ══ -->
+<section class="cta">
+<h2>Ready for your first ride?</h2>
+<p>Sign up, complete your profile, and you'll be on the road within the hour.</p>
+<a class="cta-btn" href="{% url 'signup' %}">
+    Get Started Free
+    <svg fill="none" height="16" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" viewbox="0 0 24 24" width="16">
+<line x1="5" x2="19" y1="12" y2="12"></line>
+<polyline points="12 5 19 12 12 19"></polyline>
+</svg>
+</a>
+</section>
+{% include 'footer.html' %}
+</body>
+</html>

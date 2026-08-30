@@ -1,0 +1,1059 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<link rel="icon" type="image/png" href="{% static 'images/icon_white.png' %}">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+{% load static %}
+<title>Komüte – Chat with {{ other_user.full_name }}</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800&family=DM+Sans:wght@400;500;600&family=Montserrat:wght@500;600;700;800&display=swap" rel="stylesheet">
+
+<style>
+:root {
+  --light-bg:    #E9F7EE;
+  --contrast-lt: #D5FBE5;
+  --brand-green: #0D7810;
+  --grad-blue:   #0C63B4;
+  --grad-green:  #0CB439;
+  --white:       #ffffff;
+  --text-dark:   #121212;
+  --text-muted:  #5a7060;
+  --input-border:#c2dfc8;
+  --input-bg:    #f6fbf7;
+  --dark-panel:  #0f1f12;
+}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
+html,body{height:100%;overflow:hidden;}
+body{
+  font-family:'DM Sans',sans-serif;
+  background:var(--light-bg);
+  display:flex;flex-direction:column;
+  height:100vh;
+}
+
+/* ════ TOP BAR ════ */
+.topbar{
+  background:linear-gradient(135deg,#0D7810 0%,#0C63B4 100%);
+  padding:0 20px;
+  display:flex;align-items:center;gap:12px;
+  height:68px;flex-shrink:0;
+  position:relative;
+  box-shadow:0 3px 16px rgba(13,120,16,.25);
+  z-index:10;
+}
+.back-btn{
+  width:36px;height:36px;border-radius:10px;
+  background:rgba(255,255,255,.15);border:none;cursor:pointer;
+  display:flex;align-items:center;justify-content:center;
+  transition:background .2s;flex-shrink:0;
+}
+.back-btn:hover{background:rgba(255,255,255,.25);}
+.back-btn svg{width:18px;height:18px;stroke:white;fill:none;stroke-width:2.5;stroke-linecap:round;stroke-linejoin:round;}
+
+.chat-avatar{
+  width:42px;height:42px;border-radius:50%;
+  background:rgba(255,255,255,.2);border:2px solid rgba(255,255,255,.4);
+  display:flex;align-items:center;justify-content:center;
+  font-family:'Poppins',sans-serif;font-weight:800;font-size:.85rem;color:white;
+  flex-shrink:0;position:relative;
+}
+.online-ring{
+  position:absolute;bottom:0;right:0;
+  width:13px;height:13px;border-radius:50%;
+  background:#4ade80;border:2.5px solid rgba(255,255,255,.5);
+}
+
+.chat-header-info{flex:1;}
+.chat-header-name{font-family:'Poppins',sans-serif;font-weight:700;color:white;font-size:1rem;}
+.chat-header-sub{font-size:.72rem;color:rgba(255,255,255,.7);display:flex;align-items:center;gap:5px;margin-top:2px;}
+.chat-header-sub svg{width:11px;height:11px;stroke:rgba(255,255,255,.6);fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;}
+
+/* Ride status chip in header */
+.ride-status-chip{
+  display:inline-flex;align-items:center;gap:3px;
+  border-radius:20px;padding:2px 8px;
+  font-size:.62rem;font-weight:700;font-family:'Poppins',sans-serif;
+  letter-spacing:.04em;text-transform:uppercase;margin-left:6px;flex-shrink:0;
+}
+.ride-status-chip.active{background:rgba(74,222,128,.25);color:#4ade80;}
+.ride-status-chip.pending{background:rgba(251,191,36,.25);color:#fbbf24;}
+.ride-status-chip.completed{background:rgba(156,163,175,.28);color:#d1d5db;}
+.ride-status-chip.cancelled{background:rgba(248,113,113,.28);color:#fca5a5;}
+
+.topbar-actions{display:flex;gap:8px;flex-shrink:0;}
+.topbar-btn{
+  width:36px;height:36px;border-radius:10px;
+  background:rgba(255,255,255,.15);border:none;cursor:pointer;
+  display:flex;align-items:center;justify-content:center;
+  transition:background .2s;position:relative;
+}
+.topbar-btn:hover{background:rgba(255,255,255,.25);}
+.topbar-btn svg{width:17px;height:17px;stroke:white;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;}
+.price-badge-indicator{
+  position:absolute;top:-3px;right:-3px;
+  width:10px;height:10px;border-radius:50%;
+  background:#fbbf24;border:2px solid rgba(13,120,16,.5);
+  animation:badgePulse 2s infinite;
+}
+@keyframes badgePulse{0%,100%{transform:scale(1)}50%{transform:scale(1.3)}}
+
+/* ════ ROUTE PILL ════ */
+.route-pill{
+  background:rgba(0,0,0,.18);
+  padding:7px 20px;
+  display:flex;align-items:center;justify-content:center;gap:8px;
+  font-size:.75rem;color:rgba(255,255,255,.85);font-weight:500;
+  flex-shrink:0;
+}
+.route-pill svg{width:11px;height:11px;stroke:rgba(255,255,255,.65);fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;}
+.route-pill-dot{width:7px;height:7px;border-radius:50%;flex-shrink:0;}
+.route-pill-dot.from{background:#4ade80;}
+.route-pill-dot.to{background:#60a5fa;}
+
+/* ════ PRICE BARGAIN PANEL ════ */
+.bargain-panel{
+  background:var(--white);
+  border-bottom:1.5px solid var(--input-border);
+  overflow:hidden;
+  max-height:0;
+  transition:max-height .4s cubic-bezier(.4,0,.2,1), padding .3s;
+  flex-shrink:0;
+}
+.bargain-panel.open{max-height:320px;}
+.bargain-inner{padding:18px 20px 16px;}
+
+.bargain-title-row{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;}
+.bargain-title{
+  font-family:'Poppins',sans-serif;font-weight:700;font-size:.95rem;color:var(--brand-green);
+  display:flex;align-items:center;gap:7px;
+}
+.bargain-title svg{width:16px;height:16px;stroke:var(--brand-green);fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;}
+.bargain-status-pill{
+  display:inline-flex;align-items:center;gap:5px;
+  border-radius:20px;padding:3px 11px;
+  font-size:.7rem;font-weight:700;font-family:'Poppins',sans-serif;
+}
+.bargain-status-pill.pending{background:#fef3c7;color:#92400e;}
+.bargain-status-pill.agreed{background:#dcfce7;color:var(--brand-green);}
+.bargain-status-pill svg{width:10px;height:10px;stroke:currentColor;fill:none;stroke-width:2.5;stroke-linecap:round;stroke-linejoin:round;}
+
+/* Price display */
+.price-display-row{
+  display:grid;grid-template-columns:1fr auto 1fr;
+  gap:10px;align-items:center;margin-bottom:16px;
+}
+.price-side{
+  background:var(--input-bg);border:1.5px solid var(--input-border);
+  border-radius:14px;padding:12px 14px;text-align:center;
+  transition:border-color .2s,background .2s;
+}
+.price-side.active{border-color:var(--brand-green);background:#f0fdf4;}
+.price-side.agreed-side{border-color:var(--brand-green);background:#f0fdf4;}
+.price-who{font-size:.68rem;font-weight:600;color:var(--text-muted);margin-bottom:3px;display:flex;align-items:center;justify-content:center;gap:4px;}
+.price-who svg{width:10px;height:10px;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;}
+.price-amount{
+  font-family:'Montserrat',sans-serif;font-weight:800;font-size:1.4rem;
+  background:linear-gradient(90deg,#0C63B4,#0CB439);
+  -webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;
+}
+.price-label{font-size:.63rem;color:var(--text-muted);margin-top:1px;}
+.vs-chip{
+  background:linear-gradient(135deg,#0C63B4,#0CB439);
+  color:white;border-radius:50%;
+  width:32px;height:32px;
+  display:flex;align-items:center;justify-content:center;
+  font-family:'Montserrat',sans-serif;font-weight:800;font-size:.65rem;
+  flex-shrink:0;
+}
+
+/* Stepper */
+.stepper-row{
+  display:flex;align-items:center;gap:10px;margin-bottom:14px;
+}
+.stepper-label{font-size:.78rem;font-weight:600;color:var(--text-dark);flex:1;}
+.stepper-wrap{display:flex;align-items:center;gap:0;border-radius:10px;overflow:hidden;border:1.5px solid var(--input-border);}
+.step-btn{
+  width:38px;height:38px;border:none;background:var(--input-bg);
+  font-size:1.1rem;font-weight:700;color:var(--brand-green);
+  cursor:pointer;transition:background .15s;
+  display:flex;align-items:center;justify-content:center;flex-shrink:0;
+}
+.step-btn:hover{background:var(--contrast-lt);}
+.step-btn:active{background:#b6dfc0;}
+.step-value{
+  min-width:64px;height:38px;
+  border-left:1px solid var(--input-border);border-right:1px solid var(--input-border);
+  background:white;
+  display:flex;align-items:center;justify-content:center;
+  font-family:'Montserrat',sans-serif;font-weight:700;font-size:1rem;color:var(--brand-green);
+}
+
+/* Action buttons */
+.bargain-actions{display:flex;gap:8px;}
+.btn-propose{
+  flex:1;padding:10px;border-radius:10px;
+  background:linear-gradient(90deg,#0C63B4,#0CB439);
+  color:white;border:none;
+  font-family:'Poppins',sans-serif;font-weight:700;font-size:.85rem;
+  cursor:pointer;transition:opacity .2s,transform .15s;
+  display:flex;align-items:center;justify-content:center;gap:6px;
+  box-shadow:0 3px 10px rgba(12,99,180,.22);
+}
+.btn-propose:hover{opacity:.9;transform:translateY(-1px);}
+.btn-propose svg{width:14px;height:14px;stroke:white;fill:none;stroke-width:2.5;stroke-linecap:round;stroke-linejoin:round;}
+.btn-accept{
+  flex:1;padding:10px;border-radius:10px;
+  background:#f0fdf4;border:1.5px solid var(--brand-green);
+  color:var(--brand-green);
+  font-family:'Poppins',sans-serif;font-weight:700;font-size:.85rem;
+  cursor:pointer;transition:all .2s;
+  display:flex;align-items:center;justify-content:center;gap:6px;
+}
+.btn-accept:hover{background:var(--contrast-lt);}
+.btn-accept svg{width:14px;height:14px;stroke:currentColor;fill:none;stroke-width:2.5;stroke-linecap:round;stroke-linejoin:round;}
+.btn-decline{
+  padding:10px 16px;border-radius:10px;
+  background:#fff5f5;border:1.5px solid #fca5a5;color:#dc2626;
+  font-family:'DM Sans',sans-serif;font-weight:600;font-size:.82rem;
+  cursor:pointer;transition:background .2s;
+  display:flex;align-items:center;justify-content:center;gap:5px;
+}
+.btn-decline:hover{background:#fee2e2;}
+.btn-decline svg{width:13px;height:13px;stroke:currentColor;fill:none;stroke-width:2.5;stroke-linecap:round;stroke-linejoin:round;}
+
+/* ════ MESSAGES ════ */
+.messages-area{
+  flex:1;overflow-y:auto;
+  padding:16px 16px 12px;
+  display:flex;flex-direction:column;gap:10px;
+  background:#f4faf5;
+}
+.messages-area::-webkit-scrollbar{width:4px;}
+.messages-area::-webkit-scrollbar-thumb{background:#c2dfc8;border-radius:4px;}
+
+.sys-msg{
+  text-align:center;align-self:center;
+  background:rgba(255,255,255,.8);border:1px solid #e2f0e4;
+  border-radius:20px;padding:5px 14px;
+  font-size:.72rem;color:var(--text-muted);font-weight:500;
+}
+
+.msg-row{display:flex;align-items:flex-end;gap:8px;}
+.msg-row.out{flex-direction:row-reverse;}
+
+.msg-av{
+  width:30px;height:30px;border-radius:50%;
+  display:flex;align-items:center;justify-content:center;
+  font-family:'Poppins',sans-serif;font-weight:700;font-size:.62rem;color:white;
+  flex-shrink:0;margin-bottom:2px;
+}
+.msg-av.driver{background:linear-gradient(135deg,#0C63B4,#0CB439);}
+.msg-av.rider{background:linear-gradient(135deg,#0CB439,#0D7810);}
+
+.bubble-wrap{display:flex;flex-direction:column;max-width:74%;gap:2px;}
+.msg-row.out .bubble-wrap{align-items:flex-end;}
+.bubble{
+  padding:10px 14px;
+  border-radius:18px;font-size:.875rem;line-height:1.5;
+  word-break:break-word;
+}
+.bubble.in{
+  background:var(--white);border:1.5px solid #e2f0e4;
+  border-bottom-left-radius:4px;color:var(--text-dark);
+  box-shadow:0 2px 8px rgba(0,0,0,.04);
+}
+.bubble.out{
+  background:linear-gradient(135deg,#0C63B4,#0CB439);
+  color:white;border-bottom-right-radius:4px;
+  box-shadow:0 3px 10px rgba(12,99,180,.2);
+}
+.btime{font-size:.62rem;color:var(--text-muted);padding:0 2px;}
+.msg-row.out .btime{color:var(--text-muted);text-align:right;}
+.read-tick{font-size:.62rem;color:#60a5fa;margin-left:2px;}
+
+/* Price negotiation bubble */
+.price-bubble{
+  align-self:center;width:100%;max-width:340px;
+  background:var(--white);border:1.5px solid var(--input-border);
+  border-radius:18px;overflow:hidden;
+  box-shadow:0 4px 16px rgba(13,120,16,.1);
+  margin:4px 0;
+}
+.price-bubble-header{
+  background:linear-gradient(135deg,#0C63B4,#0CB439);
+  padding:10px 16px;
+  display:flex;align-items:center;gap:7px;
+  font-family:'Poppins',sans-serif;font-weight:700;font-size:.82rem;color:white;
+}
+.price-bubble-header svg{width:14px;height:14px;stroke:white;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;}
+.price-bubble-body{padding:14px 16px;}
+.pb-from-to{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;}
+.pb-label{font-size:.68rem;color:var(--text-muted);font-weight:500;margin-bottom:2px;}
+.pb-amount{font-family:'Montserrat',sans-serif;font-weight:800;font-size:1.15rem;}
+.pb-amount.proposed{
+  background:linear-gradient(90deg,#0C63B4,#0CB439);
+  -webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;
+}
+.pb-amount.accepted{color:var(--brand-green);}
+.pb-arrow{color:#c2dfc8;font-size:1.1rem;}
+.pb-actions{display:flex;gap:8px;margin-top:10px;}
+.pb-btn-accept{
+  flex:1;padding:8px;border-radius:8px;
+  background:var(--brand-green);color:white;border:none;
+  font-family:'Poppins',sans-serif;font-weight:700;font-size:.78rem;
+  cursor:pointer;transition:opacity .2s;
+  display:flex;align-items:center;justify-content:center;gap:5px;
+}
+.pb-btn-accept:hover{opacity:.88;}
+.pb-btn-accept svg{width:12px;height:12px;stroke:white;fill:none;stroke-width:3;stroke-linecap:round;stroke-linejoin:round;}
+.pb-btn-counter{
+  flex:1;padding:8px;border-radius:8px;
+  background:var(--input-bg);border:1.5px solid var(--input-border);
+  color:var(--text-muted);
+  font-family:'DM Sans',sans-serif;font-weight:600;font-size:.78rem;
+  cursor:pointer;transition:all .2s;
+}
+.pb-btn-counter:hover{background:var(--contrast-lt);border-color:var(--brand-green);color:var(--brand-green);}
+.pb-agreed-banner{
+  background:#dcfce7;border-radius:10px;padding:10px 14px;
+  display:flex;align-items:center;gap:8px;
+  font-family:'Poppins',sans-serif;font-weight:700;font-size:.82rem;color:var(--brand-green);
+  margin-top:8px;
+}
+.pb-agreed-banner svg{width:16px;height:16px;stroke:var(--brand-green);fill:none;stroke-width:2.5;stroke-linecap:round;stroke-linejoin:round;}
+
+/* typing */
+.typing-wrap{display:flex;align-items:flex-end;gap:8px;}
+.typing-dots{
+  background:var(--white);border:1.5px solid #e2f0e4;
+  border-radius:18px;border-bottom-left-radius:4px;
+  padding:10px 14px;display:flex;gap:4px;align-items:center;
+}
+.t-dot{width:7px;height:7px;border-radius:50%;background:#c2dfc8;animation:tBounce 1.2s infinite ease-in-out;}
+.t-dot:nth-child(2){animation-delay:.15s;}
+.t-dot:nth-child(3){animation-delay:.3s;}
+@keyframes tBounce{0%,80%,100%{transform:scale(.8);background:#c2dfc8}40%{transform:scale(1.1);background:var(--brand-green)}}
+
+/* ════ INPUT BAR ════ */
+.input-bar{
+  flex-shrink:0;
+  background:var(--white);
+  border-top:1.5px solid var(--input-border);
+  padding:12px 14px;
+  display:flex;align-items:flex-end;gap:10px;
+}
+.input-extra-btns{display:flex;gap:6px;flex-shrink:0;padding-bottom:1px;}
+.extra-btn{
+  width:36px;height:36px;border-radius:10px;
+  background:var(--input-bg);border:1.5px solid var(--input-border);
+  cursor:pointer;display:flex;align-items:center;justify-content:center;
+  transition:all .18s;flex-shrink:0;
+}
+.extra-btn:hover{background:var(--contrast-lt);border-color:var(--brand-green);}
+.extra-btn:hover svg{stroke:var(--brand-green);}
+.extra-btn svg{width:15px;height:15px;stroke:var(--text-muted);fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;}
+.extra-btn.price-btn{background:var(--contrast-lt);border-color:var(--brand-green);}
+.extra-btn.price-btn svg{stroke:var(--brand-green);}
+
+.msg-input-wrap{flex:1;position:relative;}
+.msg-input{
+  width:100%;padding:10px 14px;
+  border:1.5px solid var(--input-border);border-radius:22px;
+  font-family:'DM Sans',sans-serif;font-size:.9rem;background:var(--input-bg);
+  outline:none;resize:none;max-height:120px;line-height:1.4;
+  transition:border-color .2s,background .2s;
+}
+.msg-input:focus{border-color:var(--brand-green);background:white;}
+.msg-input::placeholder{color:#b0c8b5;}
+
+.send-btn{
+  width:40px;height:40px;border-radius:50%;
+  background:linear-gradient(135deg,#0C63B4,#0CB439);
+  border:none;cursor:pointer;
+  display:flex;align-items:center;justify-content:center;flex-shrink:0;
+  transition:opacity .2s,transform .15s;
+  box-shadow:0 3px 10px rgba(12,99,180,.25);
+  padding-bottom:1px;
+}
+.send-btn:hover{opacity:.9;transform:scale(1.06);}
+.send-btn svg{width:16px;height:16px;stroke:white;fill:none;stroke-width:2.5;stroke-linecap:round;stroke-linejoin:round;}
+
+/* ════ LOCKED / ENDED BANNER ════ */
+.chat-ended-bar{
+  flex-shrink:0;
+  background:#f3f4f6;
+  border-top:1.5px solid var(--input-border);
+  padding:11px 20px;
+  display:none;
+  align-items:center;justify-content:center;gap:8px;
+  font-size:.82rem;color:var(--text-muted);font-weight:500;
+  font-family:'DM Sans',sans-serif;
+}
+.chat-ended-bar.show{display:flex;}
+.chat-ended-bar svg{width:14px;height:14px;stroke:var(--text-muted);fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;}
+.input-bar.locked .msg-input{opacity:.5;cursor:not-allowed;background:#ececec;}
+.input-bar.locked .send-btn,.input-bar.locked .extra-btn{opacity:.35;pointer-events:none;cursor:not-allowed;}
+
+/* ════ AGREED BANNER ════ */
+.agreed-banner{
+  background:linear-gradient(90deg,#0D7810,#0C63B4);
+  color:white;padding:10px 20px;
+  display:none;align-items:center;justify-content:center;gap:10px;
+  font-family:'Poppins',sans-serif;font-weight:700;font-size:.88rem;
+  flex-shrink:0;
+  animation:slideDown .3s ease;
+}
+.agreed-banner.show{display:flex;}
+.agreed-banner svg{width:16px;height:16px;stroke:white;fill:none;stroke-width:2.5;stroke-linecap:round;stroke-linejoin:round;}
+@keyframes slideDown{from{transform:translateY(-100%);opacity:0}to{transform:translateY(0);opacity:1}}
+
+/* ════ TOAST ════ */
+.toast{
+  position:fixed;bottom:80px;left:50%;transform:translateX(-50%) translateY(20px);
+  background:var(--brand-green);color:white;
+  padding:10px 18px;border-radius:12px;
+  display:flex;align-items:center;gap:8px;
+  font-weight:600;font-size:.84rem;
+  box-shadow:0 6px 20px rgba(13,120,16,.3);
+  opacity:0;transition:all .3s cubic-bezier(0.34,1.56,.64,1);z-index:999;
+  white-space:nowrap;
+}
+.toast.show{opacity:1;transform:translateX(-50%) translateY(0);}
+.toast svg{width:14px;height:14px;stroke:white;fill:none;stroke-width:2.5;stroke-linecap:round;stroke-linejoin:round;}
+
+@keyframes fadeUp{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:translateY(0)}}
+@keyframes spin{to{transform:rotate(360deg)}}
+</style>
+</head>
+<body>
+
+<!-- Toast -->
+<div class="toast" id="toast"><svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg><span id="toastMsg"></span></div>
+
+<!-- ════ TOP BAR ════ -->
+<div class="topbar">
+  <button class="back-btn" onclick="history.back()">
+    <svg viewBox="0 0 24 24"><polyline points="15 18 9 12 15 6"/></svg>
+  </button>
+  <div class="chat-avatar">
+    {{ other_user_initials }}
+    <div class="online-ring"></div>
+  </div>
+  <div class="chat-header-info">
+    <div class="chat-header-name">{{ other_user.full_name }} · {{ other_user.role|title }}</div>
+    <div class="chat-header-sub">
+      <svg viewBox="0 0 24 24"><circle cx="12" cy="10" r="3"/><path d="M12 2a8 8 0 0 0-8 8c0 5.25 8 12 8 12s8-6.75 8-12a8 8 0 0 0-8-8z"/></svg>
+      {{ ride.origin }} → {{ ride.destination }}
+      <span class="ride-status-chip {{ ride_status_class }}">{{ ride_status_label }}</span>
+    </div>
+  </div>
+  <div class="topbar-actions">
+    <button class="topbar-btn" onclick="{% if not chat_is_locked and not nego_locked %}toggleBargain(){% endif %}" id="bargainTopBtn" title="{% if nego_locked %}Price negotiation available once booking is confirmed{% else %}Price Bargain{% endif %}" {% if chat_is_locked or nego_locked %}disabled style="opacity:.4;cursor:not-allowed"{% endif %}>
+      <svg viewBox="0 0 24 24"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
+      <div class="price-badge-indicator" id="priceBadge"></div>
+    </button>
+    <a href="{% url 'my-rides' %}" class="topbar-btn" title="Ride Info">
+      <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+    </a>
+  </div>
+</div>
+
+<!-- Route pill -->
+<div class="route-pill">
+  <div class="route-pill-dot from"></div>
+  {{ ride.origin }}
+  <svg viewBox="0 0 24 24"><polyline points="9 18 15 12 9 6"/></svg>
+  {{ ride.destination }}
+  <div class="route-pill-dot to"></div>
+  &nbsp;·&nbsp; <time class="local-time" data-utc="{{ ride.depart_at|date:'c' }}" data-fmt="shortdatetime">{{ ride.depart_at|date:"D, M d" }} · {{ ride.depart_at|time:"g:i A" }}</time> · <strong style="color:rgba(255,255,255,.95);margin-left:2px" id="currentPriceLabel">${{ driver_price }}/seat</strong>
+</div>
+
+<!-- ════ PRICE BARGAIN PANEL ════ -->
+<div class="bargain-panel" id="bargainPanel">
+  <div class="bargain-inner">
+    <div class="bargain-title-row">
+      <div class="bargain-title">
+        <svg viewBox="0 0 24 24"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
+        Price Negotiation
+      </div>
+      <div class="bargain-status-pill pending" id="bargainStatusPill">
+        <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+        Pending
+      </div>
+    </div>
+
+    <!-- Price comparison -->
+    <div class="price-display-row">
+      <div class="price-side" id="driverPriceSide">
+        <div class="price-who"><svg viewBox="0 0 24 24"><rect x="1" y="3" width="15" height="13" rx="2"/><polygon points="16 8 20 8 23 11 23 16 16 16 16 8"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></svg>{% if is_driver %}Your Ask{% else %}Driver's Ask{% endif %}</div>
+        <div class="price-amount" id="driverPriceDisplay">${{ driver_price }}</div>
+        <div class="price-label">per seat · original</div>
+      </div>
+      <div class="vs-chip">VS</div>
+      <div class="price-side active" id="riderPriceSide">
+        <div class="price-who" style="color:var(--brand-green)"><svg viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg>{% if is_driver %}Rider's Offer{% else %}Your Offer{% endif %}</div>
+        <div class="price-amount" id="riderPriceDisplay">${{ driver_price }}</div>
+        <div class="price-label" id="riderPriceLabel">{% if is_driver %}per seat · incoming offer{% else %}per seat · tap to adjust{% endif %}</div>
+      </div>
+    </div>
+
+    <!-- Stepper -->
+    <div class="stepper-row">
+      <div class="stepper-label">{% if is_driver %}Your counter per seat (CAD){% else %}Your offer per seat (CAD){% endif %}</div>
+      <div class="stepper-wrap">
+        <button class="step-btn" onclick="adjustOffer(-1)">−</button>
+        <div class="step-value" id="stepValue">${{ driver_price }}</div>
+        <button class="step-btn" onclick="adjustOffer(1)">+</button>
+      </div>
+    </div>
+
+    <!-- Actions -->
+    <div class="bargain-actions" id="bargainActions">
+      <button class="btn-propose" onclick="proposePrice()">
+        <svg viewBox="0 0 24 24"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+        {% if is_driver %}Send Counter{% else %}Send Offer{% endif %}
+      </button>
+      <button class="btn-accept" onclick="acceptOtherPrice()">
+        <svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>
+        {% if is_driver %}Accept Rider's Offer{% else %}Accept ${{ driver_price }}{% endif %}
+      </button>
+      <button class="btn-decline" onclick="toggleBargain()">
+        <svg viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- Agreed banner -->
+<div class="agreed-banner" id="agreedBanner">
+  <svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>
+  Price agreed at <strong id="agreedPriceText" style="margin:0 4px">${{ driver_price }}</strong> per seat — Booked! 🎉
+</div>
+
+<!-- ════ MESSAGES ════ -->
+<div class="messages-area" id="messagesArea">
+  <div class="sys-msg">🔒 End-to-end secured · <time class="local-time" data-utc="{{ booking.booked_at|date:'c' }}" data-fmt="shortdate">{{ booking.booked_at|date:"D, M d" }}</time> · Ride booked</div>
+
+  <!-- Typing indicator placeholder -->
+  <div id="typingRow" style="display:none;" class="typing-wrap">
+    <div class="msg-av driver">{{ other_user_initials }}</div>
+    <div class="typing-dots"><div class="t-dot"></div><div class="t-dot"></div><div class="t-dot"></div></div>
+  </div>
+</div>
+
+<!-- ════ ENDED / LOCKED BANNER ════ -->
+{% if chat_is_locked %}
+<div class="chat-ended-bar show">
+  <svg viewBox="0 0 24 24"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+  {% if ride_status_class == 'cancelled' %}Booking was cancelled — messaging is closed.{% else %}Ride completed — messaging is closed.{% endif %}
+</div>
+{% endif %}
+
+<!-- ════ INPUT BAR ════ -->
+<div class="input-bar{% if chat_is_locked %} locked{% endif %}">
+  <div class="input-extra-btns">
+    <button class="extra-btn price-btn" onclick="{% if not chat_is_locked and not nego_locked %}toggleBargain(){% endif %}" title="{% if nego_locked %}Available once booking is confirmed{% else %}Price negotiation{% endif %}" {% if chat_is_locked or nego_locked %}disabled{% endif %}>
+      <svg viewBox="0 0 24 24"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
+    </button>
+    <button class="extra-btn" title="Attachment" {% if chat_is_locked %}disabled{% endif %}>
+      <svg viewBox="0 0 24 24"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
+    </button>
+  </div>
+  <div class="msg-input-wrap">
+    <textarea class="msg-input" id="msgInput" rows="1"
+      placeholder="{% if chat_is_locked %}Messaging disabled{% else %}Message {{ other_user.full_name }}...{% endif %}"
+      onkeydown="{% if not chat_is_locked %}handleKey(event){% endif %}"
+      oninput="{% if not chat_is_locked %}autoResize(this){% endif %}"
+      {% if chat_is_locked %}disabled{% endif %}></textarea>
+  </div>
+  <button class="send-btn" onclick="{% if not chat_is_locked %}sendMsg(){% endif %}" {% if chat_is_locked %}disabled{% endif %}>
+    <svg viewBox="0 0 24 24"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+  </button>
+</div>
+
+{{ history_json|json_script:"chat-history" }}
+
+<script>
+/* ══════════════════════════
+   STATE
+══════════════════════════ */
+const DRIVER_PRICE   = {{ driver_price|default:0 }};
+const CHAT_TOKEN     = '{{ chat_token }}';
+const CURRENT_USER   = {{ request.user.id|default:0 }};
+const IS_DRIVER      = {{ is_driver|yesno:"true,false" }};
+const CHAT_LOCKED    = {{ chat_is_locked|yesno:"true,false" }};
+const NEGO_LOCKED    = {{ nego_locked|yesno:"true,false" }};  // booking pending — no negotiation until confirmed
+let myOffer          = {{ driver_price|default:0 }};
+let latestPeerOffer  = {{ driver_price|default:0 }};  // tracks last offer from the other party
+let latestPeerOfferId = null;  // id of the offer latestPeerOffer refers to, sent back on accept
+let bargainOpen      = false;
+let priceAgreed      = false;
+let pendingOffer     = null;
+let currentIncomingBubbleActions = null;  // the .pb-actions node of the newest unresolved incoming bubble
+
+/* ══════════════════════════
+   WEBSOCKET
+   Skip entirely for locked (completed / cancelled) chats — no real-time
+   updates are needed, and an unnecessary connect can falsely trigger the
+   "connection lost" toast if anything goes wrong at that moment.
+══════════════════════════ */
+let socket = null;
+let wsConnected = false;   // true once the server has accepted the handshake
+
+if (!CHAT_LOCKED) {
+  const wsProtocol = location.protocol === 'https:' ? 'wss' : 'ws';
+  socket = new WebSocket(`${wsProtocol}://${location.host}/ws/chat/${CHAT_TOKEN}/`);
+
+  socket.onopen = function() {
+    wsConnected = true;
+  };
+
+  socket.onmessage = function(e) {
+    const data = JSON.parse(e.data);
+
+    if (data.type === 'message') {
+      const isOut = data.sender_id === CURRENT_USER;
+      renderMsg(data.body, isOut, data.initials, data.time);
+    } else if (data.type === 'price_offer') {
+      const isOut = data.sender_id === CURRENT_USER;
+      if (!isOut) {
+        latestPeerOffer = data.price;
+        latestPeerOfferId = data.offer_id;
+        document.getElementById('riderPriceDisplay').textContent = '$' + data.price;
+      }
+      injectPriceBubble(data.price, isOut ? 'outgoing' : 'incoming-counter', data.offer_id);
+    } else if (data.type === 'price_accepted') {
+      // Server-confirmed echo — every client in the room gets this, including
+      // whoever clicked accept (already applied locally) and the other party
+      // (who did nothing). Just sync UI; never re-send an accept from here,
+      // since the offer is already ACCEPTED and a resend would be rejected.
+      if (!priceAgreed) applyAgreedUI(data.price);
+    } else if (data.type === 'error') {
+      if (data.code === 'offer_stale') {
+        revertStaleOffer();
+      } else if (data.code === 'no_seats') {
+        revertNoSeats();
+      } else if (data.code === 'booking_inactive' || (data.message && data.message.indexOf('no longer active') !== -1)) {
+        revertAgreement();
+      }
+      showToast(data.message || 'Something went wrong.');
+    }
+  };
+
+  socket.onclose = function(event) {
+    // Only show "connection lost" if the handshake had already succeeded —
+    // failures during the initial connect (e.g. server 403, close-before-accept)
+    // would otherwise fire here with code 1006 and falsely alarm the user.
+    if (wsConnected && event.code !== 1000 && event.code !== 1001) {
+      showToast('Connection lost — please refresh.');
+    }
+  };
+}
+
+/* ══════════════════════════
+   BARGAIN PANEL
+══════════════════════════ */
+function toggleBargain() {
+  if (NEGO_LOCKED) return;
+  bargainOpen = !bargainOpen;
+  document.getElementById('bargainPanel').classList.toggle('open', bargainOpen);
+  if (bargainOpen) scrollMsgs();
+}
+
+function adjustOffer(delta) {
+  if (priceAgreed) return;
+  myOffer = Math.max(1, Math.min(DRIVER_PRICE + 10, myOffer + delta));
+  document.getElementById('stepValue').textContent = '$' + myOffer;
+  if (!IS_DRIVER) document.getElementById('riderPriceDisplay').textContent = '$' + myOffer;
+  const ref  = IS_DRIVER ? latestPeerOffer : DRIVER_PRICE;
+  const diff = myOffer - ref;
+  const refLabel = IS_DRIVER ? "rider's offer" : "ask";
+  const lbl  = diff < 0 ? `$${Math.abs(diff)} below ${refLabel}` : diff > 0 ? `$${diff} above ${refLabel}` : IS_DRIVER ? "matches rider" : "matches driver";
+  if (!IS_DRIVER) document.getElementById('riderPriceLabel').textContent = `per seat · ${lbl}`;
+  document.getElementById('riderPriceSide').classList.toggle('active', myOffer !== ref);
+}
+
+function proposePrice() {
+  if (CHAT_LOCKED || NEGO_LOCKED || !socket || priceAgreed || socket.readyState !== WebSocket.OPEN) return;
+  pendingOffer = myOffer;
+  socket.send(JSON.stringify({ type: 'price_offer', price: myOffer }));
+  toggleBargain();
+  showToast(`Offer of $${myOffer}/seat sent! ✉️`);
+}
+
+function acceptOtherPrice() {
+  if (priceAgreed) return;
+  const acceptPrice = IS_DRIVER ? latestPeerOffer : DRIVER_PRICE;
+  myOffer = acceptPrice;
+  finalizeAgreement(acceptPrice, IS_DRIVER ? latestPeerOfferId : null);
+}
+
+function driverAcceptPrice(price) {
+  addMsg(`Done! $${price}/seat works for me — see you Monday! 🚗🌿`, 'in');
+  finalizeAgreement(price);
+}
+
+function driverCounterOffer(price) {
+  addMsg(`I can do $${price} per seat — deal? 🤝`, 'in');
+  injectPriceBubble(price, 'incoming-counter');
+}
+
+// Undoes the optimistic "agreed" UI applied by finalizeAgreement() when the
+// server ends up rejecting the accept. `message` explains why, without
+// overclaiming what actually happened (e.g. a stale offer isn't the same as
+// a cancelled booking).
+function revertOptimisticAccept(message) {
+  priceAgreed = false;
+  pendingOffer = null;
+  document.getElementById('agreedBanner').classList.remove('show');
+  const pill = document.getElementById('bargainStatusPill');
+  pill.className = 'bargain-status-pill';
+  pill.textContent = '';
+  document.getElementById('bargainActions').style.opacity = '';
+  document.getElementById('bargainActions').style.pointerEvents = '';
+  const area = document.getElementById('messagesArea');
+  const sysdiv = document.createElement('div');
+  sysdiv.className = 'sys-msg';
+  sysdiv.textContent = `⚠️ ${message}`;
+  area.insertBefore(sysdiv, document.getElementById('typingRow'));
+  scrollMsgs();
+}
+
+function revertAgreement() {
+  revertOptimisticAccept('This booking is no longer active — it may have been cancelled or rejected.');
+}
+
+// Like revertAgreement, but for the case where only the specific offer went
+// stale (the other side sent a newer one before this accept reached the
+// server) — the booking itself is still active, so don't claim otherwise.
+function revertStaleOffer() {
+  revertOptimisticAccept('That price offer is no longer available — check the latest offer above.');
+}
+
+function revertNoSeats() {
+  revertOptimisticAccept('Price agreed, but this ride no longer has an open seat to confirm the booking. Please contact the driver.');
+}
+
+// Applies the "agreed" UI state. Shared by the user who actively accepts
+// (finalizeAgreement) and by the price_accepted broadcast every client in
+// the room receives once the server confirms it — including the accepter's
+// own echo and the other party, neither of which should re-submit an accept.
+function applyAgreedUI(price) {
+  priceAgreed = true;
+  pendingOffer = null;
+  document.getElementById('currentPriceLabel').textContent = `$${price}/seat ✓`;
+  document.getElementById('agreedPriceText').textContent   = `$${price}`;
+  document.getElementById('agreedBanner').classList.add('show');
+  document.getElementById('priceBadge').style.background   = '#4ade80';
+  // Update bargain panel to agreed state
+  const pill = document.getElementById('bargainStatusPill');
+  pill.className = 'bargain-status-pill agreed';
+  pill.replaceChildren();
+  const pillIcon = document.createElement('span');
+  pillIcon.innerHTML = '<svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>';
+  pill.appendChild(pillIcon.firstChild);
+  pill.append(` Agreed · $${price}`);
+  document.getElementById('bargainActions').style.opacity = '.4';
+  document.getElementById('bargainActions').style.pointerEvents = 'none';
+  // Inject system message
+  const area = document.getElementById('messagesArea');
+  const sysdiv = document.createElement('div');
+  sysdiv.className = 'sys-msg';
+  sysdiv.append('✅ Price agreed at ');
+  const agreedStrong = document.createElement('strong');
+  agreedStrong.textContent = `$${price}/seat`;
+  sysdiv.appendChild(agreedStrong);
+  sysdiv.append(' — booking confirmed.');
+  area.insertBefore(sysdiv, document.getElementById('typingRow'));
+  scrollMsgs();
+}
+
+function finalizeAgreement(price, offerId) {
+  if (priceAgreed) return;
+  if (socket && socket.readyState === WebSocket.OPEN)
+    socket.send(JSON.stringify({ type: 'price_accepted', price: price, offer_id: offerId ?? null }));
+  applyAgreedUI(price);
+  showToast(`Price agreed at $${price}/seat! 🎉`);
+}
+
+/* ══════════════════════════
+   PRICE PROPOSAL BUBBLE
+══════════════════════════ */
+function injectPriceBubble(price, direction, offerId) {
+  const area    = document.getElementById('messagesArea');
+  const isOut   = direction === 'outgoing';
+
+  // A new incoming offer replaces whatever the peer's previous pending offer
+  // was (the server auto-declines it) — disable that old bubble's buttons so
+  // it can't be accepted after the fact.
+  if (!isOut && currentIncomingBubbleActions) {
+    const replaced = document.createElement('div');
+    replaced.style.cssText = 'font-size:.75rem;color:var(--text-muted)';
+    replaced.textContent = 'Replaced by a newer offer.';
+    currentIncomingBubbleActions.replaceWith(replaced);
+    currentIncomingBubbleActions = null;
+  }
+
+  // Labels switch based on who is viewing
+  let headerText, yourLabel, yourOldLabel, yourOldAmount;
+  if (isOut) {
+    headerText    = IS_DRIVER ? '💸 Counter Offer Sent' : '💸 Price Offer Sent';
+    yourLabel     = IS_DRIVER ? 'Your Counter' : 'Your Offer';
+    yourOldLabel  = IS_DRIVER ? `Rider offered $${latestPeerOffer}` : `Driver asks $${DRIVER_PRICE}`;
+    yourOldAmount = IS_DRIVER ? latestPeerOffer : DRIVER_PRICE;
+  } else {
+    headerText    = IS_DRIVER ? '💸 Rider\'s Offer Received' : '🔄 Counter Offer Received';
+    yourLabel     = IS_DRIVER ? 'Rider\'s Offer' : 'Counter Offer';
+    yourOldLabel  = IS_DRIVER ? `Your ask $${DRIVER_PRICE}` : `You offered $${myOffer || price}`;
+    yourOldAmount = IS_DRIVER ? DRIVER_PRICE : (myOffer || price);
+  }
+
+  const waitingText  = IS_DRIVER ? "Waiting for rider's response..." : "Waiting for driver's response...";
+  const counterLabel = 'Counter Offer';
+
+  const wrapper = document.createElement('div');
+  wrapper.style.cssText = 'align-self:center;width:100%;display:flex;justify-content:center;margin:4px 0;animation:fadeUp .3s ease both';
+
+  const bubble = document.createElement('div');
+  bubble.className = 'price-bubble';
+
+  const header = document.createElement('div');
+  header.className = 'price-bubble-header';
+  header.innerHTML = '<svg viewBox="0 0 24 24"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>';
+  header.append(' ' + headerText);
+  bubble.appendChild(header);
+
+  const body = document.createElement('div');
+  body.className = 'price-bubble-body';
+
+  const fromTo = document.createElement('div');
+  fromTo.className = 'pb-from-to';
+
+  const fromCol = document.createElement('div');
+  const fromLabel = document.createElement('div');
+  fromLabel.className = 'pb-label';
+  fromLabel.textContent = yourOldLabel;
+  const fromAmount = document.createElement('div');
+  fromAmount.className = 'pb-amount';
+  fromAmount.style.cssText = 'color:var(--text-muted);font-size:1rem';
+  fromAmount.textContent = `$${yourOldAmount}`;
+  fromCol.append(fromLabel, fromAmount);
+
+  const arrow = document.createElement('div');
+  arrow.className = 'pb-arrow';
+  arrow.textContent = '→';
+
+  const toCol = document.createElement('div');
+  const toLabel = document.createElement('div');
+  toLabel.className = 'pb-label';
+  toLabel.textContent = yourLabel;
+  const toAmount = document.createElement('div');
+  toAmount.className = 'pb-amount proposed';
+  toAmount.textContent = `$${price}`;
+  toCol.append(toLabel, toAmount);
+
+  fromTo.append(fromCol, arrow, toCol);
+  body.appendChild(fromTo);
+
+  if (isOut) {
+    const waiting = document.createElement('div');
+    waiting.style.cssText = 'font-size:.75rem;color:var(--text-muted)';
+    waiting.textContent = waitingText;
+    body.appendChild(waiting);
+  } else {
+    const actions = document.createElement('div');
+    actions.className = 'pb-actions';
+
+    const acceptBtn = document.createElement('button');
+    acceptBtn.className = 'pb-btn-accept';
+    acceptBtn.innerHTML = '<svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>';
+    acceptBtn.append(` Accept $${price}`);
+    acceptBtn.addEventListener('click', () => acceptBubbleOffer(acceptBtn, price, offerId ?? null));
+
+    const counterBtn = document.createElement('button');
+    counterBtn.className = 'pb-btn-counter';
+    counterBtn.textContent = counterLabel;
+    counterBtn.addEventListener('click', () => openCounterOffer(price));
+
+    actions.append(acceptBtn, counterBtn);
+    body.appendChild(actions);
+  }
+
+  bubble.appendChild(body);
+  wrapper.appendChild(bubble);
+
+  area.insertBefore(wrapper, document.getElementById('typingRow'));
+  if (!isOut) currentIncomingBubbleActions = wrapper.querySelector('.pb-actions');
+  scrollMsgs();
+}
+
+function restoreAgreedState(price) {
+  applyAgreedUI(price);
+}
+
+function acceptBubbleOffer(btn, price, offerId) {
+  finalizeAgreement(price, offerId);
+  const actions = btn.closest('.pb-actions');
+  if (actions) {
+    if (actions === currentIncomingBubbleActions) currentIncomingBubbleActions = null;
+    const banner = document.createElement('div');
+    banner.className = 'pb-agreed-banner';
+    banner.innerHTML = '<svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>';
+    banner.append(` Accepted at $${price}!`);
+    actions.replaceWith(banner);
+  }
+}
+
+function openCounterOffer(driverCounter) {
+  myOffer = driverCounter;
+  document.getElementById('stepValue').textContent = '$' + myOffer;
+  document.getElementById('riderPriceDisplay').textContent = '$' + myOffer;
+  adjustOffer(0);
+  bargainOpen = false;
+  toggleBargain();
+}
+
+/* ══════════════════════════
+   CHAT MESSAGING
+══════════════════════════ */
+const DRIVER_REPLIES = [
+  "Sounds good! 👍",
+  "Sure thing, see you then!",
+  "Perfect, I'll be there on time 🚗",
+  "Great! Any questions just ask 😊",
+  "Looking forward to it! 🌿",
+  "Cool, I'll send you my ETA when I'm nearby!"
+];
+let replyIdx = 0;
+
+function sendMsg() {
+  if (CHAT_LOCKED || !socket) return;
+  const input = document.getElementById('msgInput');
+  const text  = input.value.trim();
+  if (!text || socket.readyState !== WebSocket.OPEN) return;
+  socket.send(JSON.stringify({ type: 'message', body: text }));
+  input.value = '';
+  input.style.height = '';
+}
+
+function renderMsg(text, isOut, initials, time) {
+  const area = document.getElementById('messagesArea');
+  const div  = document.createElement('div');
+  div.className = `msg-row ${isOut ? 'out' : ''}`;
+  div.style.animation = 'fadeUp .25s ease both';
+  const outAvClass = IS_DRIVER ? 'driver' : 'rider';
+  const inAvClass  = IS_DRIVER ? 'rider'  : 'driver';
+
+  const avatar = document.createElement('div');
+  avatar.className = `msg-av ${isOut ? outAvClass : inAvClass}`;
+  avatar.textContent = initials;
+
+  const wrap = document.createElement('div');
+  wrap.className = 'bubble-wrap';
+
+  const bubble = document.createElement('div');
+  bubble.className = `bubble ${isOut ? 'out' : 'in'}`;
+  bubble.textContent = text;
+
+  const btime = document.createElement('div');
+  btime.className = 'btime';
+  btime.append(time);
+  if (isOut) {
+    btime.append(' ');
+    const tick = document.createElement('span');
+    tick.className = 'read-tick';
+    tick.textContent = '✓✓';
+    btime.appendChild(tick);
+  }
+
+  wrap.appendChild(bubble);
+  wrap.appendChild(btime);
+  div.appendChild(avatar);
+  div.appendChild(wrap);
+
+  area.insertBefore(div, document.getElementById('typingRow'));
+  scrollMsgs();
+}
+
+function showTyping() {
+  document.getElementById('typingRow').style.display = 'flex';
+  scrollMsgs();
+}
+function hideTyping() {
+  document.getElementById('typingRow').style.display = 'none';
+}
+
+function handleKey(e) {
+  if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMsg(); }
+}
+function autoResize(el) {
+  el.style.height = 'auto';
+  el.style.height = Math.min(el.scrollHeight, 120) + 'px';
+}
+function scrollMsgs() {
+  const a = document.getElementById('messagesArea');
+  setTimeout(() => a.scrollTop = a.scrollHeight, 50);
+}
+
+/* ══════════════════════════
+   TOAST
+══════════════════════════ */
+function showToast(msg) {
+  const t = document.getElementById('toast');
+  document.getElementById('toastMsg').textContent = msg;
+  t.classList.add('show');
+  clearTimeout(t._t);
+  t._t = setTimeout(() => t.classList.remove('show'), 3400);
+}
+
+/* ── Render message history on load ── */
+const HISTORY = JSON.parse(document.getElementById('chat-history').textContent);
+HISTORY.forEach(m => renderMsg(m.body, m.sender_id === CURRENT_USER, m.initials, m.time));
+
+/* ── Restore negotiation state on page load ── */
+const AGREED_PRICE             = {{ agreed_price|default:"null" }};
+const PENDING_INCOMING_PRICE   = {{ pending_incoming_price|default:"null" }};
+const PENDING_INCOMING_OFFER_ID = {{ pending_incoming_offer_id|default:"null" }};
+const PENDING_OUTGOING_PRICE   = {{ pending_outgoing_price|default:"null" }};
+
+if (AGREED_PRICE !== null) {
+  restoreAgreedState(AGREED_PRICE);
+} else {
+  if (PENDING_INCOMING_PRICE !== null) {
+    latestPeerOffer = PENDING_INCOMING_PRICE;
+    latestPeerOfferId = PENDING_INCOMING_OFFER_ID;
+    document.getElementById('riderPriceDisplay').textContent = '$' + PENDING_INCOMING_PRICE;
+    injectPriceBubble(PENDING_INCOMING_PRICE, 'incoming-counter', PENDING_INCOMING_OFFER_ID);
+  }
+  if (PENDING_OUTGOING_PRICE !== null) {
+    myOffer = PENDING_OUTGOING_PRICE;
+    injectPriceBubble(PENDING_OUTGOING_PRICE, 'outgoing');
+  }
+}
+
+scrollMsgs();
+</script>
+
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+  document.querySelectorAll('time.local-time').forEach(function (el) {
+    var utc = new Date(el.dataset.utc);
+    if (isNaN(utc)) return;
+    var fmt       = el.dataset.fmt || 'datetime';
+    var fullDate  = { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' };
+    var shortDate = { weekday: 'short', month: 'short', day: 'numeric' };
+    var timeOnly  = { hour: 'numeric', minute: '2-digit', hour12: true };
+    if      (fmt === 'date')          el.textContent = utc.toLocaleDateString(undefined, fullDate);
+    else if (fmt === 'shortdate')     el.textContent = utc.toLocaleDateString(undefined, shortDate);
+    else if (fmt === 'time')          el.textContent = utc.toLocaleTimeString(undefined, timeOnly);
+    else if (fmt === 'datetime')      el.textContent = utc.toLocaleDateString(undefined, fullDate) + ' · ' + utc.toLocaleTimeString(undefined, timeOnly);
+    else if (fmt === 'shortdatetime') el.textContent = utc.toLocaleDateString(undefined, shortDate) + ' · ' + utc.toLocaleTimeString(undefined, timeOnly);
+    else if (fmt === 'weekdaytime')   el.textContent = utc.toLocaleDateString(undefined, { weekday: 'short' }) + ' ' + utc.toLocaleTimeString(undefined, timeOnly);
+  });
+});
+</script>
+</body>
+</html>

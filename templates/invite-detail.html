@@ -1,0 +1,160 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Ride Invite – Komüte</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;600;700;800&family=DM+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root {
+  --green: #0D7810; --blue: #0C63B4; --light-bg: #E9F7EE;
+  --white: #fff; --muted: #5a7060; --border: #c2dfc8;
+  --input-bg: #f6fbf7; --card-shadow: 0 4px 24px rgba(13,120,16,.08);
+}
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: 'DM Sans', sans-serif; background: var(--light-bg); min-height: 100vh; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 32px 16px; }
+
+.brand { font-family: 'Poppins', sans-serif; font-weight: 800; font-size: 1.5rem; background: linear-gradient(90deg, #0C63B4, #0CB439); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; letter-spacing: .08em; margin-bottom: 28px; }
+
+.card { background: var(--white); border-radius: 20px; border: 1.5px solid var(--border); box-shadow: var(--card-shadow); max-width: 480px; width: 100%; overflow: hidden; }
+.card-accent { height: 5px; background: linear-gradient(90deg, #0C63B4, #0CB439); }
+.card-body { padding: 36px 36px 32px; }
+
+.icon-circle { width: 56px; height: 56px; border-radius: 50%; background: #D5FBE5; display: flex; align-items: center; justify-content: center; font-size: 26px; margin-bottom: 20px; }
+.card-title { font-family: 'Poppins', sans-serif; font-weight: 800; font-size: 1.3rem; color: var(--green); margin-bottom: 8px; }
+.card-sub { font-size: 0.9rem; color: var(--muted); line-height: 1.6; margin-bottom: 24px; }
+
+.detail-box { border-radius: 12px; border: 1.5px solid var(--border); overflow: hidden; margin-bottom: 24px; }
+.detail-row { padding: 11px 16px; border-bottom: 1px solid #e0ede3; background: var(--input-bg); }
+.detail-row:last-child { border-bottom: none; }
+.detail-label { font-size: 0.68rem; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; margin-bottom: 2px; }
+.detail-value { font-size: 0.95rem; font-weight: 700; color: #121212; }
+.detail-value.price { color: var(--green); font-size: 1.15rem; }
+
+.route-arrow { color: var(--blue); margin: 0 6px; }
+
+.btn-accept {
+  display: flex; align-items: center; justify-content: center; gap: 8px;
+  width: 100%; padding: 14px; border-radius: 12px;
+  background: linear-gradient(90deg, #0C63B4, #0CB439);
+  color: white; border: none; font-family: 'Poppins', sans-serif;
+  font-size: 1rem; font-weight: 700; cursor: pointer;
+  transition: opacity .2s, transform .15s; margin-bottom: 10px;
+  box-shadow: 0 3px 12px rgba(12,99,180,.25);
+}
+.btn-accept:hover { opacity: .88; transform: translateY(-1px); }
+
+.btn-decline {
+  display: flex; align-items: center; justify-content: center;
+  width: 100%; padding: 12px; border-radius: 12px;
+  background: var(--input-bg); border: 1.5px solid var(--border);
+  color: var(--muted); font-family: 'DM Sans', sans-serif;
+  font-size: 0.9rem; font-weight: 600; cursor: pointer; transition: all .18s;
+}
+.btn-decline:hover { background: #fee2e2; border-color: #fca5a5; color: #dc2626; }
+
+.notice { border-radius: 10px; padding: 12px 16px; font-size: 0.82rem; line-height: 1.6; margin-bottom: 20px; }
+.notice.warn  { background: #fef9ec; border-left: 4px solid #f59e0b; color: #92400e; }
+.notice.error { background: #fef2f2; border-left: 4px solid #dc2626; color: #991b1b; }
+.notice.info  { background: #eff6ff; border-left: 4px solid #3b82f6; color: #1e40af; }
+.notice.success { background: #f0fdf4; border-left: 4px solid #22c55e; color: #166534; }
+
+.card-footer { background: var(--input-bg); border-top: 1.5px solid #edf7ee; padding: 14px 36px; font-size: 0.75rem; color: var(--muted); text-align: center; }
+</style>
+</head>
+<body>
+
+<div class="brand">KOMÜTE</div>
+
+<div class="card">
+  <div class="card-accent"></div>
+  <div class="card-body">
+
+    {% if expired_token %}
+      <div class="icon-circle">⏳</div>
+      <div class="card-title">Invite Expired</div>
+      <div class="notice warn">This invite link has expired (valid for 48 hours). Search for other available rides.</div>
+      <a href="{% url 'search-rides' %}" class="btn-accept" style="text-decoration:none;">Search Rides</a>
+
+    {% elif error %}
+      <div class="icon-circle">⚠️</div>
+      <div class="card-title">Cannot View Invite</div>
+      <div class="notice error">{{ error }}</div>
+      <a href="/" style="display:block;text-align:center;color:var(--green);font-weight:600;font-size:.9rem;">Go to Home</a>
+
+    {% elif invite.status == 'accepted' %}
+      <div class="icon-circle">✅</div>
+      <div class="card-title">Ride Already Booked!</div>
+      <div class="notice success">You've already accepted this invite and your seat is confirmed. Check your email for booking details.</div>
+      <a href="{% url 'my-rides' %}" class="btn-accept" style="text-decoration:none;">View My Rides</a>
+
+    {% elif invite.status == 'declined' %}
+      <div class="icon-circle">❌</div>
+      <div class="card-title">Invite Declined</div>
+      <div class="notice info">You've already declined this invite.</div>
+      <a href="{% url 'search-rides' %}" class="btn-accept" style="text-decoration:none;">Search Other Rides</a>
+
+    {% elif invite.status == 'expired' or expired %}
+      <div class="icon-circle">⏳</div>
+      <div class="card-title">Invite Expired</div>
+      <div class="notice warn">This invite was valid for 48 hours and has now expired. Search for other available rides.</div>
+      <a href="{% url 'search-rides' %}" class="btn-accept" style="text-decoration:none;">Search Rides</a>
+
+    {% else %}
+      <div class="icon-circle">🚗</div>
+      <div class="card-title">You've Been Invited!</div>
+      <p class="card-sub">
+        <strong>{{ invite.driver.full_name|default:invite.driver.email|title }}</strong>
+        found your route and invited you to join their ride.
+      </p>
+
+      <div class="detail-box">
+        <div class="detail-row">
+          <div class="detail-label">Route</div>
+          <div class="detail-value">{{ invite.ride.origin }} <span class="route-arrow">→</span> {{ invite.ride.destination }}</div>
+        </div>
+        <div class="detail-row">
+          <div class="detail-label">Date &amp; Time</div>
+          <div class="detail-value">{{ invite.ride.depart_at|date:"l, F j, Y \a\t g:i A" }} UTC</div>
+        </div>
+        <div class="detail-row">
+          <div class="detail-label">Driver</div>
+          <div class="detail-value">{{ invite.driver.full_name|default:invite.driver.email|title }}</div>
+        </div>
+        <div class="detail-row">
+          <div class="detail-label">Seats Available</div>
+          <div class="detail-value">{{ invite.ride.seats_available }}</div>
+        </div>
+        <div class="detail-row">
+          <div class="detail-label">Price</div>
+          <div class="detail-value price">{{ invite.ride.price_display }}</div>
+        </div>
+      </div>
+
+      <div class="notice warn">
+        ⏳ &nbsp; This invite expires <strong>48 hours</strong> after it was sent. Act now to secure your seat.
+      </div>
+
+      <!-- Accept -->
+      <form method="post" action="{% url 'accept-invite' token %}">
+        {% csrf_token %}
+        <button type="submit" class="btn-accept">✅ &nbsp; Accept &amp; Book Seat</button>
+      </form>
+
+      <!-- Decline -->
+      <form method="post" action="{% url 'decline-invite' token %}">
+        {% csrf_token %}
+        <button type="submit" class="btn-decline">Decline this invite</button>
+      </form>
+    {% endif %}
+
+  </div>
+  <div class="card-footer">
+    Invited on {{ invite.sent_at|date:"M j, Y" }} &nbsp;·&nbsp; Komüte by Indus Network LLC
+  </div>
+</div>
+
+</body>
+</html>

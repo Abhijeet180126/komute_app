@@ -1,0 +1,1194 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<link rel="icon" type="image/png" href="{% static 'images/icon_white.png' %}">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Komüte – Search for Rides</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800&family=DM+Sans:wght@400;500;600&family=Montserrat:wght@600;700;800&display=swap" rel="stylesheet">
+
+<style>
+/* ── KOMÜTE BRAND TOKENS ── */
+:root {
+  --dark-bg:     #121212;
+  --light-bg:    #E9F7EE;
+  --contrast-lt: #D5FBE5;
+  --brand-green: #0D7810;
+  --grad-blue:   #0C63B4;
+  --grad-green:  #0CB439;
+  --white:       #ffffff;
+  --text-dark:   #121212;
+  --text-muted:  #5a7060;
+  --input-border:#c2dfc8;
+  --input-bg:    #f6fbf7;
+  --card-shadow: 0 4px 24px rgba(13,120,16,0.08);
+}
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: 'DM Sans', sans-serif; background: var(--light-bg); min-height: 100vh; color: var(--text-dark); }
+
+/* ════ NAVBAR ════ */
+nav {
+  background: var(--white); border-bottom: 1px solid #d8eed9;
+  padding: 13px 36px; display: flex; align-items: center; justify-content: space-between;
+  position: sticky; top: 0; z-index: 100; box-shadow: 0 2px 12px rgba(0,0,0,0.04);
+}
+.nav-logo { display: flex; align-items: center; gap: 8px; text-decoration: none; }
+.nav-logo img { height: 38px; width: auto; object-fit: contain; }
+.nav-logo-text {
+  font-family: 'Montserrat', sans-serif; font-weight: 800; font-size: 1.05rem;
+  background: linear-gradient(90deg, #0C63B4, #0CB439);
+  -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
+  letter-spacing: 0.07em;
+}
+.nav-right { display: flex; align-items: center; gap: 12px; }
+.user-pill {
+  display: flex; align-items: center; gap: 9px;
+  background: linear-gradient(90deg, #0C63B4, #0CB439);
+  color: white; border-radius: 50px; padding: 5px 18px 5px 5px;
+  font-family: 'DM Sans', sans-serif; font-weight: 600; font-size: 0.9rem; cursor: pointer;
+}
+.user-avatar-nav {
+  width: 32px; height: 32px; border-radius: 50%;
+  background: rgba(255,255,255,0.22); border: 2px solid rgba(255,255,255,0.4);
+  display: flex; align-items: center; justify-content: center;
+}
+.user-avatar-nav svg { width: 16px; height: 16px; stroke: white; fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.logout-btn {
+  width: 38px; height: 38px; border-radius: 10px;
+  background: var(--input-bg); border: 1.5px solid var(--input-border);
+  display: flex; align-items: center; justify-content: center; cursor: pointer; transition: all 0.2s;
+}
+.logout-btn:hover { background: #fee2e2; border-color: #fca5a5; }
+.logout-btn:hover svg { stroke: #dc2626; }
+.logout-btn svg { width: 17px; height: 17px; stroke: var(--text-muted); fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+
+/* ════ PAGE ════ */
+.page-outer { max-width: 960px; margin: 0 auto; padding: 36px 24px 72px; }
+
+.page-header { margin-bottom: 28px; animation: fadeUp 0.4s ease both; }
+.breadcrumb {
+  display: inline-flex; align-items: center; gap: 6px;
+  background: var(--white); border: 1.5px solid var(--input-border);
+  border-radius: 50px; padding: 6px 16px;
+  font-size: 0.8rem; font-weight: 500; color: var(--text-muted);
+  margin-bottom: 14px; text-decoration: none;
+}
+.breadcrumb svg { width: 13px; height: 13px; stroke: var(--brand-green); fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.page-title { font-family: 'Poppins', sans-serif; font-size: 1.9rem; font-weight: 800; color: var(--brand-green); margin-bottom: 4px; }
+.page-subtitle { font-size: 0.9rem; color: var(--text-muted); display: flex; align-items: center; gap: 6px; }
+.page-subtitle svg { width: 14px; height: 14px; stroke: var(--brand-green); fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+
+/* ════ SEARCH CARD ════ */
+.search-card {
+  background: var(--white);
+  border-radius: 20px;
+  border: 1.5px solid #e2f0e4;
+  box-shadow: var(--card-shadow);
+  overflow: hidden;
+  margin-bottom: 28px;
+  animation: fadeUp 0.4s 0.06s ease both;
+}
+
+.search-card-header {
+  display: flex; align-items: center; gap: 10px;
+  padding: 20px 24px 0;
+}
+.search-card-header svg { width: 18px; height: 18px; stroke: var(--brand-green); fill: none; stroke-width: 2.5; stroke-linecap: round; stroke-linejoin: round; }
+.search-card-header h2 {
+  font-family: 'Poppins', sans-serif; font-weight: 800; font-size: 1.25rem; color: var(--brand-green);
+}
+
+.search-body { padding: 20px 24px 24px; }
+
+/* Main search row */
+.search-fields {
+  display: grid;
+  grid-template-columns: 1fr 1fr 200px;
+  gap: 14px;
+  margin-bottom: 14px;
+  align-items: end;
+}
+
+.form-group { display: flex; flex-direction: column; gap: 6px; }
+.form-label {
+  font-size: 0.8rem; font-weight: 600; color: var(--text-dark);
+  display: flex; align-items: center; gap: 5px;
+}
+.form-label svg { width: 13px; height: 13px; stroke: var(--brand-green); fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+
+.input-wrap { position: relative; }
+.input-icon { position: absolute; left: 12px; top: 50%; transform: translateY(-50%); pointer-events: none; }
+.input-icon svg { width: 15px; height: 15px; stroke: #9db8a2; fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.date-picker-native {
+  position: absolute; left: 0; top: 0; width: 36px; height: 100%;
+  opacity: 0; border: none; padding: 0; margin: 0; cursor: pointer; z-index: 2;
+}
+.date-picker-native::-webkit-calendar-picker-indicator {
+  position: absolute; left: 0; top: 0; width: 100%; height: 100%; margin: 0; cursor: pointer;
+}
+.clear-btn {
+  position: absolute; right: 10px; top: 50%; transform: translateY(-50%);
+  background: none; border: none; cursor: pointer; display: none; align-items: center; padding: 2px;
+}
+.clear-btn svg { width: 14px; height: 14px; stroke: #9db8a2; fill: none; stroke-width: 2.5; stroke-linecap: round; stroke-linejoin: round; }
+.clear-btn:hover svg { stroke: var(--brand-green); }
+.input-wrap:hover .clear-btn, .form-input:focus ~ .clear-btn { display: flex; }
+
+.form-input, .form-select {
+  width: 100%; padding: 11px 13px 11px 36px;
+  border: 1.5px solid var(--input-border); border-radius: 10px;
+  font-family: 'DM Sans', sans-serif; font-size: 0.9rem; color: var(--text-dark);
+  background: var(--input-bg); outline: none;
+  transition: border-color 0.2s, box-shadow 0.2s, background 0.2s;
+}
+.form-input::placeholder { color: #b0c8b5; }
+.form-input:focus, .form-select:focus {
+  border-color: var(--brand-green);
+  box-shadow: 0 0 0 3px rgba(13,120,16,0.1);
+  background: var(--white);
+}
+.form-input.place-confirmed {
+  border-color: var(--brand-green) !important;
+  background: #f0fdf4 !important;
+  padding-right: 36px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%230D7810' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='20 6 9 17 4 12'/%3E%3C/svg%3E") !important;
+  background-repeat: no-repeat !important;
+  background-position: right 10px center !important;
+  background-size: 16px !important;
+}
+
+/* Swap button */
+.swap-btn {
+  position: absolute; right: -20px; top: 50%; transform: translateY(-50%);
+  width: 32px; height: 32px; border-radius: 50%;
+  background: var(--white); border: 1.5px solid var(--input-border);
+  display: flex; align-items: center; justify-content: center;
+  cursor: pointer; z-index: 2; transition: all 0.2s;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+}
+.swap-btn:hover { background: var(--contrast-lt); border-color: var(--brand-green); transform: translateY(-50%) rotate(180deg); }
+.swap-btn svg { width: 14px; height: 14px; stroke: var(--brand-green); fill: none; stroke-width: 2.5; stroke-linecap: round; stroke-linejoin: round; }
+.from-to-wrap { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; position: relative; }
+
+/* Search button */
+.btn-search {
+  width: 100%; padding: 13px;
+  background: var(--brand-green);
+  color: white; border: none; border-radius: 10px;
+  font-family: 'Poppins', sans-serif; font-weight: 700; font-size: 0.95rem;
+  display: flex; align-items: center; justify-content: center; gap: 8px;
+  cursor: pointer; transition: opacity 0.2s, transform 0.15s;
+}
+.btn-search:hover { opacity: 0.88; transform: translateY(-1px); }
+.btn-search svg { width: 17px; height: 17px; stroke: white; fill: none; stroke-width: 2.5; stroke-linecap: round; stroke-linejoin: round; }
+
+/* Advanced filters toggle */
+.advanced-toggle {
+  display: flex; align-items: center; gap: 6px;
+  background: none; border: none; cursor: pointer; padding: 0;
+  font-family: 'DM Sans', sans-serif; font-size: 0.82rem; font-weight: 600;
+  color: var(--text-muted); transition: color 0.2s;
+  margin-top: 12px;
+}
+.advanced-toggle:hover { color: var(--brand-green); }
+.advanced-toggle svg { width: 14px; height: 14px; stroke: currentColor; fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; transition: transform 0.2s; }
+.advanced-toggle.open svg.chevron { transform: rotate(180deg); }
+
+/* Advanced filters panel */
+.advanced-panel {
+  display: none;
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1.5px solid #edf7ee;
+  animation: fadeUp 0.25s ease both;
+}
+.advanced-grid { display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 14px; }
+
+
+/* ════ RESULTS AREA ════ */
+.results-header {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: 16px; flex-wrap: wrap; gap: 10px;
+  animation: fadeUp 0.4s 0.12s ease both;
+}
+.results-title {
+  font-family: 'Poppins', sans-serif; font-weight: 700; font-size: 1rem; color: var(--brand-green);
+  display: flex; align-items: center; gap: 8px;
+}
+.results-count {
+  background: var(--contrast-lt); color: var(--brand-green);
+  border-radius: 20px; padding: 2px 10px;
+  font-size: 0.75rem; font-weight: 700;
+}
+.sort-wrap { display: flex; align-items: center; gap: 8px; }
+.sort-label { font-size: 0.8rem; color: var(--text-muted); font-weight: 500; }
+.sort-select {
+  padding: 6px 12px 6px 10px;
+  border: 1.5px solid var(--input-border); border-radius: 8px;
+  font-family: 'DM Sans', sans-serif; font-size: 0.82rem;
+  background: var(--white); color: var(--text-dark); outline: none; cursor: pointer;
+}
+
+/* ════ RIDE RESULT CARDS ════ */
+.results-list { display: flex; flex-direction: column; gap: 14px; }
+
+.result-card {
+  background: var(--white);
+  border-radius: 18px;
+  border: 1.5px solid #e2f0e4;
+  box-shadow: var(--card-shadow);
+  overflow: hidden;
+  transition: box-shadow 0.2s, transform 0.2s, border-color 0.2s;
+  cursor: pointer;
+  animation: fadeUp 0.4s ease both;
+}
+.result-card:hover {
+  box-shadow: 0 8px 32px rgba(13,120,16,0.14);
+  transform: translateY(-2px);
+  border-color: #b6dfc0;
+}
+.result-card:nth-child(1) { animation-delay: 0.15s; }
+.result-card:nth-child(2) { animation-delay: 0.21s; }
+.result-card:nth-child(3) { animation-delay: 0.27s; }
+.result-card:nth-child(4) { animation-delay: 0.33s; }
+
+@keyframes fadeUp {
+  from { opacity: 0; transform: translateY(16px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.result-card-inner { padding: 20px 22px; }
+
+.result-top {
+  display: flex; align-items: flex-start;
+  justify-content: space-between; gap: 16px; margin-bottom: 16px;
+}
+
+/* Driver info */
+.driver-info { display: flex; align-items: center; gap: 12px; flex-shrink: 0; }
+.driver-avatar {
+  width: 46px; height: 46px; border-radius: 50%;
+  background: linear-gradient(135deg, #0C63B4, #0CB439);
+  display: flex; align-items: center; justify-content: center;
+  font-family: 'Poppins', sans-serif; font-weight: 800; font-size: 0.9rem; color: white;
+  flex-shrink: 0; position: relative;
+}
+.driver-verified {
+  position: absolute; bottom: -2px; right: -2px;
+  width: 16px; height: 16px; border-radius: 50%;
+  background: var(--brand-green); border: 2px solid white;
+  display: flex; align-items: center; justify-content: center;
+}
+.driver-verified svg { width: 8px; height: 8px; stroke: white; fill: none; stroke-width: 3; stroke-linecap: round; stroke-linejoin: round; }
+.driver-name-wrap {}
+.driver-name { font-family: 'Poppins', sans-serif; font-weight: 700; font-size: 0.92rem; color: var(--text-dark); }
+.driver-rating { display: flex; align-items: center; gap: 4px; margin-top: 2px; }
+.stars { color: #f59e0b; font-size: 0.75rem; }
+.rating-num { font-size: 0.75rem; color: var(--text-muted); font-weight: 500; }
+
+/* Route display */
+.result-route { flex: 1; }
+.rr-line { display: flex; align-items: center; gap: 8px; font-size: 0.88rem; font-weight: 600; }
+.rr-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+.rr-dot.from { background: var(--brand-green); }
+.rr-dot.to   { background: linear-gradient(135deg, #0C63B4, #0CB439); }
+.rr-dashes {
+  width: 2px; height: 18px; margin-left: 4px;
+  background: repeating-linear-gradient(to bottom, #c2dfc8 0px, #c2dfc8 4px, transparent 4px, transparent 8px);
+}
+.via-mini {
+  display: inline-flex; align-items: center; gap: 4px;
+  background: var(--contrast-lt); border-radius: 20px;
+  padding: 2px 9px; font-size: 0.7rem; color: var(--brand-green); font-weight: 600;
+  margin-left: 8px;
+}
+.via-mini svg { width: 9px; height: 9px; stroke: var(--brand-green); fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+
+/* Price badge */
+.price-badge {
+  text-align: right; flex-shrink: 0;
+}
+.price-amount {
+  font-family: 'Montserrat', sans-serif; font-weight: 800; font-size: 1.4rem;
+  background: linear-gradient(90deg, #0C63B4, #0CB439);
+  -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
+  line-height: 1;
+}
+.price-label { font-size: 0.72rem; color: var(--text-muted); font-weight: 500; margin-top: 2px; }
+
+/* Chips */
+.result-chips { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 14px; }
+.chip {
+  display: inline-flex; align-items: center; gap: 5px;
+  background: var(--input-bg); border: 1px solid var(--input-border);
+  border-radius: 8px; padding: 5px 10px;
+  font-size: 0.76rem; color: var(--text-muted); font-weight: 500;
+}
+.chip svg { width: 12px; height: 12px; stroke: var(--brand-green); fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.chip.seats-chip { background: var(--contrast-lt); border-color: #b6dfc0; color: var(--brand-green); font-weight: 600; }
+.chip.full-chip  { background: #fee2e2; border-color: #fca5a5; color: #dc2626; }
+
+/* Pref pills */
+.pref-pills { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 14px; }
+.pref-pill {
+  display: inline-flex; align-items: center; gap: 4px;
+  background: #f0fdf4; border: 1px solid #bbf7d0;
+  border-radius: 20px; padding: 3px 9px;
+  font-size: 0.7rem; font-weight: 600; color: var(--brand-green);
+}
+.pref-pill svg { width: 10px; height: 10px; stroke: var(--brand-green); fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+
+/* Book row */
+.book-row {
+  display: flex; align-items: center; justify-content: space-between;
+  padding-top: 14px; border-top: 1.5px solid #edf7ee;
+  flex-wrap: wrap; gap: 10px;
+}
+.vehicle-info { display: flex; align-items: center; gap: 8px; }
+.vehicle-color-dot { width: 12px; height: 12px; border-radius: 50%; flex-shrink: 0; border: 1.5px solid rgba(0,0,0,0.1); }
+.vehicle-text { font-size: 0.78rem; color: var(--text-muted); font-weight: 500; }
+.vehicle-plate {
+  font-family: 'Montserrat', sans-serif; font-size: 0.7rem; font-weight: 700;
+  background: #f1f5f9; border: 1px solid #e2e8f0; border-radius: 4px;
+  padding: 2px 7px; color: #475569;
+}
+
+.book-actions { display: flex; gap: 8px; }
+.btn-details {
+  padding: 8px 16px; border-radius: 8px;
+  background: var(--input-bg); border: 1.5px solid var(--input-border);
+  font-family: 'DM Sans', sans-serif; font-size: 0.82rem; font-weight: 600;
+  color: var(--text-muted); cursor: pointer; transition: all 0.18s;
+  display: flex; align-items: center; gap: 5px; text-decoration: none;
+}
+.btn-details:hover { background: var(--contrast-lt); border-color: var(--brand-green); color: var(--brand-green); }
+.btn-details svg { width: 13px; height: 13px; stroke: currentColor; fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.btn-book {
+  padding: 8px 20px; border-radius: 8px;
+  background: linear-gradient(90deg, #0C63B4, #0CB439);
+  color: white; border: none;
+  font-family: 'Poppins', sans-serif; font-weight: 700; font-size: 0.85rem;
+  cursor: pointer; transition: opacity 0.2s, transform 0.15s;
+  display: flex; align-items: center; gap: 6px;
+  box-shadow: 0 3px 10px rgba(12,99,180,0.2);
+}
+.btn-book:hover { opacity: 0.9; transform: translateY(-1px); }
+.btn-book svg { width: 14px; height: 14px; stroke: white; fill: none; stroke-width: 2.5; stroke-linecap: round; stroke-linejoin: round; }
+.btn-book:disabled { opacity: 0.4; cursor: not-allowed; transform: none; }
+
+/* No results state */
+.no-results {
+  background: var(--white); border-radius: 18px; border: 1.5px solid #e2f0e4;
+  padding: 60px 40px; text-align: center;
+  display: none; flex-direction: column; align-items: center; gap: 14px;
+  box-shadow: var(--card-shadow); animation: fadeUp 0.35s ease both;
+}
+.no-results-icon {
+  width: 72px; height: 72px; border-radius: 50%;
+  background: var(--contrast-lt);
+  display: flex; align-items: center; justify-content: center;
+}
+.no-results-icon svg { width: 34px; height: 34px; stroke: var(--brand-green); fill: none; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.no-results h3 { font-family: 'Poppins', sans-serif; font-weight: 700; font-size: 1.1rem; color: var(--brand-green); }
+.no-results p { font-size: 0.88rem; color: var(--text-muted); max-width: 320px; line-height: 1.6; }
+
+/* ════ TOAST ════ */
+.toast {
+  position: fixed; bottom: 28px; right: 28px;
+  background: var(--brand-green); color: white;
+  padding: 13px 20px; border-radius: 12px;
+  display: flex; align-items: center; gap: 10px;
+  font-family: 'DM Sans', sans-serif; font-weight: 600; font-size: 0.9rem;
+  box-shadow: 0 8px 24px rgba(13,120,16,0.3);
+  transform: translateY(80px); opacity: 0;
+  transition: all 0.3s cubic-bezier(0.34,1.56,0.64,1); z-index: 999;
+}
+.toast.show { transform: translateY(0); opacity: 1; }
+.toast svg { width: 18px; height: 18px; stroke: white; fill: none; stroke-width: 2.5; stroke-linecap: round; stroke-linejoin: round; }
+
+/* ════ PHOTON AUTOCOMPLETE ════ */
+.autocomplete-dropdown {
+  position: absolute; /* top/left/width set by JS */
+  background: var(--white);
+  border: 1.5px solid var(--brand-green);
+  border-radius: 10px;
+  box-shadow: 0 8px 24px rgba(13,120,16,0.14);
+  z-index: 9999;
+  overflow: hidden;
+  max-height: 220px;
+  overflow-y: auto;
+}
+.autocomplete-item {
+  padding: 10px 14px;
+  font-family: 'DM Sans', sans-serif;
+  font-size: 0.85rem;
+  color: var(--text-dark);
+  cursor: pointer;
+  border-bottom: 1px solid #edf7ee;
+  transition: background 0.15s;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.autocomplete-item:last-child { border-bottom: none; }
+.autocomplete-item:hover,
+.autocomplete-item.active { background: var(--contrast-lt); color: var(--brand-green); }
+.autocomplete-item.no-results { color: var(--text-muted); cursor: default; font-style: italic; }
+.autocomplete-item.no-results:hover { background: transparent; color: var(--text-muted); }
+.autocomplete-loading { padding: 10px 14px; font-size: 0.8rem; color: var(--text-muted); font-style: italic; }
+
+/* ── LOCATE ME BUTTON ── */
+.locate-btn {
+  position: absolute; right: 8px; top: 50%; transform: translateY(-50%);
+  background: var(--contrast-lt); border: 1.5px solid var(--brand-green);
+  border-radius: 7px; padding: 4px 9px;
+  font-family: 'DM Sans', sans-serif; font-size: 0.72rem; font-weight: 700;
+  color: var(--brand-green); cursor: pointer;
+  display: inline-flex; align-items: center; gap: 4px;
+  transition: all 0.2s; white-space: nowrap; line-height: 1.4; z-index: 2;
+}
+.locate-btn:hover:not(:disabled) { background: var(--brand-green); color: white; }
+.locate-btn:hover:not(:disabled) svg { stroke: white; }
+.locate-btn:disabled { opacity: 0.55; cursor: not-allowed; }
+.locate-btn svg { width: 11px; height: 11px; stroke: var(--brand-green); fill: none; stroke-width: 2.5; stroke-linecap: round; stroke-linejoin: round; transition: stroke 0.2s; }
+@keyframes spin { to { transform: rotate(360deg); } }
+.locate-btn .spin { animation: spin 0.8s linear infinite; }
+
+/* ── FIELD VALIDATION ERRORS ── */
+.field-error { display: none; }
+.input-wrap.input-error { box-shadow: 0 0 0 2px rgba(220,38,38,.25); border-radius: 10px; }
+.input-wrap.input-error .form-input { border-color: #dc2626; }
+
+/* ════ RESPONSIVE ════ */
+@media (max-width: 760px) {
+  .search-fields { grid-template-columns: 1fr; }
+  .from-to-wrap { grid-template-columns: 1fr; }
+  .swap-btn { display: none; }
+  .advanced-grid { grid-template-columns: 1fr 1fr; }
+}
+@media (max-width: 520px) {
+  nav { padding: 12px 16px; }
+  .page-outer { padding: 24px 14px 60px; }
+  .result-top { flex-direction: column; }
+  .advanced-grid { grid-template-columns: 1fr; }
+}
+.pagination-row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  margin: 24px 0 8px;
+}
+.page-btn {
+  padding: 8px 20px;
+  border: 1.5px solid #b8dfc4;
+  border-radius: 8px;
+  background: #fff;
+  font-family: 'DM Sans', sans-serif;
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: #0D7810;
+  cursor: pointer;
+  transition: background 0.2s, border-color 0.2s;
+}
+.page-btn:hover { background: #E9F7EE; border-color: #0D7810; }
+.page-info {
+  font-family: 'DM Sans', sans-serif;
+  font-size: 0.875rem;
+  color: #4a6350;
+}
+</style>
+</head>
+<body>
+
+<!-- ════ TOAST ════ -->
+<div class="toast" id="toast">
+  <svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>
+  Ride booked! Check your bookings for details 🎉
+</div>
+
+<!-- ════ NAVBAR ════ -->
+<!-- <nav>
+  <a href="{% url 'profile' %}" class="nav-logo">
+    <img src="{% static 'komute/logo.png' %}" alt="Komüte"
+         onerror="this.style.display='none';this.nextElementSibling.style.display='block'">
+    <span class="nav-logo-text" style="display:none">KOMÜTE</span>
+  </a>
+  <div class="nav-right">
+    <div class="user-pill">
+      <div class="user-avatar-nav">
+        <svg viewBox="0 0 24 24"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+      </div>
+      {{ request.user.full_name }}
+    </div>
+    <form method="post" action="{% url 'logout' %}" style="margin:0">
+      {% csrf_token %}
+      <button type="submit" class="logout-btn" title="Logout">
+        <svg viewBox="0 0 24 24"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+      </button>
+    </form>
+  </div>
+</nav> -->
+{% include 'header.html' %}
+<!-- ════ PAGE ════ -->
+<div class="page-outer">
+
+  <!-- Header -->
+  <div class="page-header">
+    <a href="{% url 'profile' %}" class="breadcrumb">
+      <svg viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg>
+      Rider Dashboard
+    </a>
+    <h1 class="page-title">Search for Rides</h1>
+    <p class="page-subtitle">
+      <svg viewBox="0 0 24 24"><path d="M11 20A7 7 0 0 1 9.8 6.1C15.5 5 17 4.48 19 2c1 2 2 4.18 2 8 0 5.5-4.78 10-10 10z"/><path d="M2 21c0-3 1.85-5.36 5.08-6C9.5 14.52 12 13 13 12"/></svg>
+      Search sustainable rides and travel green
+    </p>
+  </div>
+
+  <!-- ── SEARCH CARD ── -->
+  <div class="search-card">
+    <div class="search-card-header">
+      <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+      <h2>Search for Rides</h2>
+    </div>
+    <div class="search-body">
+    <form method="post" action="" id="searchForm">
+      {% csrf_token %}
+      <!-- Hidden lat/lng — populated by map integration when ready -->
+      <input type="hidden" name="origin_lat" id="originLat" value="0">
+      <input type="hidden" name="origin_lng" id="originLng" value="0">
+      <input type="hidden" name="dest_lat"   id="destLat"   value="0">
+      <input type="hidden" name="dest_lng"   id="destLng"   value="0">
+      <input type="hidden" name="page"       id="pageInput" value="1">
+
+      <!-- From / To with swap -->
+      <div class="search-fields">
+        <div style="grid-column: span 2;">
+          <div class="from-to-wrap">
+            <!-- FROM -->
+            <div class="form-group">
+              <label class="form-label">
+                <svg viewBox="0 0 24 24"><circle cx="12" cy="10" r="3"/><path d="M12 2a8 8 0 0 0-8 8c0 5.25 8 12 8 12s8-6.75 8-12a8 8 0 0 0-8-8z"/></svg>
+                From
+              </label>
+              <div class="input-wrap">
+                <span class="input-icon"><svg viewBox="0 0 24 24"><circle cx="12" cy="10" r="3"/><path d="M12 2a8 8 0 0 0-8 8c0 5.25 8 12 8 12s8-6.75 8-12a8 8 0 0 0-8-8z"/></svg></span>
+                <input type="text" id="searchFrom" name="from" class="form-input place-input"
+                       placeholder="Pickup location" autocomplete="off"
+                       style="padding-right: 116px"
+                       oninput="resetLatLng('originLat','originLng')"
+                       value="{{ search_from|default:'' }}">
+                <button class="clear-btn" tabindex="-1" style="right:90px" onclick="clearInput('searchFrom')"><svg viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
+                <button type="button" class="locate-btn" id="locateBtn" onclick="locateMe()">
+                  <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><line x1="12" y1="2" x2="12" y2="6"/><line x1="12" y1="18" x2="12" y2="22"/><line x1="2" y1="12" x2="6" y2="12"/><line x1="18" y1="12" x2="22" y2="12"/></svg>
+                  Locate me
+                </button>
+              </div>
+              <p class="field-error" id="fromError"></p>
+            </div>
+
+            <!-- Swap button -->
+            <button class="swap-btn" tabindex="-1" onclick="swapLocations()" title="Swap">
+              <svg viewBox="0 0 24 24"><polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg>
+            </button>
+
+            <!-- TO -->
+            <div class="form-group">
+              <label class="form-label">
+                <svg viewBox="0 0 24 24"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>
+                To
+              </label>
+              <div class="input-wrap">
+                <span class="input-icon"><svg viewBox="0 0 24 24"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg></span>
+                <input type="text" id="searchTo" name="to" class="form-input place-input"
+                       placeholder="Destination" autocomplete="off"
+                       oninput="resetLatLng('destLat','destLng')"
+                       value="{{ search_to|default:'' }}">
+                <button class="clear-btn" tabindex="-1" onclick="clearInput('searchTo')"><svg viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
+              </div>
+              <p class="field-error" id="toError"></p>
+            </div>
+          </div>
+        </div>
+
+        <!-- DATE -->
+        <div class="form-group">
+          <label class="form-label">
+            <svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+            Date
+          </label>
+          <div class="input-wrap">
+            <span class="input-icon"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg></span>
+            <input type="text" id="searchDate_display" class="form-input" placeholder="MM-DD-YYYY" maxlength="10" inputmode="numeric" autocomplete="off" oninput="autoDateFmt(this,'searchDate')"
+              value="{% if search_date %}{{ search_date|slice:'5:7' }}-{{ search_date|slice:'8:10' }}-{{ search_date|slice:'0:4' }}{% endif %}">
+            <input type="hidden" id="searchDate" name="date" value="{{ search_date|default:'' }}">
+            <input type="date" class="date-picker-native" id="searchDate_picker" tabindex="-1" min="{% now 'Y-m-d' %}" value="{{ search_date|default:'' }}"
+              onchange="pickNativeDate(this,'searchDate_display','searchDate')">
+          </div>
+        </div>
+      </div>
+
+      <!-- Search Button -->
+      <button type="button" class="btn-search" onclick="searchRides()">
+        <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+        Search Rides
+      </button>
+
+      <!-- Advanced Filters Toggle -->
+      <button type="button" class="advanced-toggle" id="advToggle" onclick="toggleAdvanced()">
+        <svg viewBox="0 0 24 24"><line x1="4" y1="6" x2="20" y2="6"/><line x1="8" y1="12" x2="16" y2="12"/><line x1="10" y1="18" x2="14" y2="18"/></svg>
+        Advanced Filters
+        <svg class="chevron" viewBox="0 0 24 24"><polyline points="6 9 12 15 18 9"/></svg>
+      </button>
+
+      <!-- Advanced Filters Panel -->
+      <div class="advanced-panel" id="advPanel">
+        <div class="advanced-grid">
+          <div class="form-group">
+            <label class="form-label">Seats Needed</label>
+            <div class="input-wrap">
+              <span class="input-icon"><svg viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg></span>
+              <select name="seats" class="form-select" style="padding-left:36px">
+                <option value="">Any</option>
+                <option value="1" {% if filter_seats == '1' %}selected{% endif %}>1</option>
+                <option value="2" {% if filter_seats == '2' %}selected{% endif %}>2</option>
+                <option value="3" {% if filter_seats == '3' %}selected{% endif %}>3</option>
+                <option value="4" {% if filter_seats == '4' %}selected{% endif %}>4</option>
+              </select>
+            </div>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Max Price (CAD)</label>
+            <div class="input-wrap">
+              <span class="input-icon"><svg viewBox="0 0 24 24"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg></span>
+              <input type="number" name="max_price" class="form-input" placeholder="No limit" min="0" value="{{ filter_max_price }}">
+            </div>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Departure Time</label>
+            <div class="input-wrap">
+              <span class="input-icon"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg></span>
+              <select name="depart_time_slot" class="form-select" style="padding-left:36px">
+                <option value="">Any time</option>
+                <option value="early_morning" {% if filter_time_slot == 'early_morning' %}selected{% endif %}>Early morning (5–8 AM)</option>
+                <option value="morning"       {% if filter_time_slot == 'morning'       %}selected{% endif %}>Morning (8–12 PM)</option>
+                <option value="afternoon"     {% if filter_time_slot == 'afternoon'     %}selected{% endif %}>Afternoon (12–5 PM)</option>
+                <option value="evening"       {% if filter_time_slot == 'evening'       %}selected{% endif %}>Evening (5–9 PM)</option>
+              </select>
+            </div>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Preferences</label>
+            <div class="input-wrap">
+              <span class="input-icon"><svg viewBox="0 0 24 24"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg></span>
+              <select name="preference" class="form-select" style="padding-left:36px">
+                <option value="">Any</option>
+                <option value="Winter Tires"  {% if filter_preference == 'Winter Tires'  %}selected{% endif %}>Winter Tires</option>
+                <option value="Pet Friendly"  {% if filter_preference == 'Pet Friendly'  %}selected{% endif %}>Pet Friendly</option>
+                <option value="Quiet Ride"    {% if filter_preference == 'Quiet Ride'    %}selected{% endif %}>Quiet Ride</option>
+                <option value="Music OK"      {% if filter_preference == 'Music OK'      %}selected{% endif %}>Music OK</option>
+                <option value="Luggage OK"    {% if filter_preference == 'Luggage OK'    %}selected{% endif %}>Luggage OK</option>
+              </select>
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+    </form>
+  </div>
+
+  <!-- ── RESULTS ── -->
+  <div id="resultsSection" {% if not search_performed %}style="display:none"{% endif %}>
+    <div class="results-header">
+      <div class="results-title">
+        Available Rides
+        <span class="results-count" id="resultsCount">{{ total_count }} ride{{ total_count|pluralize }} found</span>
+      </div>
+      <div class="sort-wrap">
+        <span class="sort-label">Sort by:</span>
+        <select class="sort-select">
+          <option>Departure time</option>
+          <option>Price: Low to High</option>
+          <option>Price: High to Low</option>
+          <option>Rating</option>
+          <option>Seats available</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="results-list" id="resultsList" {% if not rides %}style="display:none"{% endif %}>
+
+      {% for ride in rides %}
+      <div class="result-card">
+        <div class="result-card-inner">
+          <div class="result-top">
+            <div class="driver-info">
+              <div class="driver-avatar">
+                {{ ride.driver_initials }}
+                {% if ride.driver_is_verified %}
+                <div class="driver-verified"><svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg></div>
+                {% endif %}
+              </div>
+              <div class="driver-name-wrap">
+                <div class="driver-name">{{ ride.driver_name }}</div>
+                <div class="driver-rating">
+                  <span class="stars">{{ ride.driver_rating_stars }}</span>
+                  <span class="rating-num">{{ ride.driver_rating }} ({{ ride.driver_rating_count }} rides)</span>
+                </div>
+              </div>
+            </div>
+            <div class="result-route">
+              <div class="rr-line"><div class="rr-dot from"></div> {{ ride.origin }}</div>
+              {% if ride.stops %}
+              {% for stop in ride.stops %}
+              <div style="display:flex;align-items:center;gap:8px;margin:3px 0">
+                <div class="rr-dashes"></div>
+                <span class="via-mini">
+                  <svg viewBox="0 0 24 24"><circle cx="12" cy="10" r="3"/><path d="M12 2a8 8 0 0 0-8 8c0 5.25 8 12 8 12s8-6.75 8-12a8 8 0 0 0-8-8z"/></svg>
+                  {{ stop.location }}
+                </span>
+              </div>
+              {% endfor %}
+              {% else %}
+              <div style="margin:5px 0 2px 0;padding-left:4px"><div class="rr-dashes"></div></div>
+              {% endif %}
+              <div class="rr-line"><div class="rr-dot to"></div> {{ ride.destination }}</div>
+            </div>
+            <div class="price-badge">
+              <div class="price-amount">{{ ride.price_display }}</div>
+              <div class="price-label">per seat</div>
+            </div>
+          </div>
+          <div class="result-chips">
+            <div class="chip">
+              <svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+              <time class="local-time" data-utc="{{ ride.depart_at|date:'c' }}" data-fmt="date">{{ ride.depart_at|date:"D, N j, Y" }}</time>
+            </div>
+            <div class="chip">
+              <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+              Departs <time class="local-time" data-utc="{{ ride.depart_at|date:'c' }}" data-fmt="time">{{ ride.depart_at|time:"g:i A" }}</time>
+            </div>
+            {% if ride.seats_available > 0 %}
+            <div class="chip seats-chip">
+              <svg viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg>
+              {{ ride.seats_available }} seat{{ ride.seats_available|pluralize }} available
+            </div>
+            {% else %}
+            <div class="chip full-chip">
+              <svg viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg>
+              Fully booked
+            </div>
+            {% endif %}
+          </div>
+          {% if ride.preferences %}
+          <div class="pref-pills">
+            {% for pref in ride.preferences %}
+            <div class="pref-pill">
+              <svg viewBox="0 0 24 24"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+              {{ pref }}
+            </div>
+            {% endfor %}
+          </div>
+          {% endif %}
+          <div class="book-row">
+            <div class="vehicle-info">
+              <div class="vehicle-color-dot" data-color="{{ ride.vehicle_color }}"></div>
+              <span class="vehicle-text">{{ ride.vehicle_display }}</span>
+              <span class="vehicle-plate">{{ ride.vehicle_plate }}</span>
+            </div>
+            <div class="book-actions">
+              {% comment %}
+              <a class="btn-details" href="{% url 'create-ride-booking' ride.id %}" onclick="event.stopPropagation()">
+                <svg viewBox="0 0 24 24"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+                Details
+              </a>
+              {% endcomment %}
+              {% if ride.seats_available > 0 %}
+              <a class="btn-book" href="{% url 'create-ride-booking' ride.id %}" onclick="event.stopPropagation()">
+                <svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>
+                Book Seat
+              </a>
+              {% else %}
+              <button class="btn-book" disabled>Fully Booked</button>
+              {% endif %}
+            </div>
+          </div>
+        </div>
+      </div>
+      {% endfor %}
+
+    </div><!-- /results-list -->
+
+    {% if page_obj and page_obj.paginator.num_pages > 1 %}
+    <div class="pagination-row">
+      {% if page_obj.has_previous %}
+        <button type="button" class="page-btn" onclick="goToPage({{ page_obj.previous_page_number }})">&#8249; Prev</button>
+      {% endif %}
+      <span class="page-info">Page {{ page_obj.number }} of {{ page_obj.paginator.num_pages }}</span>
+      {% if page_obj.has_next %}
+        <button type="button" class="page-btn" onclick="goToPage({{ page_obj.next_page_number }})">Next &#8250;</button>
+      {% endif %}
+    </div>
+    {% endif %}
+
+    <!-- No results state -->
+    <div class="no-results" id="noResults">
+      <div class="no-results-icon">
+        <svg viewBox="0 0 24 24"><rect x="1" y="3" width="15" height="13" rx="2"/><polygon points="16 8 20 8 23 11 23 16 16 16 16 8"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></svg>
+      </div>
+      <h3>No rides found</h3>
+      <p>No rides available for your route on that date. Try adjusting your search or check back later.</p>
+    </div>
+
+  </div><!-- /resultsSection -->
+
+</div><!-- /page-outer -->
+
+<script>
+  // Always display MM-DD-YYYY in date inputs regardless of browser locale
+  function autoDateFmt(display, hiddenId) {
+    let raw = display.value.replace(/\D/g, '').substring(0, 8);
+    if (raw.length > 4)      display.value = raw.slice(0,2) + '-' + raw.slice(2,4) + '-' + raw.slice(4);
+    else if (raw.length > 2) display.value = raw.slice(0,2) + '-' + raw.slice(2);
+    else                     display.value = raw;
+    document.getElementById(hiddenId).value = raw.length === 8
+      ? raw.slice(4,8) + '-' + raw.slice(0,2) + '-' + raw.slice(2,4)
+      : '';
+  }
+
+  /* ── Open the native calendar picker when the text field itself is clicked ── */
+  function openDatePicker(id) {
+    const el = document.getElementById(id);
+    if (el && el.showPicker) {
+      try { el.showPicker(); } catch (e) {}
+    }
+  }
+
+  /* ── Sync native date-picker selection into the display + hidden inputs ── */
+  function pickNativeDate(native, displayId, hiddenId) {
+    if (!native.value) return;
+    const [y, m, d] = native.value.split('-');
+    document.getElementById(displayId).value = `${m}-${d}-${y}`;
+    document.getElementById(hiddenId).value = native.value;
+  }
+
+  function goToPage(n) {
+    document.getElementById('pageInput').value = n;
+    document.getElementById('searchForm').submit();
+  }
+
+  (function () {
+    const d = new Date();
+    const today = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+    const dateEl = document.getElementById('searchDate');
+    dateEl.min = today;
+    if (dateEl.value && dateEl.value < today) dateEl.value = today;
+  })();
+
+  document.querySelectorAll('.vehicle-color-dot[data-color]').forEach(el => el.style.background = el.dataset.color);
+
+  /* ── PHOTON AUTOCOMPLETE ── */
+  function setupAutocomplete(input, latInput, lngInput) {
+    if (!input || !latInput || !lngInput) return;
+    let timer;
+    let dropdown = null;
+    let lastFetched = [];
+
+    function removeDropdown() {
+      if (dropdown) { dropdown.remove(); dropdown = null; }
+    }
+
+    function createDropdown() {
+      removeDropdown();
+      const rect = input.getBoundingClientRect();
+      dropdown = document.createElement('div');
+      dropdown.className = 'autocomplete-dropdown';
+      dropdown.style.top   = (rect.bottom + window.scrollY + 4) + 'px';
+      dropdown.style.left  = (rect.left  + window.scrollX) + 'px';
+      dropdown.style.width = rect.width + 'px';
+      document.body.appendChild(dropdown);
+      return dropdown;
+    }
+
+    input.addEventListener('input', function () {
+      const q = input.value.trim();
+      latInput.value = '0';
+      lngInput.value = '0';
+      input.classList.remove('place-confirmed');
+      if (q.length < 3) { removeDropdown(); lastFetched = []; return; }
+      clearTimeout(timer);
+      const dd = createDropdown();
+      dd.innerHTML = '<div class="autocomplete-loading">Searching…</div>';
+      timer = setTimeout(() => {
+        fetch('https://photon.komoot.io/api/?q=' + encodeURIComponent(q) + '&limit=5')
+          .then(r => r.json())
+          .then(data => {
+            removeDropdown();
+            if (!data.features || data.features.length === 0) {
+              const dd2 = createDropdown();
+              dd2.innerHTML = '<div class="autocomplete-item no-results">No results found</div>';
+              return;
+            }
+            lastFetched = data.features.map(f => {
+              const p = f.properties;
+              const coords = f.geometry.coordinates;
+              return { label: [p.name, p.city, p.state, p.country].filter(Boolean).join(', '), lat: coords[1], lng: coords[0] };
+            });
+            const dd2 = createDropdown();
+            lastFetched.forEach(r => {
+              const item = document.createElement('div');
+              item.className = 'autocomplete-item';
+              item.textContent = r.label;
+              item.addEventListener('mousedown', function (e) {
+                e.preventDefault();
+                input.value = r.label;
+                latInput.value = r.lat;
+                lngInput.value = r.lng;
+                input.classList.add('place-confirmed');
+                removeDropdown();
+              });
+              dd2.appendChild(item);
+            });
+          })
+          .catch(() => removeDropdown());
+      }, 300);
+    });
+
+    input.addEventListener('blur', () => {
+      if (parseFloat(latInput.value) === 0 && input.value.trim().length >= 3 && lastFetched.length > 0) {
+        const first = lastFetched[0];
+        input.value = first.label;
+        latInput.value = first.lat;
+        lngInput.value = first.lng;
+        input.classList.add('place-confirmed');
+      }
+      setTimeout(removeDropdown, 150);
+    });
+
+    input.addEventListener('keydown', function (e) {
+      if (!dropdown) return;
+      const items = [...dropdown.querySelectorAll('.autocomplete-item:not(.no-results)')];
+      const active = dropdown.querySelector('.autocomplete-item.active');
+      let idx = items.indexOf(active);
+      if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        if (active) active.classList.remove('active');
+        items[(idx + 1) % items.length].classList.add('active');
+      } else if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        if (active) active.classList.remove('active');
+        items[(idx - 1 + items.length) % items.length].classList.add('active');
+      } else if (e.key === 'Enter' && active) {
+        e.preventDefault();
+        active.dispatchEvent(new MouseEvent('mousedown'));
+      } else if (e.key === 'Tab' && items.length) {
+        e.preventDefault();
+        (active || items[0]).dispatchEvent(new MouseEvent('mousedown'));
+      } else if (e.key === 'Escape') {
+        removeDropdown();
+      }
+    });
+  }
+
+  /* ── SWAP LOCATIONS ── */
+  function swapLocations() {
+    const from    = document.getElementById('searchFrom');
+    const to      = document.getElementById('searchTo');
+    const latFrom = document.getElementById('originLat');
+    const lngFrom = document.getElementById('originLng');
+    const latTo   = document.getElementById('destLat');
+    const lngTo   = document.getElementById('destLng');
+
+    const tmpText = from.value; from.value = to.value; to.value = tmpText;
+    const tmpLat  = latFrom.value; latFrom.value = latTo.value; latTo.value = tmpLat;
+    const tmpLng  = lngFrom.value; lngFrom.value = lngTo.value; lngTo.value = tmpLng;
+
+    const fromConf = from.classList.contains('place-confirmed');
+    const toConf   = to.classList.contains('place-confirmed');
+    from.classList.toggle('place-confirmed', toConf);
+    to.classList.toggle('place-confirmed', fromConf);
+  }
+
+  /* ── CLEAR INPUT ── */
+  const _latLngMap = {
+    'searchFrom': ['originLat', 'originLng'],
+    'searchTo':   ['destLat',   'destLng'],
+  };
+  function clearInput(id) {
+    const el = document.getElementById(id);
+    el.value = '';
+    el.classList.remove('place-confirmed');
+    if (_latLngMap[id]) {
+      document.getElementById(_latLngMap[id][0]).value = '0';
+      document.getElementById(_latLngMap[id][1]).value = '0';
+    }
+    el.focus();
+  }
+
+  /* ── INIT AUTOCOMPLETE ── */
+  setupAutocomplete(
+    document.getElementById('searchFrom'),
+    document.getElementById('originLat'),
+    document.getElementById('originLng')
+  );
+  setupAutocomplete(
+    document.getElementById('searchTo'),
+    document.getElementById('destLat'),
+    document.getElementById('destLng')
+  );
+
+  /* ── LOCATE ME ── */
+  function locateMe() {
+    const btn = document.getElementById('locateBtn');
+    if (!navigator.geolocation) {
+      alert('Geolocation is not supported by your browser.');
+      return;
+    }
+    btn.disabled = true;
+    btn.innerHTML = '<svg class="spin" viewBox="0 0 24 24" style="width:12px;height:12px;stroke:currentColor;fill:none;stroke-width:2.5;stroke-linecap:round;"><path d="M12 2a10 10 0 1 0 10 10"/></svg> Locating…';
+    navigator.geolocation.getCurrentPosition(
+      pos => {
+        const { latitude: lat, longitude: lng } = pos.coords;
+        fetch(`https://photon.komoot.io/reverse?lat=${lat}&lon=${lng}&lang=en`)
+        .then(r => r.json())
+        .then(data => {
+          const p = (data.features || [])[0]?.properties || {};
+          const label = p.city || p.district || p.name || `${lat.toFixed(4)}, ${lng.toFixed(4)}`;
+          document.getElementById('searchFrom').value = label;
+          document.getElementById('originLat').value  = lat;
+          document.getElementById('originLng').value  = lng;
+        })
+        .catch(() => {
+          document.getElementById('searchFrom').value = `${lat.toFixed(5)}, ${lng.toFixed(5)}`;
+          document.getElementById('originLat').value  = lat;
+          document.getElementById('originLng').value  = lng;
+        })
+        .finally(() => {
+          btn.disabled = false;
+          btn.innerHTML = '<svg viewBox="0 0 24 24" style="width:11px;height:11px;stroke:currentColor;fill:none;stroke-width:2.5;stroke-linecap:round;stroke-linejoin:round;"><circle cx="12" cy="12" r="3"/><line x1="12" y1="2" x2="12" y2="6"/><line x1="12" y1="18" x2="12" y2="22"/><line x1="2" y1="12" x2="6" y2="12"/><line x1="18" y1="12" x2="22" y2="12"/></svg> Locate me';
+        });
+      },
+      err => {
+        btn.disabled = false;
+        btn.innerHTML = '<svg viewBox="0 0 24 24" style="width:11px;height:11px;stroke:currentColor;fill:none;stroke-width:2.5;stroke-linecap:round;stroke-linejoin:round;"><circle cx="12" cy="12" r="3"/><line x1="12" y1="2" x2="12" y2="6"/><line x1="12" y1="18" x2="12" y2="22"/><line x1="2" y1="12" x2="6" y2="12"/><line x1="18" y1="12" x2="22" y2="12"/></svg> Locate me';
+        if (err.code === 1) alert('Location access denied. Please allow location in your browser settings.');
+        else alert('Could not get your location. Please type it manually.');
+      },
+      { timeout: 10000 }
+    );
+  }
+
+  /* ── AUTO-OPEN ADVANCED PANEL IF FILTERS WERE APPLIED ── */
+  {% if filter_seats or filter_max_price or filter_time_slot or filter_preference %}
+  (function() {
+    document.getElementById('advPanel').style.display = 'block';
+    document.getElementById('advToggle').classList.add('open');
+  })();
+  {% endif %}
+
+  /* ── ADVANCED FILTERS ── */
+  function toggleAdvanced() {
+    const panel  = document.getElementById('advPanel');
+    const toggle = document.getElementById('advToggle');
+    const open   = panel.style.display === 'block';
+    panel.style.display = open ? 'none' : 'block';
+    toggle.classList.toggle('open', !open);
+  }
+
+  /* ── SEARCH RIDES ── */
+  function _showFieldError(id) {
+    const el = document.getElementById(id);
+    const wrap = el.previousElementSibling;
+    if (wrap && wrap.classList.contains('input-wrap')) wrap.classList.add('input-error');
+  }
+  function _clearFieldError(id) {
+    const el = document.getElementById(id);
+    const wrap = el.previousElementSibling;
+    if (wrap && wrap.classList.contains('input-wrap')) wrap.classList.remove('input-error');
+  }
+  function resetLatLng(latId, lngId) {
+    document.getElementById(latId).value = 0;
+    document.getElementById(lngId).value = 0;
+  }
+
+  async function geocodeFirst(q) {
+    try {
+      const r    = await fetch('https://photon.komoot.io/api/?q=' + encodeURIComponent(q) + '&limit=1');
+      const data = await r.json();
+      if (data.features && data.features.length > 0) {
+        const coords = data.features[0].geometry.coordinates;
+        return { lat: coords[1], lng: coords[0] };
+      }
+    } catch (_) {}
+    return null;
+  }
+
+  async function searchRides() {
+    _clearFieldError('fromError');
+    _clearFieldError('toError');
+
+    const fromText = document.getElementById('searchFrom').value.trim();
+    const toText   = document.getElementById('searchTo').value.trim();
+    let oLat = parseFloat(document.getElementById('originLat').value);
+    let oLng = parseFloat(document.getElementById('originLng').value);
+    let dLat = parseFloat(document.getElementById('destLat').value);
+    let dLng = parseFloat(document.getElementById('destLng').value);
+
+    // Auto-geocode if text is present but coords were never picked from suggestions
+    if (fromText && oLat === 0 && oLng === 0) {
+      const r = await geocodeFirst(fromText);
+      if (r) {
+        document.getElementById('originLat').value = oLat = r.lat;
+        document.getElementById('originLng').value = oLng = r.lng;
+      }
+    }
+    if (toText && dLat === 0 && dLng === 0) {
+      const r = await geocodeFirst(toText);
+      if (r) {
+        document.getElementById('destLat').value = dLat = r.lat;
+        document.getElementById('destLng').value = dLng = r.lng;
+      }
+    }
+
+    let valid = true;
+    if (!fromText || (oLat === 0 && oLng === 0)) { _showFieldError('fromError'); valid = false; }
+    if (!toText   || (dLat === 0 && dLng === 0)) { _showFieldError('toError');   valid = false; }
+    if (!valid) return;
+
+    const btn = document.querySelector('.btn-search');
+    btn.innerHTML = `<svg viewBox="0 0 24 24" style="animation:spin 0.8s linear infinite;width:17px;height:17px;stroke:white;fill:none;stroke-width:2.5;stroke-linecap:round;stroke-linejoin:round"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-3.33"/></svg> Searching...`;
+    btn.disabled = true;
+    setTimeout(() => document.getElementById('searchForm').submit(), 600);
+  }
+
+  /* ── BOOK RIDE ── */
+  function bookRide(btn) {
+    btn.innerHTML = `<svg viewBox="0 0 24 24" style="animation:spin 0.8s linear infinite;width:14px;height:14px;stroke:white;fill:none;stroke-width:2.5;stroke-linecap:round;stroke-linejoin:round"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-3.33"/></svg> Booking...`;
+    btn.disabled = true;
+
+    setTimeout(() => {
+      const card = btn.closest('.result-card');
+      card.style.transition = 'all 0.3s ease';
+      card.style.borderColor = '#0D7810';
+      card.style.boxShadow = '0 0 0 3px rgba(13,120,16,0.15)';
+      btn.innerHTML = `<svg viewBox="0 0 24 24" style="width:14px;height:14px;stroke:white;fill:none;stroke-width:2.5;stroke-linecap:round;stroke-linejoin:round"><polyline points="20 6 9 17 4 12"/></svg> Booked!`;
+      btn.style.background = 'var(--brand-green)';
+      const toast = document.getElementById('toast');
+      toast.classList.add('show');
+      setTimeout(() => toast.classList.remove('show'), 3500);
+    }, 1000);
+  }
+</script>
+
+<style>
+@keyframes spin { to { transform: rotate(360deg); } }
+</style>
+{% include 'footer.html' %}
+</body>
+</html>

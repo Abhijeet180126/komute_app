@@ -1,0 +1,449 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Terms &amp; Conditions — Komüte</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800&family=DM+Sans:wght@400;500;600;700&family=Montserrat:wght@700;800&display=swap">
+<style>
+  :root{
+    --brand-green:#0D7810;
+    --grad-blue:#0C63B4;
+    --grad-green:#0CB439;
+    --light-bg:#E9F7EE;
+    --contrast-lt:#D5FBE5;
+    --card-border:#E2F0E4;
+    --input-border:#C2DFC8;
+    --nav-border:#D8EED9;
+    --text-dark:#121212;
+    --text-muted:#5A7060;
+    --danger:#DC2626;
+  }
+  *{margin:0;padding:0;box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  body{
+    font-family:'DM Sans',sans-serif;
+    background:var(--light-bg);
+    color:var(--text-dark);
+    line-height:1.7;
+    -webkit-font-smoothing:antialiased;
+  }
+  a{color:inherit;text-decoration:none}
+
+  /* ---------- HERO ---------- */
+  .hero{
+    position:relative;overflow:hidden;
+    background:linear-gradient(135deg,var(--grad-blue),var(--grad-green));
+    color:#fff;padding:74px 24px 92px;
+  }
+  .hero::before,.hero::after{
+    content:"";position:absolute;border-radius:50%;
+    background:rgba(255,255,255,.09);
+  }
+  .hero::before{width:340px;height:340px;top:-150px;right:-90px}
+  .hero::after{width:230px;height:230px;bottom:-130px;left:-70px}
+  .hero-inner{max-width:1180px;margin:0 auto;position:relative;z-index:2}
+  .crumb{
+    font-size:13px;font-weight:500;letter-spacing:.05em;
+    text-transform:uppercase;opacity:.85;margin-bottom:14px;
+  }
+  .crumb a:hover{text-decoration:underline}
+  .hero h1{
+    font-family:'Poppins',sans-serif;font-weight:800;
+    font-size:clamp(32px,5vw,52px);line-height:1.12;margin-bottom:14px;
+  }
+  .hero p{font-size:17px;max-width:600px;opacity:.94}
+  .hero .updated{
+    display:inline-flex;align-items:center;gap:8px;margin-top:22px;
+    background:rgba(255,255,255,.16);border:1px solid rgba(255,255,255,.28);
+    padding:8px 16px;border-radius:50px;font-size:13.5px;font-weight:500;
+  }
+  .hero .updated::before{
+    content:"";width:7px;height:7px;border-radius:50%;background:#4ADE80;
+  }
+
+  /* ---------- LAYOUT ---------- */
+  .wrap{
+    max-width:1180px;margin:-56px auto 0;padding:0 24px 90px;
+    position:relative;z-index:5;
+    display:grid;grid-template-columns:268px 1fr;gap:34px;align-items:start;
+  }
+
+  /* ---------- TOC ---------- */
+  .toc{
+    position:sticky;top:92px;
+    background:#fff;border:1px solid var(--card-border);
+    border-radius:18px;padding:24px 20px;
+    box-shadow:0 4px 24px rgba(13,120,16,.07);
+  }
+  .toc h2{
+    font-family:'Poppins',sans-serif;font-size:13px;font-weight:700;
+    text-transform:uppercase;letter-spacing:.07em;color:var(--brand-green);
+    margin-bottom:14px;
+  }
+  .toc ol{list-style:none;counter-reset:toc}
+  .toc li{counter-increment:toc;margin:2px 0}
+  .toc a{
+    display:flex;gap:10px;align-items:baseline;
+    font-size:13.5px;font-weight:500;color:var(--text-muted);
+    padding:7px 10px;border-radius:8px;transition:.18s;
+  }
+  .toc a::before{
+    content:counter(toc,decimal-leading-zero);
+    font-family:'Montserrat',sans-serif;font-weight:700;font-size:11px;
+    color:var(--brand-green);opacity:.6;
+  }
+  .toc a:hover{background:var(--contrast-lt);color:var(--brand-green)}
+
+  /* ---------- CONTENT ---------- */
+  .doc{
+    background:#fff;border:1px solid var(--card-border);
+    border-radius:18px;padding:46px clamp(24px,4vw,56px);
+    box-shadow:0 4px 24px rgba(13,120,16,.07);
+  }
+  .intro{
+    background:var(--light-bg);border-left:4px solid var(--brand-green);
+    border-radius:0 12px 12px 0;padding:18px 22px;margin-bottom:38px;
+    font-size:15px;color:var(--text-muted);
+  }
+  .intro strong{color:var(--text-dark)}
+  section{scroll-margin-top:92px;padding-top:14px}
+  section + section{
+    margin-top:34px;border-top:1px solid var(--nav-border);padding-top:34px;
+  }
+  .sec-head{display:flex;align-items:center;gap:14px;margin-bottom:14px}
+  .sec-num{
+    font-family:'Montserrat',sans-serif;font-weight:800;font-size:15px;
+    color:#fff;background:var(--brand-green);
+    min-width:38px;height:38px;border-radius:11px;
+    display:grid;place-items:center;flex-shrink:0;
+  }
+  h2.sec-title{
+    font-family:'Poppins',sans-serif;font-weight:700;
+    font-size:clamp(20px,2.6vw,25px);color:var(--text-dark);
+  }
+  h3{
+    font-family:'Poppins',sans-serif;font-weight:600;font-size:16.5px;
+    color:var(--brand-green);margin:22px 0 8px;
+  }
+  p{font-size:15.3px;color:#2c3a30;margin-bottom:12px}
+  ul.bullets{list-style:none;margin:8px 0 14px}
+  ul.bullets li{
+    position:relative;padding-left:26px;margin-bottom:9px;
+    font-size:15px;color:#2c3a30;
+  }
+  ul.bullets li::before{
+    content:"";position:absolute;left:0;top:9px;
+    width:9px;height:9px;border-radius:3px;
+    background:linear-gradient(135deg,var(--grad-blue),var(--grad-green));
+  }
+  ul.bullets li strong{color:var(--text-dark);font-weight:600}
+  .callout{
+    display:flex;gap:14px;background:var(--contrast-lt);
+    border-radius:13px;padding:16px 18px;margin:16px 0;
+  }
+  .callout svg{flex-shrink:0;margin-top:2px}
+  .callout p{margin:0;font-size:14.3px;color:#244229}
+  .callout p strong{color:var(--brand-green)}
+
+  /* ---------- RESPONSIVE ---------- */
+  @media(max-width:900px){
+    .wrap{grid-template-columns:1fr;gap:20px}
+    .toc{position:static;order:-1}
+    .toc ol{columns:2;column-gap:14px}
+  }
+  @media(max-width:680px){
+    .toc ol{columns:1}
+  }
+</style>
+</head>
+<body>
+
+<!-- ============ NAV ============ -->
+{% include 'header.html' %}
+<!-- ============ HERO ============ -->
+<header class="hero">
+  <div class="hero-inner">
+    <div class="crumb"><a href="{% url 'home' %}">Home</a> &nbsp;/&nbsp; Legal</div>
+    <h1>Terms &amp; Conditions</h1>
+    <p>The agreement between you and Komüte. Please read these terms carefully — by creating an account or using the platform, you agree to them.</p>
+    <div class="updated">Last updated: July 9, 2026</div>
+  </div>
+</header>
+
+<!-- ============ BODY ============ -->
+<div class="wrap">
+
+  <!-- TOC -->
+  <aside class="toc">
+    <h2>On this page</h2>
+    <ol>
+      <li><a href="#acceptance">Acceptance of Terms</a></li>
+      <li><a href="#eligibility">Eligibility</a></li>
+      <li><a href="#service">Nature of the Service</a></li>
+      <li><a href="#accounts">Accounts &amp; Security</a></li>
+      <li><a href="#responsibilities">User Responsibilities</a></li>
+      <li><a href="#pricing">Pricing &amp; Payments</a></li>
+      <li><a href="#cancellations">Cancellations</a></li>
+      <li><a href="#prohibited">Prohibited Conduct</a></li>
+      <li><a href="#verification">Verification</a></li>
+      <li><a href="#risk">Assumption of Risk &amp; Release</a></li>
+      <li><a href="#liability">Limitation of Liability</a></li>
+      <li><a href="#indemnification">Indemnification</a></li>
+      <li><a href="#insurance">Insurance</a></li>
+      <li><a href="#ip">Intellectual Property &amp; Content</a></li>
+      <li><a href="#termination">Termination &amp; Suspension</a></li>
+      <li><a href="#disputes">Dispute Resolution &amp; Arbitration</a></li>
+      <li><a href="#law">Governing Law</a></li>
+      <li><a href="#general">General Provisions</a></li>
+      <li><a href="#changes">Changes to Terms</a></li>
+      <li><a href="#contact">Contact</a></li>
+    </ol>
+  </aside>
+
+  <!-- DOC -->
+  <main class="doc">
+    <div class="intro">
+      <strong>Welcome to Komüte.</strong> Komüte is a peer-to-peer carpooling
+      platform operated by Indus Network LLC. These Terms &amp; Conditions govern
+      your access to and use of the Komüte website, applications, and services
+      (together, &ldquo;the Platform&rdquo;). If you do not agree with any part of
+      these terms, please do not use the Platform.
+    </div>
+
+    <section id="acceptance">
+      <div class="sec-head"><span class="sec-num">1</span><h2 class="sec-title">Acceptance of Terms</h2></div>
+      <p>By creating an account, posting a trip, booking a seat, or otherwise using Komüte, you confirm that you have read, understood, and agree to be bound by these Terms &amp; Conditions and our <a href="{% url 'privacy-policy' %}" style="color:var(--brand-green);font-weight:600">Privacy Policy</a> and <a href="{% url 'community-guidelines' %}" style="color:var(--brand-green);font-weight:600">Community Guidelines</a>.</p>
+      <p>Komüte is operated by Indus Network LLC (&ldquo;Komüte&rdquo;, &ldquo;we&rdquo;, &ldquo;us&rdquo;, &ldquo;our&rdquo;). These terms form a legally binding agreement between you and Komüte.</p>
+    </section>
+
+    <section id="eligibility">
+      <div class="sec-head"><span class="sec-num">2</span><h2 class="sec-title">Eligibility</h2></div>
+      <p>To use Komüte, you must:</p>
+      <ul class="bullets">
+        <li>Be at least <strong>18 years of age</strong>.</li>
+        <li>Provide accurate, current, and complete information when registering.</li>
+        <li>Have the legal capacity to enter into a binding agreement.</li>
+        <li>Not have been previously suspended or removed from the Platform for cause.</li>
+      </ul>
+      <p>To act as a <strong>driver</strong>, you must additionally hold a valid government-issued driver&rsquo;s licence and operate a vehicle that is roadworthy and covered by valid insurance.</p>
+    </section>
+
+    <section id="service">
+      <div class="sec-head"><span class="sec-num">3</span><h2 class="sec-title">Nature of the Service</h2></div>
+      <p>Komüte is a <strong>free peer-to-peer carpooling platform</strong> — a medium that connects drivers and passengers travelling in the same direction so they can share a trip together. Our purpose is to bring people together, reduce empty seats on the road, and make commuting greener and more social.</p>
+      <div class="callout">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="10" stroke="#0D7810" stroke-width="2"/><path d="M12 8v5M12 16h.01" stroke="#0D7810" stroke-width="2" stroke-linecap="round"/></svg>
+        <p><strong>Komüte is free to use and is not a taxi service</strong>, a transportation network company, or a for-hire carrier. We charge no fees or commissions. Drivers are everyday commuters and travellers, not professional drivers, and are not employees, agents, or contractors of Komüte. Every trip is an independent arrangement between a driver and a passenger.</p>
+      </div>
+      <p>Komüte facilitates introductions and communication only. We do not provide transportation, do not process payments, and are not a party to any trip arranged through the Platform.</p>
+    </section>
+
+    <section id="accounts">
+      <div class="sec-head"><span class="sec-num">4</span><h2 class="sec-title">Accounts &amp; Security</h2></div>
+      <ul class="bullets">
+        <li>You are responsible for keeping your password and account credentials confidential.</li>
+        <li>You are responsible for all activity that occurs under your account.</li>
+        <li>You must notify us immediately of any unauthorised access or security breach.</li>
+        <li>One person may not maintain more than one account. One account may not be shared between people.</li>
+        <li>You may sign in using email and password or through a supported provider such as Google or Apple.</li>
+      </ul>
+    </section>
+
+    <section id="responsibilities">
+      <div class="sec-head"><span class="sec-num">5</span><h2 class="sec-title">User Responsibilities</h2></div>
+      <h3>Drivers must</h3>
+      <ul class="bullets">
+        <li>Hold a valid driver&rsquo;s licence and required vehicle insurance throughout every trip.</li>
+        <li>Maintain their vehicle in safe, roadworthy operating condition.</li>
+        <li>Drive in compliance with all applicable traffic laws.</li>
+        <li>Never drive under the influence of alcohol or any impairing substance.</li>
+        <li>Complete posted trips in good faith and cancel only when truly necessary.</li>
+      </ul>
+      <h3>Passengers must</h3>
+      <ul class="bullets">
+        <li>Arrive on time at the agreed pickup point.</li>
+        <li>Honour any cost-sharing contribution agreed with the driver.</li>
+        <li>Behave respectfully toward the driver and any other passengers.</li>
+        <li>Not bring illegal substances, weapons, or hazardous items into the vehicle.</li>
+      </ul>
+    </section>
+
+    <section id="pricing">
+      <div class="sec-head"><span class="sec-num">6</span><h2 class="sec-title">Cost-Sharing &amp; Payments</h2></div>
+      <div class="callout">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none"><path d="M12 2l2.6 6.6L21 9.3l-5 4.4L17.5 21 12 17.3 6.5 21 8 13.7l-5-4.4 6.4-.7L12 2z" stroke="#0D7810" stroke-width="2" stroke-linejoin="round"/></svg>
+        <p><strong>Komüte is completely free to use.</strong> We do not charge booking fees, commissions, subscriptions, or any other fees — to drivers or to passengers — now or in the future as a condition of using the core platform.</p>
+      </div>
+      <ul class="bullets">
+        <li>Any contribution a passenger makes is agreed <strong>directly between the driver and the passenger</strong>, and may be discussed in the in-app chat before the trip.</li>
+        <li>Any agreed amount is a fair <strong>contribution toward the real cost of the trip</strong> — such as fuel — and is not a commercial fare. Drivers must not profit from trips.</li>
+        <li>Payment of any agreed contribution is arranged <strong>directly between the driver and the passenger</strong>. Komüte does not process, hold, or transfer money, and does not take any cut.</li>
+        <li>Because Komüte is a free connection service, we are not responsible for any payment, non-payment, or dispute over money exchanged between users.</li>
+      </ul>
+    </section>
+
+    <section id="cancellations">
+      <div class="sec-head"><span class="sec-num">7</span><h2 class="sec-title">Cancellations</h2></div>
+      <p>Because Komüte does not charge fees or process payments, cancelling a trip on the Platform costs you nothing. We still ask everyone to cancel responsibly:</p>
+      <ul class="bullets">
+        <li>Cancel as <strong>early as possible</strong> when your plans change, so the other person has time to adjust.</li>
+        <li>Always let the other party know through the in-app chat when you cancel.</li>
+        <li><strong>Drivers</strong> who cancel a posted trip should notify all confirmed passengers promptly.</li>
+        <li>Repeated last-minute cancellations may affect your rating and your continued access to the Platform.</li>
+        <li>Any contribution exchanged directly between users is settled between those users — Komüte is not involved.</li>
+      </ul>
+    </section>
+
+    <section id="prohibited">
+      <div class="sec-head"><span class="sec-num">8</span><h2 class="sec-title">Prohibited Conduct</h2></div>
+      <p>You may not use the Platform to:</p>
+      <ul class="bullets">
+        <li>Charge a commercial fare or profit from trips beyond genuine cost-sharing.</li>
+        <li>Harass, threaten, discriminate against, or endanger any user.</li>
+        <li>Misrepresent your identity, vehicle, licence, or trip details.</li>
+        <li>Transport minors without parental consent and an accompanying adult.</li>
+        <li>Transport commercial cargo, livestock, or hazardous materials.</li>
+        <li>Operate a commercial taxi or ride-hailing service through the Platform.</li>
+        <li>Post false, misleading, or fraudulent listings or reviews.</li>
+        <li>Interfere with, disrupt, or attempt to gain unauthorised access to the Platform.</li>
+      </ul>
+      <p>Violation of these rules may result in suspension or permanent removal from the Platform.</p>
+    </section>
+
+    <section id="verification">
+      <div class="sec-head"><span class="sec-num">9</span><h2 class="sec-title">Verification</h2></div>
+      <p>Drivers must complete identity verification before posting their first trip. Verification uses optical character recognition on the driver&rsquo;s licence and a facial match against a selfie.</p>
+      <p>You agree to provide genuine, unedited documents. Submitting falsified documents is grounds for immediate and permanent removal, and may be reported to the relevant authorities.</p>
+      <p>Facial comparison during verification may involve the collection of biometric information. Before any biometric data is collected, you will be shown a separate biometric consent notice describing the purpose and retention period, and collection will proceed only with your express written (electronic) consent, as described in our <a href="{% url 'privacy-policy' %}" style="color:var(--brand-green);font-weight:600">Privacy Policy</a>. Verification does not guarantee the identity, character, driving ability, or conduct of any user, and Komüte makes no representation or warranty based on verification status. You remain responsible for exercising your own judgment when interacting with other users.</p>
+    </section>
+
+    <section id="risk">
+      <div class="sec-head"><span class="sec-num">10</span><h2 class="sec-title">Assumption of Risk &amp; Release</h2></div>
+      <p>Carpooling with other private individuals involves inherent risks, including the risk of traffic accidents, property damage, personal injury, delays, and disagreements between users. By using the Platform, you acknowledge these risks and agree that you use the Platform and participate in any trip <strong>voluntarily and at your own risk</strong>.</p>
+      <p>Komüte does not conduct criminal background checks, does not inspect vehicles, does not supervise trips, and has no control over the conduct of drivers or passengers. Each trip is an independent, private arrangement between the users involved.</p>
+      <p>To the maximum extent permitted by applicable law, you release Komüte and Indus Network LLC, and their officers, directors, employees, and agents, from all claims, demands, and damages of every kind arising out of or connected with disputes between users or the acts or omissions of other users, including personal injury, death, or property damage occurring during or in connection with a trip.</p>
+      <div class="callout">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="10" stroke="#0D7810" stroke-width="2"/><path d="M12 8v5M12 16h.01" stroke="#0D7810" stroke-width="2" stroke-linecap="round"/></svg>
+        <p><strong>Nothing in this section limits rights that cannot be waived by law</strong> — including statutory consumer rights in the European Union, United Kingdom, Quebec, or elsewhere, or liability for death or personal injury caused by our own negligence where such liability cannot legally be excluded.</p>
+      </div>
+    </section>
+
+    <section id="liability">
+      <div class="sec-head"><span class="sec-num">11</span><h2 class="sec-title">Limitation of Liability</h2></div>
+      <p>Komüte is a marketplace that connects drivers and passengers. To the maximum extent permitted by law, Komüte and Indus Network LLC are not liable for any direct, indirect, incidental, special, punitive, exemplary, or consequential damages — including loss of data, loss of goodwill, personal injury, or property damage — arising from any trip, interaction, content, or use of (or inability to use) the Platform, even if we have been advised of the possibility of such damages.</p>
+      <p>The Platform is provided on an &ldquo;as is&rdquo; and &ldquo;as available&rdquo; basis, without warranties of any kind, whether express or implied, including implied warranties of merchantability, fitness for a particular purpose, and non-infringement. We do not guarantee the conduct, reliability, or suitability of any user, nor that the Platform will be uninterrupted, secure, or error-free.</p>
+      <p>To the maximum extent permitted by law, the total aggregate liability of Komüte and Indus Network LLC for all claims relating to the Platform shall not exceed <strong>one hundred US dollars (US $100)</strong>, given that the Platform is provided free of charge.</p>
+      <p>Some jurisdictions — including EU member states, the United Kingdom, and certain US states and Canadian provinces — do not allow the exclusion of certain warranties or the limitation of certain damages. In those jurisdictions, the above exclusions and limitations apply only to the fullest extent permitted, and you may have additional statutory rights that these Terms do not affect.</p>
+    </section>
+
+    <section id="indemnification">
+      <div class="sec-head"><span class="sec-num">12</span><h2 class="sec-title">Indemnification</h2></div>
+      <p>To the maximum extent permitted by applicable law, you agree to indemnify, defend, and hold harmless Komüte, Indus Network LLC, and their officers, directors, employees, and agents from and against any claims, liabilities, damages, losses, and expenses (including reasonable legal fees) arising out of or connected with:</p>
+      <ul class="bullets">
+        <li>Your use of the Platform or participation in any trip.</li>
+        <li>Your violation of these Terms, the <a href="{% url 'community-guidelines' %}" style="color:var(--brand-green);font-weight:600">Community Guidelines</a>, or any applicable law or regulation (including traffic, insurance, and tax laws).</li>
+        <li>Your violation of the rights of any third party, including other users.</li>
+        <li>Content you post or share on the Platform.</li>
+        <li>Any inaccurate or fraudulent information you provide, including during verification.</li>
+      </ul>
+      <p>This obligation does not apply to the extent a claim arises from our own breach of these Terms or our own negligence or wilful misconduct, and it does not apply where such indemnification is prohibited by mandatory consumer protection law in your jurisdiction.</p>
+    </section>
+
+    <section id="insurance">
+      <div class="sec-head"><span class="sec-num">13</span><h2 class="sec-title">Insurance</h2></div>
+      <p>Drivers are solely responsible for ensuring their personal vehicle insurance covers carpooling and cost-sharing activity in their jurisdiction, and for confirming that accepting cost contributions does not void their coverage. Komüte does not provide, broker, or verify insurance coverage for trips arranged through the Platform. Passengers are encouraged to confirm a driver&rsquo;s coverage where relevant.</p>
+    </section>
+
+    <section id="ip">
+      <div class="sec-head"><span class="sec-num">14</span><h2 class="sec-title">Intellectual Property &amp; User Content</h2></div>
+      <p>The Platform — including its software, design, logos, trademarks, and content created by Komüte — is owned by Indus Network LLC or its licensors and is protected by intellectual property laws. We grant you a limited, non-exclusive, non-transferable, revocable licence to use the Platform for personal, non-commercial carpooling purposes in accordance with these Terms. You may not copy, modify, reverse engineer, scrape, or create derivative works of the Platform except as permitted by law.</p>
+      <p>You retain ownership of content you post (such as profile information, trip listings, messages, and reviews). By posting content, you grant Komüte a worldwide, non-exclusive, royalty-free licence to host, store, display, and distribute that content solely to operate, improve, and promote the Platform. You represent that you have the rights to any content you post and that it does not infringe the rights of others.</p>
+      <p>We respect intellectual property rights. If you believe content on the Platform infringes your copyright, send a notice to <strong>legal@komute.net</strong> including the identification of the work, the allegedly infringing material, your contact details, and a statement of good-faith belief, consistent with the US Digital Millennium Copyright Act (DMCA) or equivalent local law. We may remove content and terminate repeat infringers.</p>
+    </section>
+
+    <section id="termination">
+      <div class="sec-head"><span class="sec-num">15</span><h2 class="sec-title">Termination &amp; Suspension</h2></div>
+      <ul class="bullets">
+        <li>You may stop using the Platform and close your account at any time through account settings or by contacting support.</li>
+        <li>We may suspend or terminate your account, remove content, or restrict access — with or without notice — if we reasonably believe you have violated these Terms, the Community Guidelines, or applicable law, or if your conduct creates risk or possible legal exposure for us or other users.</li>
+        <li>Where reasonable, we will give you notice and an opportunity to respond; for serious safety violations, fraud, or legal requirements, we may act immediately.</li>
+        <li>Sections that by their nature should survive termination — including Assumption of Risk &amp; Release, Limitation of Liability, Indemnification, Dispute Resolution, and Governing Law — survive termination of your account or these Terms.</li>
+      </ul>
+    </section>
+
+    <section id="disputes">
+      <div class="sec-head"><span class="sec-num">16</span><h2 class="sec-title">Dispute Resolution &amp; Arbitration</h2></div>
+      <h3>Step 1 — Informal resolution</h3>
+      <p>Disputes between users should first be raised directly in the in-app chat. Disputes with Komüte should first be sent to <strong>support@komute.net</strong> with a description of the issue; both parties agree to attempt in good faith to resolve any dispute informally for at least 60 days before starting formal proceedings.</p>
+      <h3>Step 2 — Binding arbitration (US and Canada)</h3>
+      <p>If informal resolution fails, and to the maximum extent permitted by applicable law, you and Komüte agree that any dispute, claim, or controversy arising out of or relating to these Terms or the Platform will be resolved by <strong>final and binding individual arbitration</strong>, rather than in court, except that either party may (a) bring an individual claim in small-claims court, or (b) seek injunctive relief for infringement or misuse of intellectual property.</p>
+      <ul class="bullets">
+        <li><strong>United States:</strong> arbitration will be administered by the American Arbitration Association (AAA) under its Consumer Arbitration Rules, seated in Delaware or conducted remotely, and governed by the US Federal Arbitration Act.</li>
+        <li><strong>Canada:</strong> arbitration will be administered by the ADR Institute of Canada under its Arbitration Rules, seated in Toronto, Ontario, or conducted remotely. Nothing in this section limits non-waivable rights under provincial consumer protection legislation, including in Quebec and Ontario, where consumers may retain the right to bring claims in court.</li>
+        <li><strong>Costs:</strong> for consumer claims, Komüte will pay arbitration filing and administration fees that exceed the cost of filing the same claim in court.</li>
+      </ul>
+      <h3>Class action waiver</h3>
+      <p>To the maximum extent permitted by applicable law, you and Komüte each waive the right to a trial by jury and the right to participate in a class action, class arbitration, or other representative proceeding. All claims must be brought in the parties&rsquo; individual capacity. If this waiver is found unenforceable as to a particular claim, that claim (and only that claim) shall proceed in court.</p>
+      <h3>Opt-out</h3>
+      <p>You may opt out of this arbitration agreement and class action waiver by emailing <strong>legal@komute.net</strong> within 30 days of first accepting these Terms, stating your name, account email, and your intent to opt out. Opting out does not affect any other part of these Terms.</p>
+      <h3>European Union &amp; United Kingdom users</h3>
+      <p>If you reside in the EU, EEA, or UK, the arbitration agreement and class action waiver above do not apply to you. You may bring claims in the courts of your country of residence, and you retain all mandatory consumer rights under local law. EU residents may also use the alternative dispute resolution bodies available in their member state.</p>
+    </section>
+
+    <section id="law">
+      <div class="sec-head"><span class="sec-num">17</span><h2 class="sec-title">Governing Law</h2></div>
+      <ul class="bullets">
+        <li><strong>United States users:</strong> these Terms are governed by the laws of the State of Delaware, USA, without regard to its conflict-of-law rules.</li>
+        <li><strong>Canadian users:</strong> these Terms are governed by the laws of the Province of Ontario and the federal laws of Canada applicable therein.</li>
+        <li><strong>EU / EEA / UK users:</strong> these Terms are governed by the law identified above only to the extent it does not deprive you of the protection of mandatory provisions of the law of your country of habitual residence, which continue to apply.</li>
+      </ul>
+    </section>
+
+    <section id="general">
+      <div class="sec-head"><span class="sec-num">18</span><h2 class="sec-title">General Provisions</h2></div>
+      <ul class="bullets">
+        <li><strong>Severability:</strong> if any provision of these Terms is held invalid or unenforceable, it will be enforced to the maximum extent permissible and the remaining provisions will remain in full force.</li>
+        <li><strong>Entire agreement:</strong> these Terms, together with the Privacy Policy and Community Guidelines, constitute the entire agreement between you and Komüte regarding the Platform and supersede all prior agreements on that subject.</li>
+        <li><strong>No waiver:</strong> our failure to enforce any right or provision is not a waiver of that right or provision.</li>
+        <li><strong>Assignment:</strong> you may not assign or transfer these Terms without our prior written consent. We may assign these Terms in connection with a merger, acquisition, reorganization, or sale of assets, or by operation of law.</li>
+        <li><strong>Force majeure:</strong> we are not liable for any delay or failure to perform resulting from causes beyond our reasonable control, including natural disasters, war, terrorism, labour disputes, governmental action, internet or utility failures.</li>
+        <li><strong>No relationship:</strong> nothing in these Terms creates any partnership, joint venture, employment, or agency relationship between you and Komüte, or between Komüte and any driver or passenger.</li>
+        <li><strong>Third-party services:</strong> the Platform may rely on third-party services (such as sign-in providers and geocoding services). We are not responsible for the availability or conduct of third-party services, which are governed by their own terms.</li>
+      </ul>
+    </section>
+
+    <section id="changes">
+      <div class="sec-head"><span class="sec-num">19</span><h2 class="sec-title">Changes to These Terms</h2></div>
+      <p>We may update these Terms &amp; Conditions from time to time. Material changes will be communicated by email at least 30 days before they take effect. Your continued use of the Platform after changes take effect constitutes acceptance of the revised terms. If you do not agree with a change, you must stop using the Platform and may close your account before the change takes effect. Changes will not apply retroactively to disputes that arose before the effective date of the change.</p>
+    </section>
+
+    <section id="contact">
+      <div class="sec-head"><span class="sec-num">20</span><h2 class="sec-title">Contact</h2></div>
+      <p>Questions about these Terms &amp; Conditions can be sent to <strong>legal@komute.net</strong>, or through our <a href="{% url 'contact-us' %}" style="color:var(--brand-green);font-weight:600">Contact page</a>.</p>
+      <p style="color:var(--text-muted);font-size:14px;margin-top:18px">Indus Network LLC &middot; Operator of the Komüte platform.</p>
+    </section>
+  </main>
+</div>
+
+<!-- ============ FOOTER ============ -->
+{% include 'footer.html' %}
+<script>
+  /* active TOC link on scroll */
+  const sections=document.querySelectorAll('section[id]');
+  const tocLinks=document.querySelectorAll('.toc a');
+  const obs=new IntersectionObserver(entries=>{
+    entries.forEach(e=>{
+      if(e.isIntersecting){
+        tocLinks.forEach(l=>l.style.background='');
+        const active=document.querySelector('.toc a[href="#'+e.target.id+'"]');
+        if(active){active.style.background='var(--contrast-lt)';active.style.color='var(--brand-green)';}
+      }
+    });
+  },{rootMargin:'-20% 0px -70% 0px'});
+  sections.forEach(s=>obs.observe(s));
+</script>
+</body>
+</html>

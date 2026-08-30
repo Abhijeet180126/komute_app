@@ -1,0 +1,450 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Terms &amp; Conditions — Komüte</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800&family=DM+Sans:wght@400;500;600;700&family=Montserrat:wght@700;800&display=swap">
+<style>
+  :root{
+    --brand-green:#0D7810;
+    --grad-blue:#0C63B4;
+    --grad-green:#0CB439;
+    --light-bg:#E9F7EE;
+    --contrast-lt:#D5FBE5;
+    --card-border:#E2F0E4;
+    --input-border:#C2DFC8;
+    --nav-border:#D8EED9;
+    --text-dark:#121212;
+    --text-muted:#5A7060;
+    --danger:#DC2626;
+  }
+  *{margin:0;padding:0;box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  body{
+    font-family:'DM Sans',sans-serif;
+    background:var(--light-bg);
+    color:var(--text-dark);
+    line-height:1.7;
+    -webkit-font-smoothing:antialiased;
+  }
+  a{color:inherit;text-decoration:none}
+
+  /* ---------- NAV ---------- */
+  .nav{
+    position:sticky;top:0;z-index:100;
+    background:rgba(255,255,255,.92);
+    backdrop-filter:blur(10px);
+    border-bottom:1px solid var(--nav-border);
+  }
+  .nav-inner{
+    max-width:1180px;margin:0 auto;padding:14px 24px;
+    display:flex;align-items:center;justify-content:space-between;
+  }
+  .brand{display:flex;align-items:center;gap:10px}
+  .brand-mark{
+    width:38px;height:38px;border-radius:11px;
+    background:linear-gradient(135deg,var(--grad-blue),var(--grad-green));
+    display:grid;place-items:center;flex-shrink:0;
+  }
+  .brand-mark svg{width:24px;height:24px}
+  .brand-name{
+    font-family:'Montserrat',sans-serif;font-weight:800;font-size:21px;
+    letter-spacing:.04em;
+    background:linear-gradient(90deg,var(--grad-blue),var(--grad-green));
+    -webkit-background-clip:text;background-clip:text;color:transparent;
+  }
+  .nav-links{display:flex;gap:30px;align-items:center}
+  .nav-links a{
+    font-weight:500;font-size:15px;color:var(--text-muted);
+    transition:color .2s;
+  }
+  .nav-links a:hover{color:var(--brand-green)}
+  .nav-cta{
+    font-family:'Poppins',sans-serif;font-weight:600;font-size:14px;
+    color:#fff!important;padding:9px 20px;border-radius:9px;
+    background:var(--brand-green);
+    transition:transform .15s,box-shadow .2s;
+  }
+  .nav-cta:hover{transform:translateY(-1px);box-shadow:0 6px 16px rgba(13,120,16,.28)}
+  .burger{display:none;background:none;border:0;cursor:pointer;padding:6px}
+  .burger span{display:block;width:24px;height:2.5px;background:var(--text-dark);
+    border-radius:2px;margin:5px 0;transition:.3s}
+
+  /* ---------- HERO ---------- */
+  .hero{
+    position:relative;overflow:hidden;
+    background:linear-gradient(135deg,var(--grad-blue),var(--grad-green));
+    color:#fff;padding:74px 24px 92px;
+  }
+  .hero::before,.hero::after{
+    content:"";position:absolute;border-radius:50%;
+    background:rgba(255,255,255,.09);
+  }
+  .hero::before{width:340px;height:340px;top:-150px;right:-90px}
+  .hero::after{width:230px;height:230px;bottom:-130px;left:-70px}
+  .hero-inner{max-width:1180px;margin:0 auto;position:relative;z-index:2}
+  .crumb{
+    font-size:13px;font-weight:500;letter-spacing:.05em;
+    text-transform:uppercase;opacity:.85;margin-bottom:14px;
+  }
+  .crumb a:hover{text-decoration:underline}
+  .hero h1{
+    font-family:'Poppins',sans-serif;font-weight:800;
+    font-size:clamp(32px,5vw,52px);line-height:1.12;margin-bottom:14px;
+  }
+  .hero p{font-size:17px;max-width:600px;opacity:.94}
+  .hero .updated{
+    display:inline-flex;align-items:center;gap:8px;margin-top:22px;
+    background:rgba(255,255,255,.16);border:1px solid rgba(255,255,255,.28);
+    padding:8px 16px;border-radius:50px;font-size:13.5px;font-weight:500;
+  }
+  .hero .updated::before{
+    content:"";width:7px;height:7px;border-radius:50%;background:#4ADE80;
+  }
+
+  /* ---------- LAYOUT ---------- */
+  .wrap{
+    max-width:1180px;margin:-56px auto 0;padding:0 24px 90px;
+    position:relative;z-index:5;
+    display:grid;grid-template-columns:268px 1fr;gap:34px;align-items:start;
+  }
+
+  /* ---------- TOC ---------- */
+  .toc{
+    position:sticky;top:92px;
+    background:#fff;border:1px solid var(--card-border);
+    border-radius:18px;padding:24px 20px;
+    box-shadow:0 4px 24px rgba(13,120,16,.07);
+  }
+  .toc h2{
+    font-family:'Poppins',sans-serif;font-size:13px;font-weight:700;
+    text-transform:uppercase;letter-spacing:.07em;color:var(--brand-green);
+    margin-bottom:14px;
+  }
+  .toc ol{list-style:none;counter-reset:toc}
+  .toc li{counter-increment:toc;margin:2px 0}
+  .toc a{
+    display:flex;gap:10px;align-items:baseline;
+    font-size:13.5px;font-weight:500;color:var(--text-muted);
+    padding:7px 10px;border-radius:8px;transition:.18s;
+  }
+  .toc a::before{
+    content:counter(toc,decimal-leading-zero);
+    font-family:'Montserrat',sans-serif;font-weight:700;font-size:11px;
+    color:var(--brand-green);opacity:.6;
+  }
+  .toc a:hover{background:var(--contrast-lt);color:var(--brand-green)}
+
+  /* ---------- CONTENT ---------- */
+  .doc{
+    background:#fff;border:1px solid var(--card-border);
+    border-radius:18px;padding:46px clamp(24px,4vw,56px);
+    box-shadow:0 4px 24px rgba(13,120,16,.07);
+  }
+  .intro{
+    background:var(--light-bg);border-left:4px solid var(--brand-green);
+    border-radius:0 12px 12px 0;padding:18px 22px;margin-bottom:38px;
+    font-size:15px;color:var(--text-muted);
+  }
+  .intro strong{color:var(--text-dark)}
+  section{scroll-margin-top:92px;padding-top:14px}
+  section + section{
+    margin-top:34px;border-top:1px solid var(--nav-border);padding-top:34px;
+  }
+  .sec-head{display:flex;align-items:center;gap:14px;margin-bottom:14px}
+  .sec-num{
+    font-family:'Montserrat',sans-serif;font-weight:800;font-size:15px;
+    color:#fff;background:var(--brand-green);
+    min-width:38px;height:38px;border-radius:11px;
+    display:grid;place-items:center;flex-shrink:0;
+  }
+  h2.sec-title{
+    font-family:'Poppins',sans-serif;font-weight:700;
+    font-size:clamp(20px,2.6vw,25px);color:var(--text-dark);
+  }
+  h3{
+    font-family:'Poppins',sans-serif;font-weight:600;font-size:16.5px;
+    color:var(--brand-green);margin:22px 0 8px;
+  }
+  p{font-size:15.3px;color:#2c3a30;margin-bottom:12px}
+  ul.bullets{list-style:none;margin:8px 0 14px}
+  ul.bullets li{
+    position:relative;padding-left:26px;margin-bottom:9px;
+    font-size:15px;color:#2c3a30;
+  }
+  ul.bullets li::before{
+    content:"";position:absolute;left:0;top:9px;
+    width:9px;height:9px;border-radius:3px;
+    background:linear-gradient(135deg,var(--grad-blue),var(--grad-green));
+  }
+  ul.bullets li strong{color:var(--text-dark);font-weight:600}
+  .callout{
+    display:flex;gap:14px;background:var(--contrast-lt);
+    border-radius:13px;padding:16px 18px;margin:16px 0;
+  }
+  .callout svg{flex-shrink:0;margin-top:2px}
+  .callout p{margin:0;font-size:14.3px;color:#244229}
+  .callout p strong{color:var(--brand-green)}
+
+  /* ---------- FOOTER ---------- */
+  .foot{
+    background:var(--text-dark);color:#cdd9d0;
+    padding:54px 24px 30px;
+  }
+  .foot-inner{
+    max-width:1180px;margin:0 auto;
+    display:flex;flex-wrap:wrap;gap:40px;justify-content:space-between;
+  }
+  .foot-brand{max-width:300px}
+  .foot-brand .brand-name{font-size:23px}
+  .foot-brand p{font-size:14px;color:#9fb0a4;margin-top:12px}
+  .foot-col h4{
+    font-family:'Poppins',sans-serif;font-size:14px;font-weight:600;
+    color:#fff;margin-bottom:14px;
+  }
+  .foot-col a{
+    display:block;font-size:14px;color:#9fb0a4;margin-bottom:9px;
+    transition:color .2s;
+  }
+  .foot-col a:hover{color:var(--grad-green)}
+  .foot-bottom{
+    max-width:1180px;margin:38px auto 0;padding-top:22px;
+    border-top:1px solid #2a3a2e;
+    display:flex;flex-wrap:wrap;gap:12px;justify-content:space-between;
+    font-size:13px;color:#7f9085;
+  }
+
+  /* ---------- RESPONSIVE ---------- */
+  @media(max-width:900px){
+    .wrap{grid-template-columns:1fr;gap:20px}
+    .toc{position:static;order:-1}
+    .toc ol{columns:2;column-gap:14px}
+  }
+  @media(max-width:680px){
+    .nav-links{
+      display:none;position:absolute;top:100%;left:0;right:0;
+      flex-direction:column;gap:0;background:#fff;
+      border-bottom:1px solid var(--nav-border);padding:8px 0;
+    }
+    .nav-links.open{display:flex}
+    .nav-links a{padding:13px 24px;width:100%}
+    .nav-links .nav-cta{margin:8px 24px;text-align:center}
+    .burger{display:block}
+    .toc ol{columns:1}
+  }
+</style>
+</head>
+<body>
+
+<!-- ============ NAV ============ -->
+{% include 'header.html' %}
+<!-- ============ HERO ============ -->
+<header class="hero">
+  <div class="hero-inner">
+    <div class="crumb"><a href="komute-home.html">Home</a> &nbsp;/&nbsp; Legal</div>
+    <h1>Terms &amp; Conditions</h1>
+    <p>The agreement between you and Komüte. Please read these terms carefully — by creating an account or using the platform, you agree to them.</p>
+    <div class="updated">Last updated: at platform launch</div>
+  </div>
+</header>
+
+<!-- ============ BODY ============ -->
+<div class="wrap">
+
+  <!-- TOC -->
+  <aside class="toc">
+    <h2>On this page</h2>
+    <ol>
+      <li><a href="#acceptance">Acceptance of Terms</a></li>
+      <li><a href="#eligibility">Eligibility</a></li>
+      <li><a href="#service">Nature of the Service</a></li>
+      <li><a href="#accounts">Accounts &amp; Security</a></li>
+      <li><a href="#responsibilities">User Responsibilities</a></li>
+      <li><a href="#pricing">Pricing &amp; Payments</a></li>
+      <li><a href="#cancellations">Cancellations</a></li>
+      <li><a href="#prohibited">Prohibited Conduct</a></li>
+      <li><a href="#verification">Verification</a></li>
+      <li><a href="#liability">Limitation of Liability</a></li>
+      <li><a href="#insurance">Insurance</a></li>
+      <li><a href="#disputes">Dispute Resolution</a></li>
+      <li><a href="#changes">Changes to Terms</a></li>
+      <li><a href="#contact">Contact</a></li>
+    </ol>
+  </aside>
+
+  <!-- DOC -->
+  <main class="doc">
+    <div class="intro">
+      <strong>Welcome to Komüte.</strong> Komüte is a peer-to-peer carpooling
+      platform operated by Indus Network LLC. These Terms &amp; Conditions govern
+      your access to and use of the Komüte website, applications, and services
+      (together, &ldquo;the Platform&rdquo;). If you do not agree with any part of
+      these terms, please do not use the Platform.
+    </div>
+
+    <section id="acceptance">
+      <div class="sec-head"><span class="sec-num">1</span><h2 class="sec-title">Acceptance of Terms</h2></div>
+      <p>By creating an account, posting a trip, booking a seat, or otherwise using Komüte, you confirm that you have read, understood, and agree to be bound by these Terms &amp; Conditions and our Privacy Policy and Community Guidelines.</p>
+      <p>Komüte is operated by Indus Network LLC (&ldquo;Komüte&rdquo;, &ldquo;we&rdquo;, &ldquo;us&rdquo;, &ldquo;our&rdquo;). These terms form a legally binding agreement between you and Komüte.</p>
+    </section>
+
+    <section id="eligibility">
+      <div class="sec-head"><span class="sec-num">2</span><h2 class="sec-title">Eligibility</h2></div>
+      <p>To use Komüte, you must:</p>
+      <ul class="bullets">
+        <li>Be at least <strong>18 years of age</strong>.</li>
+        <li>Provide accurate, current, and complete information when registering.</li>
+        <li>Have the legal capacity to enter into a binding agreement.</li>
+        <li>Not have been previously suspended or removed from the Platform for cause.</li>
+      </ul>
+      <p>To act as a <strong>driver</strong>, you must additionally hold a valid government-issued driver&rsquo;s licence and operate a vehicle that is roadworthy and covered by valid insurance.</p>
+    </section>
+
+    <section id="service">
+      <div class="sec-head"><span class="sec-num">3</span><h2 class="sec-title">Nature of the Service</h2></div>
+      <p>Komüte is a <strong>free peer-to-peer carpooling platform</strong> — a medium that connects drivers and passengers travelling in the same direction so they can share a trip together. Our purpose is to bring people together, reduce empty seats on the road, and make commuting greener and more social.</p>
+      <div class="callout">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="10" stroke="#0D7810" stroke-width="2"/><path d="M12 8v5M12 16h.01" stroke="#0D7810" stroke-width="2" stroke-linecap="round"/></svg>
+        <p><strong>Komüte is free to use and is not a taxi service</strong>, a transportation network company, or a for-hire carrier. We charge no fees or commissions. Drivers are everyday commuters and travellers, not professional drivers, and are not employees, agents, or contractors of Komüte. Every trip is an independent arrangement between a driver and a passenger.</p>
+      </div>
+      <p>Komüte facilitates introductions and communication only. We do not provide transportation, do not process payments, and are not a party to any trip arranged through the Platform.</p>
+    </section>
+
+    <section id="accounts">
+      <div class="sec-head"><span class="sec-num">4</span><h2 class="sec-title">Accounts &amp; Security</h2></div>
+      <ul class="bullets">
+        <li>You are responsible for keeping your password and account credentials confidential.</li>
+        <li>You are responsible for all activity that occurs under your account.</li>
+        <li>You must notify us immediately of any unauthorised access or security breach.</li>
+        <li>One person may not maintain more than one account. One account may not be shared between people.</li>
+        <li>You may sign in using email and password or through a supported provider such as Google or Apple.</li>
+      </ul>
+    </section>
+
+    <section id="responsibilities">
+      <div class="sec-head"><span class="sec-num">5</span><h2 class="sec-title">User Responsibilities</h2></div>
+      <h3>Drivers must</h3>
+      <ul class="bullets">
+        <li>Hold a valid driver&rsquo;s licence and required vehicle insurance throughout every trip.</li>
+        <li>Maintain their vehicle in safe, roadworthy operating condition.</li>
+        <li>Drive in compliance with all applicable traffic laws.</li>
+        <li>Never drive under the influence of alcohol or any impairing substance.</li>
+        <li>Complete posted trips in good faith and cancel only when truly necessary.</li>
+      </ul>
+      <h3>Passengers must</h3>
+      <ul class="bullets">
+        <li>Arrive on time at the agreed pickup point.</li>
+        <li>Honour any cost-sharing contribution agreed with the driver.</li>
+        <li>Behave respectfully toward the driver and any other passengers.</li>
+        <li>Not bring illegal substances, weapons, or hazardous items into the vehicle.</li>
+      </ul>
+    </section>
+
+    <section id="pricing">
+      <div class="sec-head"><span class="sec-num">6</span><h2 class="sec-title">Cost-Sharing &amp; Payments</h2></div>
+      <div class="callout">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none"><path d="M12 2l2.6 6.6L21 9.3l-5 4.4L17.5 21 12 17.3 6.5 21 8 13.7l-5-4.4 6.4-.7L12 2z" stroke="#0D7810" stroke-width="2" stroke-linejoin="round"/></svg>
+        <p><strong>Komüte is completely free to use.</strong> We do not charge booking fees, commissions, subscriptions, or any other fees — to drivers or to passengers — now or in the future as a condition of using the core platform.</p>
+      </div>
+      <ul class="bullets">
+        <li>Any contribution a passenger makes is agreed <strong>directly between the driver and the passenger</strong>, and may be discussed in the in-app chat before the trip.</li>
+        <li>Any agreed amount is a fair <strong>contribution toward the real cost of the trip</strong> — such as fuel — and is not a commercial fare. Drivers must not profit from trips.</li>
+        <li>Payment of any agreed contribution is arranged <strong>directly between the driver and the passenger</strong>. Komüte does not process, hold, or transfer money, and does not take any cut.</li>
+        <li>Because Komüte is a free connection service, we are not responsible for any payment, non-payment, or dispute over money exchanged between users.</li>
+      </ul>
+    </section>
+
+    <section id="cancellations">
+      <div class="sec-head"><span class="sec-num">7</span><h2 class="sec-title">Cancellations</h2></div>
+      <p>Because Komüte does not charge fees or process payments, cancelling a trip on the Platform costs you nothing. We still ask everyone to cancel responsibly:</p>
+      <ul class="bullets">
+        <li>Cancel as <strong>early as possible</strong> when your plans change, so the other person has time to adjust.</li>
+        <li>Always let the other party know through the in-app chat when you cancel.</li>
+        <li><strong>Drivers</strong> who cancel a posted trip should notify all confirmed passengers promptly.</li>
+        <li>Repeated last-minute cancellations may affect your rating and your continued access to the Platform.</li>
+        <li>Any contribution exchanged directly between users is settled between those users — Komüte is not involved.</li>
+      </ul>
+    </section>
+
+    <section id="prohibited">
+      <div class="sec-head"><span class="sec-num">8</span><h2 class="sec-title">Prohibited Conduct</h2></div>
+      <p>You may not use the Platform to:</p>
+      <ul class="bullets">
+        <li>Charge a commercial fare or profit from trips beyond genuine cost-sharing.</li>
+        <li>Harass, threaten, discriminate against, or endanger any user.</li>
+        <li>Misrepresent your identity, vehicle, licence, or trip details.</li>
+        <li>Transport minors without parental consent and an accompanying adult.</li>
+        <li>Transport commercial cargo, livestock, or hazardous materials.</li>
+        <li>Operate a commercial taxi or ride-hailing service through the Platform.</li>
+        <li>Post false, misleading, or fraudulent listings or reviews.</li>
+        <li>Interfere with, disrupt, or attempt to gain unauthorised access to the Platform.</li>
+      </ul>
+      <p>Violation of these rules may result in suspension or permanent removal from the Platform.</p>
+    </section>
+
+    <section id="verification">
+      <div class="sec-head"><span class="sec-num">9</span><h2 class="sec-title">Verification</h2></div>
+      <p>Drivers must complete identity verification before posting their first trip. Verification uses optical character recognition on the driver&rsquo;s licence and a facial match against a selfie.</p>
+      <p>You agree to provide genuine, unedited documents. Submitting falsified documents is grounds for immediate and permanent removal, and may be reported to the relevant authorities.</p>
+    </section>
+
+    <section id="liability">
+      <div class="sec-head"><span class="sec-num">10</span><h2 class="sec-title">Limitation of Liability</h2></div>
+      <p>Komüte is a marketplace that connects drivers and passengers. To the maximum extent permitted by law, Komüte and Indus Network LLC are not liable for any direct, indirect, incidental, special, or consequential damages arising from any trip, interaction, content, or use of the Platform.</p>
+      <p>The Platform is provided on an &ldquo;as is&rdquo; and &ldquo;as available&rdquo; basis, without warranties of any kind, whether express or implied. We do not guarantee the conduct, reliability, or suitability of any user.</p>
+    </section>
+
+    <section id="insurance">
+      <div class="sec-head"><span class="sec-num">11</span><h2 class="sec-title">Insurance</h2></div>
+      <p>Drivers are solely responsible for ensuring their personal vehicle insurance covers carpooling activity. Komüte does not provide insurance coverage for trips arranged through the Platform. Passengers are encouraged to confirm a driver&rsquo;s coverage where relevant.</p>
+    </section>
+
+    <section id="disputes">
+      <div class="sec-head"><span class="sec-num">12</span><h2 class="sec-title">Dispute Resolution</h2></div>
+      <ul class="bullets">
+        <li>Disputes between users should first be raised directly in the in-app chat.</li>
+        <li>Unresolved disputes can be escalated to our support team at <strong>support@komute.net</strong>.</li>
+        <li>Disputes that cannot be resolved internally are subject to binding arbitration under the laws of the Province of Ontario, Canada for Canadian users, or the State of Delaware, USA for users in the United States.</li>
+      </ul>
+    </section>
+
+    <section id="changes">
+      <div class="sec-head"><span class="sec-num">13</span><h2 class="sec-title">Changes to These Terms</h2></div>
+      <p>We may update these Terms &amp; Conditions from time to time. Material changes will be communicated by email at least 30 days before they take effect. Your continued use of the Platform after changes take effect constitutes acceptance of the revised terms.</p>
+    </section>
+
+    <section id="contact">
+      <div class="sec-head"><span class="sec-num">14</span><h2 class="sec-title">Contact</h2></div>
+      <p>Questions about these Terms &amp; Conditions can be sent to <strong>legal@komute.net</strong>, or through our <a href="{% url 'contact-us' %}" style="color:var(--brand-green);font-weight:600">Contact page</a>.</p>
+      <p style="color:var(--text-muted);font-size:14px;margin-top:18px">Indus Network LLC &middot; Operator of the Komüte platform.</p>
+    </section>
+  </main>
+</div>
+
+<!-- ============ FOOTER ============ -->
+{% include 'footer.html' %}
+<script>
+  /* mobile menu */
+  const burger=document.getElementById('burger');
+  const navLinks=document.getElementById('navLinks');
+  burger.addEventListener('click',()=>navLinks.classList.toggle('open'));
+
+  /* active TOC link on scroll */
+  const sections=document.querySelectorAll('section[id]');
+  const tocLinks=document.querySelectorAll('.toc a');
+  const obs=new IntersectionObserver(entries=>{
+    entries.forEach(e=>{
+      if(e.isIntersecting){
+        tocLinks.forEach(l=>l.style.background='');
+        const active=document.querySelector('.toc a[href="#'+e.target.id+'"]');
+        if(active){active.style.background='var(--contrast-lt)';active.style.color='var(--brand-green)';}
+      }
+    });
+  },{rootMargin:'-20% 0px -70% 0px'});
+  sections.forEach(s=>obs.observe(s));
+</script>
+</body>
+</html>

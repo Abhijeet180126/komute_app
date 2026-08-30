@@ -1,0 +1,750 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="icon" type="image/png" href="{% static 'images/icon_white.png' %}">
+<title>Komüte – Route Demand</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800&family=DM+Sans:wght@400;500;600&family=Montserrat:wght@600;700;800&display=swap" rel="stylesheet">
+
+<style>
+:root {
+  --light-bg:    #E9F7EE;
+  --contrast-lt: #D5FBE5;
+  --brand-green: #0D7810;
+  --grad-blue:   #0C63B4;
+  --grad-green:  #0CB439;
+  --white:       #ffffff;
+  --text-dark:   #121212;
+  --text-muted:  #5a7060;
+  --input-border:#c2dfc8;
+  --input-bg:    #f6fbf7;
+  --card-shadow: 0 4px 24px rgba(13,120,16,0.08);
+}
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: 'DM Sans', sans-serif; background: var(--light-bg); min-height: 100vh; color: var(--text-dark); }
+
+/* ════ NAVBAR ════ */
+nav {
+  background: var(--white); border-bottom: 1px solid #d8eed9;
+  padding: 13px 36px; display: flex; align-items: center; justify-content: space-between;
+  position: sticky; top: 0; z-index: 100; box-shadow: 0 2px 12px rgba(0,0,0,0.04);
+}
+.nav-logo { display: flex; align-items: center; gap: 8px; text-decoration: none; }
+.nav-logo img { height: 38px; width: auto; object-fit: contain; }
+.nav-logo-text {
+  font-family: 'Montserrat', sans-serif; font-weight: 800; font-size: 1.05rem;
+  background: linear-gradient(90deg, #0C63B4, #0CB439);
+  -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
+  letter-spacing: 0.07em;
+}
+.nav-right { display: flex; align-items: center; gap: 12px; }
+.user-pill {
+  display: flex; align-items: center; gap: 9px;
+  background: linear-gradient(90deg, #0C63B4, #0CB439);
+  color: white; border-radius: 50px; padding: 5px 18px 5px 5px;
+  font-weight: 600; font-size: 0.9rem; cursor: pointer;
+}
+.user-avatar-nav {
+  width: 32px; height: 32px; border-radius: 50%;
+  background: rgba(255,255,255,0.22); border: 2px solid rgba(255,255,255,0.4);
+  display: flex; align-items: center; justify-content: center;
+}
+.user-avatar-nav svg { width: 16px; height: 16px; stroke: white; fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.logout-btn {
+  width: 38px; height: 38px; border-radius: 10px;
+  background: var(--input-bg); border: 1.5px solid var(--input-border);
+  display: flex; align-items: center; justify-content: center; cursor: pointer; transition: all 0.2s;
+}
+.logout-btn:hover { background: #fee2e2; border-color: #fca5a5; }
+.logout-btn:hover svg { stroke: #dc2626; }
+.logout-btn svg { width: 17px; height: 17px; stroke: var(--text-muted); fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+
+/* ════ LAYOUT ════ */
+.page-outer { max-width: 1000px; margin: 0 auto; padding: 36px 24px 80px; }
+
+@keyframes fadeUp { from { opacity:0; transform:translateY(16px); } to { opacity:1; transform:translateY(0); } }
+
+/* ════ HEADER ════ */
+.page-header { margin-bottom: 28px; animation: fadeUp 0.4s ease both; }
+.breadcrumb {
+  display: inline-flex; align-items: center; gap: 6px;
+  background: var(--white); border: 1.5px solid var(--input-border);
+  border-radius: 50px; padding: 6px 16px;
+  font-size: 0.8rem; font-weight: 500; color: var(--text-muted);
+  margin-bottom: 14px; text-decoration: none;
+}
+.breadcrumb svg { width: 13px; height: 13px; stroke: var(--brand-green); fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.page-title { font-family: 'Poppins', sans-serif; font-size: 1.9rem; font-weight: 800; color: var(--brand-green); margin-bottom: 4px; }
+.page-subtitle { font-size: 0.9rem; color: var(--text-muted); display: flex; align-items: center; gap: 6px; }
+.page-subtitle svg { width: 14px; height: 14px; stroke: var(--brand-green); fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+
+/* ════ STATS ════ */
+.stats-bar {
+  display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin-bottom: 28px;
+  animation: fadeUp 0.4s 0.05s ease both;
+}
+.stat-card {
+  background: var(--white); border-radius: 14px; border: 1.5px solid #e2f0e4;
+  padding: 16px 18px; display: flex; align-items: center; gap: 12px;
+  box-shadow: var(--card-shadow);
+}
+.stat-icon {
+  width: 40px; height: 40px; border-radius: 10px;
+  background: linear-gradient(135deg, #0C63B4, #0CB439);
+  display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+}
+.stat-icon svg { width: 18px; height: 18px; stroke: white; fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.stat-num {
+  font-family: 'Montserrat', sans-serif; font-weight: 800; font-size: 1.3rem;
+  background: linear-gradient(90deg, #0C63B4, #0CB439);
+  -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
+  line-height: 1.1;
+}
+.stat-label { font-size: 0.72rem; color: var(--text-muted); font-weight: 500; margin-top: 1px; }
+
+/* ════ FILTER ROW ════ */
+.filter-row {
+  display: flex; align-items: center; justify-content: space-between;
+  flex-wrap: wrap; gap: 12px; margin-bottom: 20px;
+  animation: fadeUp 0.4s 0.1s ease both;
+}
+.filter-left { display: flex; gap: 8px; flex-wrap: wrap; }
+.filter-tab {
+  display: inline-flex; align-items: center; gap: 6px; padding: 7px 16px;
+  border-radius: 50px; border: 1.5px solid var(--input-border);
+  background: var(--white); font-size: 0.82rem; font-weight: 600; color: var(--text-muted);
+  cursor: pointer; transition: all 0.18s;
+}
+.filter-tab:hover { border-color: var(--brand-green); color: var(--brand-green); background: var(--contrast-lt); }
+.filter-tab.active { background: linear-gradient(90deg, #0C63B4, #0CB439); border-color: transparent; color: white; }
+.filter-tab svg { width: 12px; height: 12px; stroke: currentColor; fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.filter-count { background: rgba(255,255,255,0.25); border-radius: 20px; padding: 1px 7px; font-size: 0.7rem; font-weight: 700; }
+.filter-tab:not(.active) .filter-count { background: #eaf6ec; color: var(--brand-green); }
+
+.search-filter {
+  display: flex; align-items: center; gap: 8px;
+  background: var(--white); border: 1.5px solid var(--input-border);
+  border-radius: 10px; padding: 8px 14px; flex: 0 0 240px;
+}
+.search-filter svg { width: 14px; height: 14px; stroke: #9db8a2; fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; flex-shrink: 0; }
+.search-filter input { border: none; background: none; outline: none; font-family: 'DM Sans', sans-serif; font-size: 0.84rem; color: var(--text-dark); width: 100%; }
+.search-filter input::placeholder { color: #b0c8b5; }
+
+/* ════ DEMAND CARD ════ */
+.demand-list { display: flex; flex-direction: column; gap: 14px; }
+
+.demand-card {
+  background: var(--white); border-radius: 18px; border: 1.5px solid #e2f0e4;
+  box-shadow: var(--card-shadow); overflow: hidden;
+  transition: box-shadow 0.2s, transform 0.2s, border-color 0.2s;
+  animation: fadeUp 0.4s ease both;
+}
+.demand-card:nth-child(1) { animation-delay: 0.12s; }
+.demand-card:nth-child(2) { animation-delay: 0.18s; }
+.demand-card:nth-child(3) { animation-delay: 0.24s; }
+.demand-card:nth-child(4) { animation-delay: 0.30s; }
+.demand-card:hover { box-shadow: 0 8px 32px rgba(13,120,16,0.13); transform: translateY(-2px); border-color: #b6dfc0; }
+
+/* Hot strip */
+.hot-strip { height: 3px; background: linear-gradient(90deg, #0C63B4, #0CB439); }
+.warm-strip { height: 3px; background: linear-gradient(90deg, #f59e0b, #fbbf24); }
+.cool-strip { height: 3px; background: #d1d5db; }
+
+.demand-card-body { padding: 20px 22px; }
+
+.demand-top {
+  display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; margin-bottom: 14px;
+}
+
+/* Route section */
+.demand-route { flex: 1; }
+.dr-line { display: flex; align-items: center; gap: 8px; font-size: 0.92rem; font-weight: 600; color: var(--text-dark); }
+.dr-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+.dr-dot.from { background: var(--brand-green); }
+.dr-dot.to   { background: linear-gradient(135deg, #0C63B4, #0CB439); }
+.dr-dashes {
+  width: 2px; height: 16px; margin-left: 4px;
+  background: repeating-linear-gradient(to bottom, #c2dfc8 0px, #c2dfc8 4px, transparent 4px, transparent 8px);
+}
+
+/* Demand badge */
+.demand-badge-wrap { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; flex-shrink: 0; }
+.demand-badge {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 6px 14px; border-radius: 20px;
+  font-family: 'Poppins', sans-serif; font-weight: 800; font-size: 0.9rem;
+}
+.demand-badge.hot      { background: #dcfce7; color: var(--brand-green); }
+.demand-badge.warm     { background: #fef3c7; color: #92400e; }
+.demand-badge.cool     { background: #f3f4f6; color: #6b7280; }
+.demand-badge svg      { width: 15px; height: 15px; stroke: currentColor; fill: none; stroke-width: 2.5; stroke-linecap: round; stroke-linejoin: round; }
+.demand-pulse { width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0; }
+.hot .demand-pulse  { background: var(--brand-green); animation: pulse 1.6s infinite; }
+.warm .demand-pulse { background: #f59e0b; }
+.cool .demand-pulse { background: #9ca3af; animation: none; }
+@keyframes pulse { 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:0.4;transform:scale(1.35)} }
+
+.new-badge {
+  background: linear-gradient(90deg, #0C63B4, #0CB439);
+  color: white; border-radius: 20px; padding: 2px 10px;
+  font-size: 0.68rem; font-weight: 700; font-family: 'Poppins', sans-serif;
+  letter-spacing: 0.06em;
+}
+
+/* Chips */
+.demand-chips { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 16px; }
+.chip {
+  display: inline-flex; align-items: center; gap: 5px;
+  background: var(--input-bg); border: 1px solid var(--input-border);
+  border-radius: 8px; padding: 5px 10px; font-size: 0.76rem; color: var(--text-muted); font-weight: 500;
+}
+.chip svg { width: 12px; height: 12px; stroke: var(--brand-green); fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.chip.green { background: var(--contrast-lt); border-color: #b6dfc0; color: var(--brand-green); font-weight: 600; }
+
+/* Demand heat bar */
+.demand-meter-wrap { margin-bottom: 16px; }
+.demand-meter-label {
+  display: flex; justify-content: space-between; align-items: center;
+  font-size: 0.75rem; color: var(--text-muted); font-weight: 500; margin-bottom: 6px;
+}
+.demand-meter-label span:last-child { font-weight: 700; color: var(--brand-green); }
+.demand-meter-bg {
+  width: 100%; height: 7px; border-radius: 10px; background: #e8f5ea; overflow: hidden;
+}
+.demand-meter-fill {
+  height: 100%; border-radius: 10px;
+  background: linear-gradient(90deg, #0C63B4, #0CB439);
+  transition: width 1s cubic-bezier(0.34,1.56,0.64,1);
+}
+
+/* Rider list */
+.riders-section { margin-bottom: 16px; }
+.riders-section-header {
+  display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px;
+}
+.riders-section-title {
+  font-size: 0.8rem; font-weight: 700; color: var(--text-dark);
+  display: flex; align-items: center; gap: 6px;
+}
+.riders-section-title svg { width: 13px; height: 13px; stroke: var(--brand-green); fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.toggle-riders-btn {
+  background: none; border: none; cursor: pointer;
+  font-size: 0.75rem; font-weight: 600; color: var(--brand-green);
+  display: flex; align-items: center; gap: 4px; padding: 0;
+  font-family: 'DM Sans', sans-serif;
+}
+.toggle-riders-btn svg { width: 12px; height: 12px; stroke: var(--brand-green); fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; transition: transform 0.2s; }
+.toggle-riders-btn.open svg { transform: rotate(180deg); }
+
+.riders-list { display: flex; flex-direction: column; gap: 8px; }
+
+.rider-row {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  padding: 10px 14px; border-radius: 10px;
+  background: var(--input-bg); border: 1px solid var(--input-border);
+  transition: background 0.15s, border-color 0.15s;
+}
+.rider-row:hover { background: var(--contrast-lt); border-color: #b6dfc0; }
+
+.rider-left { display: flex; align-items: center; gap: 10px; }
+.rider-avatar {
+  width: 34px; height: 34px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  font-family: 'Poppins', sans-serif; font-weight: 700; font-size: 0.75rem; color: white;
+  flex-shrink: 0;
+}
+.rider-info {}
+.rider-name { font-size: 0.84rem; font-weight: 600; color: var(--text-dark); }
+.rider-meta { font-size: 0.72rem; color: var(--text-muted); margin-top: 1px; }
+
+.rider-right { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+.rider-seats {
+  display: inline-flex; align-items: center; gap: 4px;
+  background: var(--contrast-lt); border-radius: 20px; padding: 3px 9px;
+  font-size: 0.72rem; font-weight: 700; color: var(--brand-green);
+}
+.rider-seats svg { width: 10px; height: 10px; stroke: var(--brand-green); fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+
+.btn-invite {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 6px 14px; border-radius: 8px;
+  background: linear-gradient(90deg, #0C63B4, #0CB439);
+  color: white; border: none;
+  font-family: 'DM Sans', sans-serif; font-size: 0.78rem; font-weight: 700;
+  cursor: pointer; transition: opacity 0.2s, transform 0.15s;
+  box-shadow: 0 2px 8px rgba(12,99,180,0.2);
+}
+.btn-invite:hover { opacity: 0.88; transform: translateY(-1px); }
+.btn-invite:disabled { opacity: 0.4; cursor: not-allowed; transform: none; background: #9ca3af; box-shadow: none; }
+.btn-invite svg { width: 12px; height: 12px; stroke: white; fill: none; stroke-width: 2.5; stroke-linecap: round; stroke-linejoin: round; }
+
+.btn-invite-all {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 8px 18px; border-radius: 10px;
+  background: linear-gradient(90deg, #0C63B4, #0CB439);
+  color: white; border: none;
+  font-family: 'Poppins', sans-serif; font-size: 0.84rem; font-weight: 700;
+  cursor: pointer; transition: opacity 0.2s, transform 0.15s;
+  box-shadow: 0 3px 10px rgba(12,99,180,0.22);
+}
+.btn-invite-all:hover { opacity: 0.88; transform: translateY(-1px); }
+.btn-invite-all svg { width: 14px; height: 14px; stroke: white; fill: none; stroke-width: 2.5; stroke-linecap: round; stroke-linejoin: round; }
+
+.btn-post-this {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 8px 18px; border-radius: 10px;
+  background: var(--input-bg); border: 1.5px solid var(--input-border);
+  color: var(--text-muted);
+  font-family: 'DM Sans', sans-serif; font-size: 0.84rem; font-weight: 600;
+  cursor: pointer; transition: all 0.18s;
+}
+.btn-post-this:hover { background: var(--contrast-lt); border-color: var(--brand-green); color: var(--brand-green); }
+.btn-post-this svg { width: 14px; height: 14px; stroke: currentColor; fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+
+/* Card footer row */
+.demand-footer {
+  display: flex; align-items: center; justify-content: space-between;
+  padding-top: 14px; border-top: 1.5px solid #edf7ee; flex-wrap: wrap; gap: 10px;
+}
+.footer-note { font-size: 0.75rem; color: var(--text-muted); display: flex; align-items: center; gap: 5px; }
+.footer-note svg { width: 12px; height: 12px; stroke: var(--brand-green); fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.footer-actions { display: flex; gap: 8px; }
+
+/* ════ TOAST ════ */
+.toast {
+  position: fixed; bottom: 28px; right: 28px;
+  background: var(--brand-green); color: white;
+  padding: 13px 20px; border-radius: 12px;
+  display: flex; align-items: center; gap: 10px;
+  font-family: 'DM Sans', sans-serif; font-weight: 600; font-size: 0.9rem;
+  box-shadow: 0 8px 24px rgba(13,120,16,0.3);
+  transform: translateY(80px); opacity: 0;
+  transition: all 0.3s cubic-bezier(0.34,1.56,0.64,1); z-index: 999;
+}
+.toast.show { transform: translateY(0); opacity: 1; }
+.toast svg { width: 18px; height: 18px; stroke: white; fill: none; stroke-width: 2.5; stroke-linecap: round; stroke-linejoin: round; }
+
+/* ════ EMPTY STATE ════ */
+.empty-state {
+  background: var(--white); border-radius: 18px; border: 1.5px solid #e2f0e4;
+  padding: 60px 40px; text-align: center;
+  display: flex; flex-direction: column; align-items: center; gap: 14px;
+  box-shadow: var(--card-shadow); animation: fadeUp 0.35s ease both;
+}
+.empty-icon { width: 72px; height: 72px; border-radius: 50%; background: var(--contrast-lt); display: flex; align-items: center; justify-content: center; }
+.empty-icon svg { width: 34px; height: 34px; stroke: var(--brand-green); fill: none; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.empty-state h3 { font-family: 'Poppins', sans-serif; font-weight: 700; font-size: 1.1rem; color: var(--brand-green); }
+.empty-state p { font-size: 0.88rem; color: var(--text-muted); max-width: 320px; line-height: 1.6; }
+
+/* ════ RESPONSIVE ════ */
+@media (max-width: 760px) {
+  .stats-bar { grid-template-columns: 1fr 1fr; }
+  .demand-top { flex-direction: column; }
+}
+@media (max-width: 520px) {
+  nav { padding: 12px 16px; }
+  .page-outer { padding: 24px 14px 60px; }
+  .stats-bar { grid-template-columns: 1fr 1fr; }
+  .rider-right { flex-direction: column; align-items: flex-end; gap: 4px; }
+  .filter-row { flex-direction: column; align-items: stretch; }
+  .search-filter { flex: 1; }
+}
+</style>
+</head>
+<body>
+
+<div class="toast" id="toast"></div>
+
+<!-- ════ NAVBAR ════ -->
+{% include 'header.html' %}
+<!-- ════ PAGE ════ -->
+<div class="page-outer">
+
+  <!-- Header -->
+  <div class="page-header">
+    <a href="{% url 'driver_dashboard' %}" class="breadcrumb">
+      <svg viewBox="0 0 24 24"><rect x="1" y="3" width="15" height="13" rx="2"/><polygon points="16 8 20 8 23 11 23 16 16 16 16 8"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></svg>
+      Driver Dashboard
+    </a>
+    <h1 class="page-title">Route Demand</h1>
+    <p class="page-subtitle">
+      <svg viewBox="0 0 24 24"><path d="M11 20A7 7 0 0 1 9.8 6.1C15.5 5 17 4.48 19 2c1 2 2 4.18 2 8 0 5.5-4.78 10-10 10z"/><path d="M2 21c0-3 1.85-5.36 5.08-6C9.5 14.52 12 13 13 12"/></svg>
+      Riders searching your routes — invite them to your ride
+    </p>
+  </div>
+
+  <!-- Stats Bar -->
+  <div class="stats-bar">
+    <div class="stat-card">
+      <div class="stat-icon"><svg viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg></div>
+      <div>
+        <div class="stat-num">{{ stats.riders_searching }}</div>
+        <div class="stat-label">Riders Searching</div>
+      </div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-icon"><svg viewBox="0 0 24 24"><line x1="12" y1="2" x2="12" y2="6"/><path d="M4.93 4.93l2.83 2.83"/><line x1="2" y1="12" x2="6" y2="12"/><path d="M4.93 19.07l2.83-2.83"/><line x1="12" y1="18" x2="12" y2="22"/><path d="M16.24 16.24l2.83 2.83"/><line x1="18" y1="12" x2="22" y2="12"/><path d="M16.24 7.76l2.83-2.83"/></svg></div>
+      <div>
+        <div class="stat-num">{{ stats.hot_routes }}</div>
+        <div class="stat-label">Hot Routes</div>
+      </div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-icon"><svg viewBox="0 0 24 24"><polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/><polyline points="16 7 22 7 22 13"/></svg></div>
+      <div>
+        <div class="stat-num">{{ stats.invites_sent_today }}</div>
+        <div class="stat-label">Invites Sent Today</div>
+      </div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-icon"><svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg></div>
+      <div>
+        <div class="stat-num">{{ stats.invites_accepted }}</div>
+        <div class="stat-label">Invites Accepted</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Filter Row -->
+  <div class="filter-row">
+    <div class="filter-left">
+      <button class="filter-tab active" onclick="setFilter('all',this)">
+        All Routes <span class="filter-count">{{ stats.total_count }}</span>
+      </button>
+      <button class="filter-tab" onclick="setFilter('hot',this)">
+        🔥 Hot <span class="filter-count">{{ stats.hot_count }}</span>
+      </button>
+      <button class="filter-tab" onclick="setFilter('my',this)">
+        <svg viewBox="0 0 24 24"><rect x="1" y="3" width="15" height="13" rx="2"/><polygon points="16 8 20 8 23 11 23 16 16 16 16 8"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></svg>
+        My Routes <span class="filter-count">{{ stats.my_routes_count }}</span>
+      </button>
+      <button class="filter-tab" onclick="setFilter('new',this)">
+        New Today <span class="filter-count">{{ stats.new_today_count }}</span>
+      </button>
+    </div>
+    <div class="search-filter">
+      <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+      <input type="text" placeholder="Search by route..." oninput="filterBySearch(this.value)">
+    </div>
+  </div>
+
+  <!-- ════ DEMAND CARDS ════ -->
+  <div class="demand-list" id="demandList">
+
+    {% for demand in route_demands %}
+    <div class="demand-card" data-heat="{{ demand.heat }}" data-my="{{ demand.is_my_route|lower }}" data-new="{{ demand.is_new|lower }}">
+      <div class="{{ demand.heat }}-strip"></div>
+      <div class="demand-card-body">
+
+        <div class="demand-top">
+          <div class="demand-route">
+            <div class="dr-line"><div class="dr-dot from"></div> {{ demand.from_location }}</div>
+            <div style="padding-left:4px;margin:4px 0"><div class="dr-dashes"></div></div>
+            <div class="dr-line"><div class="dr-dot to"></div> {{ demand.to_location }}</div>
+          </div>
+          <div class="demand-badge-wrap">
+            <div class="demand-badge {{ demand.heat }}">
+              <span class="demand-pulse"></span>
+              {{ demand.search_count }} searching
+            </div>
+            {% if demand.is_new %}<div class="new-badge">NEW</div>{% endif %}
+          </div>
+        </div>
+
+        <div class="demand-chips">
+          {% if demand.match_label %}
+          <div class="chip green">
+            <svg viewBox="0 0 24 24"><rect x="1" y="3" width="15" height="13" rx="2"/><polygon points="16 8 20 8 23 11 23 16 16 16 16 8"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></svg>
+            {{ demand.match_label }}
+          </div>
+          {% endif %}
+          {% if demand.most_searched_days %}
+          <div class="chip">
+            <svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+            Most searched: {{ demand.most_searched_days }}
+          </div>
+          {% endif %}
+          {% if demand.specific_date %}
+          <div class="chip">
+            <svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+            {{ demand.specific_date }}
+          </div>
+          {% endif %}
+          {% if demand.peak_time %}
+          <div class="chip">
+            <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+            Peak: {{ demand.peak_time }}
+          </div>
+          {% endif %}
+          {% if demand.departure_range %}
+          <div class="chip">
+            <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+            {{ demand.departure_range }}
+          </div>
+          {% endif %}
+          {% if demand.avg_seats %}
+          <div class="chip">
+            <svg viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg>
+            Avg. {{ demand.avg_seats }}
+          </div>
+          {% endif %}
+        </div>
+
+        <!-- Demand meter -->
+        <div class="demand-meter-wrap">
+          <div class="demand-meter-label">
+            <span>Route demand this week</span>
+            <span>{{ demand.search_count }} riders · {{ demand.demand_label }}</span>
+          </div>
+          <div class="demand-meter-bg">
+            <div class="demand-meter-fill"
+                 style="width:0%{% if demand.heat == 'cool' %};background:linear-gradient(90deg,#9ca3af,#d1d5db){% endif %}"
+                 data-width="{{ demand.demand_percent }}%"></div>
+          </div>
+        </div>
+
+        <!-- Riders list -->
+        <div class="riders-section">
+          <div class="riders-section-header">
+            <div class="riders-section-title">
+              <svg viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+              Riders Searching This Route ({{ demand.search_count }})
+            </div>
+            <button class="toggle-riders-btn {% if demand.is_my_route %}open{% endif %}" onclick="toggleRiders(this)">
+              {% if demand.is_my_route %}Hide riders{% else %}Show riders{% endif %}
+              <svg viewBox="0 0 24 24"><polyline points="6 9 12 15 18 9"/></svg>
+            </button>
+          </div>
+          <div class="riders-list" {% if not demand.is_my_route %}style="display:none"{% endif %}>
+            {% for rider in demand.riders %}
+            <div class="rider-row">
+              <div class="rider-left">
+                <div class="rider-avatar" style="background:{{ rider.avatar_color }}">{{ rider.initials }}</div>
+                <div class="rider-info">
+                  <div class="rider-name">{{ rider.name }}</div>
+                  <div class="rider-meta">Searching since {{ rider.searching_since }} · {{ rider.rating_label }}</div>
+                </div>
+              </div>
+              <div class="rider-right">
+                <div class="rider-seats">
+                  <svg viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg>
+                  {{ rider.seats_needed }} seat{{ rider.seats_needed|pluralize }}
+                </div>
+                {% if demand.has_my_ride %}
+                <button class="btn-invite"
+                        data-rider-id="{{ rider.id }}"
+                        data-ride-id="{{ demand.ride_id }}"
+                        data-rider-name="{{ rider.name }}"
+                        onclick="sendInvite(this, this.dataset.riderId, this.dataset.rideId, this.dataset.riderName)">
+                  <svg viewBox="0 0 24 24"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+                  Invite
+                </button>
+                {% else %}
+                <button class="btn-invite" disabled>No ride posted</button>
+                {% endif %}
+              </div>
+            </div>
+            {% endfor %}
+          </div>
+        </div>
+
+        <!-- Footer -->
+        <div class="demand-footer">
+          <div class="footer-note">
+            {% if demand.has_my_ride %}
+            <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+            {% if demand.ride_date %}
+            Your ride on {{ demand.ride_date }} has {{ demand.booked_seats }} seat{{ demand.booked_seats|pluralize }} booked · {{ demand.open_seats }} open
+            {% else %}
+            Last updated {{ demand.last_updated }} · {{ demand.available_seats }} seat{{ demand.available_seats|pluralize }} available on your ride
+            {% endif %}
+            {% else %}
+            <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+            You haven't posted a ride on this route yet
+            {% endif %}
+          </div>
+          <div class="footer-actions">
+            {% if demand.has_my_ride %}
+            <a href="{% url 'ride-summary' demand.ride_id %}" class="btn-post-this">
+              <svg viewBox="0 0 24 24"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+              View Your Ride
+            </a>
+            <button class="btn-invite-all" onclick="inviteAll(this)">
+              <svg viewBox="0 0 24 24"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+              Invite All ({{ demand.search_count }})
+            </button>
+            {% else %}
+            <button class="btn-invite-all" onclick="showToast('Opening Post a Ride...')">
+              <svg viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+              Post a Ride for This Route
+            </button>
+            {% endif %}
+          </div>
+        </div>
+      </div>
+    </div>
+    {% empty %}
+    <div class="empty-state">
+      <div class="empty-icon">
+        <svg viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+      </div>
+      {% if not has_active_rides %}
+      <h3>No Active Rides Posted</h3>
+      <p>Route demand is matched to your posted rides. Post a ride first and we'll show you how many riders are searching that route.</p>
+      <a href="{% url 'post-ride' %}" style="margin-top:8px;display:inline-flex;align-items:center;gap:6px;background:var(--brand-green);color:#fff;padding:11px 22px;border-radius:10px;font-weight:700;font-size:.9rem;text-decoration:none;">
+        <svg viewBox="0 0 24 24" style="width:16px;height:16px;stroke:#fff;fill:none;stroke-width:2.5;stroke-linecap:round;stroke-linejoin:round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+        Post a Ride
+      </a>
+      {% else %}
+      <h3>No Searches Yet</h3>
+      <p>No riders have searched your route in the past 7 days. Check back soon!</p>
+      {% endif %}
+    </div>
+    {% endfor %}
+
+  </div><!-- /demand-list -->
+</div>
+{% include 'footer.html' %}
+<script>
+  /* ── ANIMATE METERS ON LOAD ── */
+  window.addEventListener('load', () => {
+    setTimeout(() => {
+      document.querySelectorAll('.demand-meter-fill').forEach(el => {
+        el.style.width = el.dataset.width;
+      });
+    }, 400);
+  });
+
+  /* ── FILTER TABS ── */
+  function setFilter(type, btn) {
+    document.querySelectorAll('.filter-tab').forEach(t => t.classList.remove('active'));
+    btn.classList.add('active');
+    document.querySelectorAll('.demand-card').forEach(card => {
+      let show = true;
+      if (type === 'hot')  show = card.dataset.heat === 'hot';
+      if (type === 'my')   show = card.dataset.my === 'true';
+      if (type === 'new')  show = card.dataset.new === 'true';
+      card.style.display = show ? 'block' : 'none';
+    });
+  }
+
+  /* ── SEARCH FILTER ── */
+  function filterBySearch(val) {
+    const q = val.toLowerCase();
+    document.querySelectorAll('.demand-card').forEach(card => {
+      const text = card.innerText.toLowerCase();
+      card.style.display = text.includes(q) ? 'block' : 'none';
+    });
+  }
+
+  /* ── TOGGLE RIDER LIST ── */
+  function toggleRiders(btn) {
+    const list = btn.closest('.riders-section').querySelector('.riders-list');
+    const open = btn.classList.contains('open');
+    list.style.display = open ? 'none' : 'flex';
+    list.style.flexDirection = 'column';
+    list.style.gap = '8px';
+    btn.classList.toggle('open', !open);
+    btn.innerHTML = open
+      ? `Show riders <svg viewBox="0 0 24 24"><polyline points="6 9 12 15 18 9"/></svg>`
+      : `Hide riders <svg viewBox="0 0 24 24"><polyline points="6 9 12 15 18 9"/></svg>`;
+    btn.querySelector('svg').style.transform = open ? '' : 'rotate(180deg)';
+  }
+
+  const CSRF = '{{ csrf_token }}';
+
+  /* ── INVITE SINGLE RIDER ──
+     Returns a Promise<boolean> (true = invite actually sent) so inviteAll()
+     can tally real results instead of assuming every click worked. */
+  function sendInvite(btn, riderId, rideId, name) {
+    btn.disabled = true;
+    btn.innerHTML = `<svg viewBox="0 0 24 24" style="animation:spin 0.7s linear infinite;width:12px;height:12px;stroke:white;fill:none;stroke-width:2.5;stroke-linecap:round;stroke-linejoin:round"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-3.33"/></svg>`;
+
+    return fetch('/invite/send/', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-CSRFToken': CSRF },
+      body: JSON.stringify({ rider_id: riderId, ride_id: rideId }),
+    })
+    .then(r => r.json())
+    .then(data => {
+      if (data.ok) {
+        btn.innerHTML = `<svg viewBox="0 0 24 24" style="width:12px;height:12px;stroke:white;fill:none;stroke-width:2.5;stroke-linecap:round;stroke-linejoin:round"><polyline points="20 6 9 17 4 12"/></svg> Sent!`;
+        btn.style.background = 'var(--brand-green)';
+        btn.style.boxShadow = 'none';
+        const row = btn.closest('.rider-row');
+        row.style.background = '#f0fdf4';
+        row.style.borderColor = '#b6dfc0';
+        showToast(`Invite sent to ${name}! 📨`);
+        return true;
+      } else {
+        btn.disabled = false;
+        btn.innerHTML = `<svg viewBox="0 0 24 24" style="width:12px;height:12px;stroke:white;fill:none;stroke-width:2.5;stroke-linecap:round;stroke-linejoin:round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg> Invite`;
+        showToast(data.error || 'Could not send invite.');
+        return false;
+      }
+    })
+    .catch(() => {
+      btn.disabled = false;
+      btn.innerHTML = `<svg viewBox="0 0 24 24" style="width:12px;height:12px;stroke:white;fill:none;stroke-width:2.5;stroke-linecap:round;stroke-linejoin:round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg> Invite`;
+      showToast('Network error — please try again.');
+      return false;
+    });
+  }
+
+  /* ── INVITE ALL ──
+     Calls sendInvite() directly (not btn.click()) so it gets each real
+     success/failure back, instead of firing simulated clicks and assuming
+     they all worked. */
+  function inviteAll(btn) {
+    const card = btn.closest('.demand-card');
+    const inviteBtns = Array.from(card.querySelectorAll('.btn-invite:not(:disabled)'));
+    if (!inviteBtns.length) return;
+    btn.innerHTML = `<svg viewBox="0 0 24 24" style="animation:spin 0.7s linear infinite;width:14px;height:14px;stroke:white;fill:none;stroke-width:2.5;stroke-linecap:round;stroke-linejoin:round"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-3.33"/></svg> Sending...`;
+    btn.disabled = true;
+
+    let sent = 0, failed = 0;
+
+    function sendNext(i) {
+      if (i >= inviteBtns.length) {
+        if (failed === 0) {
+          btn.innerHTML = `<svg viewBox="0 0 24 24" style="width:14px;height:14px;stroke:white;fill:none;stroke-width:2.5;stroke-linecap:round;stroke-linejoin:round"><polyline points="20 6 9 17 4 12"/></svg> All Invited!`;
+          btn.style.background = 'var(--brand-green)';
+          showToast(`All ${sent} riders invited! 🎉`);
+        } else {
+          btn.innerHTML = `<svg viewBox="0 0 24 24" style="width:14px;height:14px;stroke:white;fill:none;stroke-width:2.5;stroke-linecap:round;stroke-linejoin:round"><polyline points="20 6 9 17 4 12"/></svg> ${sent} Invited`;
+          btn.style.background = sent > 0 ? 'var(--brand-green)' : '#dc2626';
+          btn.disabled = false; // let them retry the ones that failed
+          showToast(`${sent} invite${sent === 1 ? '' : 's'} sent, ${failed} failed.`);
+        }
+        return;
+      }
+      const b = inviteBtns[i];
+      sendInvite(b, Number(b.dataset.riderId), b.dataset.rideId, b.dataset.riderName)
+        .then(ok => {
+          if (ok) sent++; else failed++;
+          setTimeout(() => sendNext(i + 1), 450);
+        });
+    }
+    sendNext(0);
+  }
+
+  /* ── TOAST ── */
+  function showToast(msg) {
+    const toast = document.getElementById('toast');
+    toast.innerHTML = `<svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg> ${msg}`;
+    toast.classList.add('show');
+    clearTimeout(toast._timer);
+    toast._timer = setTimeout(() => toast.classList.remove('show'), 3200);
+  }
+</script>
+
+<style>
+  @keyframes spin { to { transform: rotate(360deg); } }
+</style>
+
+</body>
+</html>

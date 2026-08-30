@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Booking Cancelled – Komüte</title>
+</head>
+<body style="margin:0;padding:0;background-color:#FEF2F2;font-family:Arial,Helvetica,sans-serif;">
+
+<table width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#FEF2F2;padding:40px 16px;">
+  <tr>
+    <td align="center">
+      <table width="100%" cellpadding="0" cellspacing="0" border="0" style="max-width:560px;">
+
+        <!-- Brand -->
+        <tr>
+          <td align="center" style="padding-bottom:24px;">
+            <span style="font-family:Arial,Helvetica,sans-serif;font-size:26px;font-weight:900;color:#0D7810;letter-spacing:2px;">Kom&#xFC;te</span>
+          </td>
+        </tr>
+
+        <!-- Card -->
+        <tr>
+          <td style="background:#ffffff;border-radius:20px;border:1.5px solid #fecaca;box-shadow:0 4px 24px rgba(220,38,38,0.08);overflow:hidden;">
+
+            <!-- Accent bar -->
+            <table width="100%" cellpadding="0" cellspacing="0" border="0">
+              <tr><td style="height:5px;background:linear-gradient(90deg,#dc2626,#f87171);"></td></tr>
+            </table>
+
+            <!-- Body -->
+            <table width="100%" cellpadding="0" cellspacing="0" border="0">
+              <tr>
+                <td style="padding:40px 40px 32px;">
+
+                  <!-- Icon -->
+                  <table cellpadding="0" cellspacing="0" border="0" style="margin-bottom:20px;">
+                    <tr>
+                      <td style="width:56px;height:56px;background:#FEE2E2;border-radius:50%;text-align:center;vertical-align:middle;">
+                        <span style="font-size:26px;line-height:56px;">&#x274C;</span>
+                      </td>
+                    </tr>
+                  </table>
+
+                  <p style="margin:0 0 6px;font-size:22px;font-weight:700;color:#dc2626;font-family:Arial,Helvetica,sans-serif;">
+                    Booking Cancelled
+                  </p>
+                  <p style="margin:0 0 20px;font-size:15px;color:#121212;line-height:1.6;font-family:Arial,Helvetica,sans-serif;">
+                    Hi {{ driver_name }},
+                  </p>
+                  <p style="margin:0 0 24px;font-size:15px;color:#6b2e2e;line-height:1.7;font-family:Arial,Helvetica,sans-serif;">
+                    <strong>{{ rider_name }}</strong> has cancelled their booking on your upcoming ride.
+                  </p>
+
+                  <!-- Details box -->
+                  <table width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-bottom:24px;border-radius:12px;border:1.5px solid #fecaca;overflow:hidden;">
+                    <tr>
+                      <td style="background:#fff7f7;padding:16px 20px;">
+                        <table width="100%" cellpadding="0" cellspacing="0" border="0">
+                          <tr>
+                            <td style="padding:7px 0;border-bottom:1px solid #fde8e8;">
+                              <span style="font-size:12px;font-weight:700;color:#9a4040;text-transform:uppercase;letter-spacing:.05em;">Route</span><br>
+                              <span style="font-size:15px;font-weight:700;color:#121212;">{{ origin }} &rarr; {{ destination }}</span>
+                            </td>
+                          </tr>
+                          <tr>
+                            <td style="padding:7px 0;border-bottom:1px solid #fde8e8;">
+                              <span style="font-size:12px;font-weight:700;color:#9a4040;text-transform:uppercase;letter-spacing:.05em;">Date &amp; Time</span><br>
+                              <span style="font-size:15px;font-weight:700;color:#121212;">{{ depart_display }}</span>
+                            </td>
+                          </tr>
+                          <tr>
+                            <td style="padding:7px 0;border-bottom:1px solid #fde8e8;">
+                              <span style="font-size:12px;font-weight:700;color:#9a4040;text-transform:uppercase;letter-spacing:.05em;">Passenger</span><br>
+                              <span style="font-size:15px;font-weight:700;color:#121212;">{{ rider_name }}</span>
+                            </td>
+                          </tr>
+                          <tr>
+                            <td style="padding:7px 0;">
+                              <span style="font-size:12px;font-weight:700;color:#9a4040;text-transform:uppercase;letter-spacing:.05em;">Seats Freed</span><br>
+                              <span style="font-size:15px;font-weight:700;color:#121212;">{{ seats }} seat{{ seats|pluralize }}</span>
+                            </td>
+                          </tr>
+                        </table>
+                      </td>
+                    </tr>
+                  </table>
+
+                  <!-- Note -->
+                  <table width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-bottom:24px;">
+                    <tr>
+                      <td style="background:#fff7f7;padding:12px 16px;border-radius:0 8px 8px 0;border-left:4px solid #dc2626;font-size:13px;color:#6b2e2e;line-height:1.6;font-family:Arial,Helvetica,sans-serif;">
+                        Those seats are now available again on your ride and other passengers can book them.
+                      </td>
+                    </tr>
+                  </table>
+
+                  <!-- Divider -->
+                  <table width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-bottom:20px;">
+                    <tr><td style="border-top:1.5px solid #fde8e8;"></td></tr>
+                  </table>
+
+                  <p style="margin:0;font-size:13px;color:#5a7060;line-height:1.6;font-family:Arial,Helvetica,sans-serif;">
+                    Safe travels! &#x1F33F;<br>
+                    <strong>The Kom&#xFC;te Team</strong>
+                  </p>
+
+                </td>
+              </tr>
+            </table>
+
+            <!-- Footer strip -->
+            <table width="100%" cellpadding="0" cellspacing="0" border="0">
+              <tr>
+                <td style="background:#fff7f7;border-top:1.5px solid #fde8e8;padding:16px 40px;border-radius:0 0 20px 20px;">
+                  <p style="margin:0;font-size:12px;color:#9a4040;line-height:1.6;font-family:Arial,Helvetica,sans-serif;">
+                    Booking ref: <strong>{{ booking_ref }}</strong>
+                  </p>
+                </td>
+              </tr>
+            </table>
+
+          </td>
+        </tr>
+
+        <!-- Bottom -->
+        <tr>
+          <td align="center" style="padding-top:28px;">
+            <p style="margin:0 0 6px;font-size:12px;color:#5a7060;font-family:Arial,Helvetica,sans-serif;">
+              &copy; 2026 Kom&#xFC;te by Indus Network LLC. Making commuting better together &#x1F33F;
+            </p>
+            <p style="margin:0;font-size:12px;color:#9db8a2;font-family:Arial,Helvetica,sans-serif;">
+              This is an automated message &mdash; please do not reply to this email.
+            </p>
+          </td>
+        </tr>
+
+      </table>
+    </td>
+  </tr>
+</table>
+
+</body>
+</html>

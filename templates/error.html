@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Lost on the road — Komüte</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800&family=DM+Sans:wght@400;500;600;700&family=Montserrat:wght@700;800&display=swap" rel="stylesheet">
+
+<style>
+  :root {
+    --brand-green: #0D7810; --grad-blue: #0C63B4; --grad-green: #0CB439;
+    --light-bg: #E9F7EE; --contrast-lt: #D5FBE5;
+    --text-dark: #121212; --text-muted: #5a7060;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body {
+    font-family: 'DM Sans', sans-serif; background: var(--light-bg);
+    color: var(--text-dark); overflow-x: hidden; min-height: 100vh;
+  }
+  h1, h2, h3 { font-family: 'Poppins', sans-serif; }
+  .gradient-text {
+    background: linear-gradient(90deg, var(--grad-blue), var(--grad-green));
+    -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
+  }
+  .error-page { min-height: 100vh; display: flex; flex-direction: column; }
+  .error-main {
+    flex: 1;
+    display: flex; align-items: center; justify-content: center;
+    padding: 60px 5%; position: relative; overflow: hidden;
+  }
+
+  /* Road backdrop */
+  .road-stage { position: absolute; inset: 0; pointer-events: none; overflow: hidden; }
+  .road-stage::before {
+    content: '';
+    position: absolute; inset: 0;
+    background: radial-gradient(circle at 50% 30%, #D5FBE5, var(--light-bg));
+  }
+  .road-stage .road {
+    position: absolute;
+    bottom: 0; left: 50%;
+    width: 100%; max-width: 600px; height: 200px;
+    background: #2a3f2c;
+    transform: translateX(-50%) rotateX(60deg);
+    transform-origin: bottom;
+    border-radius: 50% 50% 0 0 / 100% 100% 0 0;
+    opacity: 0.85;
+  }
+  .road-stage .dashes {
+    position: absolute;
+    bottom: 0; left: 50%;
+    width: 80px; height: 200px;
+    transform: translateX(-50%) rotateX(60deg);
+    transform-origin: bottom;
+    background-image: repeating-linear-gradient(
+      to top,
+      #FFD86B 0px, #FFD86B 24px,
+      transparent 24px, transparent 48px
+    );
+    animation: roadScroll 1.2s linear infinite;
+  }
+  @keyframes roadScroll {
+    from { background-position: 0 0; }
+    to { background-position: 0 48px; }
+  }
+
+  /* Foreground */
+  .error-content { position: relative; z-index: 2; text-align: center; max-width: 600px; }
+
+  .big-number {
+    font-family: 'Montserrat', sans-serif;
+    font-size: clamp(7rem, 22vw, 13rem);
+    font-weight: 800; line-height: 0.95;
+    background: linear-gradient(135deg, var(--grad-blue), var(--grad-green));
+    -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
+    margin-bottom: 24px; position: relative; display: inline-block;
+  }
+  .big-number .car-wrapper {
+    position: absolute;
+    top: 50%; left: 50%;
+    transform: translate(-50%, -50%);
+    -webkit-text-fill-color: initial;
+  }
+  .big-number .car-wrapper svg {
+    width: clamp(80px, 16vw, 130px); height: auto;
+    animation: bob 1.6s ease-in-out infinite;
+  }
+  @keyframes bob {
+    0%, 100% { transform: translateY(0); }
+    50% { transform: translateY(-6px); }
+  }
+
+  .error-content h1 {
+    font-size: clamp(1.5rem, 4.5vw, 2.3rem);
+    font-weight: 800; line-height: 1.2; margin-bottom: 14px;
+  }
+  .error-content > p {
+    color: var(--text-muted); line-height: 1.6;
+    font-size: 1.02rem; max-width: 480px; margin: 0 auto 26px;
+  }
+
+  .error-btns { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; }
+  .err-btn {
+    display: inline-flex; align-items: center; gap: 8px;
+    padding: 13px 24px; border-radius: 50px;
+    text-decoration: none;
+    font-weight: 700; font-size: 0.95rem;
+    transition: opacity 0.2s, transform 0.15s, box-shadow 0.2s;
+    border: 1.5px solid transparent;
+  }
+  .err-btn-primary {
+    background: linear-gradient(90deg, var(--grad-blue), var(--grad-green));
+    color: white; box-shadow: 0 6px 20px rgba(13,120,16,0.22);
+  }
+  .err-btn-secondary {
+    background: white; color: var(--brand-green);
+    border-color: var(--brand-green);
+  }
+  .err-btn:hover { opacity: 0.92; transform: translateY(-2px); }
+
+  .helpful { margin-top: 36px; text-align: center; }
+  .helpful-title {
+    font-size: 0.8rem; color: var(--text-muted);
+    text-transform: uppercase; letter-spacing: 0.1em;
+    font-weight: 600; margin-bottom: 12px;
+  }
+  .helpful-links {
+    display: inline-flex; gap: 18px; flex-wrap: wrap; justify-content: center;
+  }
+  .helpful-links a {
+    color: var(--brand-green); text-decoration: none;
+    font-weight: 600; font-size: 0.92rem;
+    border-bottom: 2px dotted var(--contrast-lt); padding-bottom: 1px;
+    transition: border-color 0.2s;
+  }
+  .helpful-links a:hover { border-color: var(--brand-green); }
+
+  .eco-joke {
+    margin-top: 28px;
+    display: inline-flex; align-items: center; gap: 8px;
+    background: rgba(255,255,255,0.7); backdrop-filter: blur(6px);
+    padding: 9px 16px; border-radius: 50px;
+    font-size: 0.84rem; color: var(--brand-green); font-weight: 500;
+    border: 1px solid var(--contrast-lt);
+  }
+  .eco-joke svg {
+    stroke: var(--brand-green); fill: none;
+    stroke-width: 2; stroke-linecap: round; stroke-linejoin: round;
+  }
+
+  @media (max-width: 560px) {
+    .error-main { padding: 40px 22px; }
+    .road-stage .road, .road-stage .dashes { height: 140px; }
+  }
+</style>
+</head>
+<body>
+
+<div class="error-page">
+  <div id="komute-header"></div>
+
+  <main class="error-main">
+    <div class="road-stage" aria-hidden="true">
+      <div class="road"></div>
+      <div class="dashes"></div>
+    </div>
+
+    <div class="error-content">
+      <div class="big-number">
+        4<span class="car-wrapper">
+          <svg viewBox="0 0 100 60" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <defs>
+              <linearGradient id="errCar" x1="0%" y1="0%" x2="100%" y2="0%">
+                <stop offset="0%" stop-color="#0C63B4"/>
+                <stop offset="100%" stop-color="#0CB439"/>
+              </linearGradient>
+            </defs>
+            <path d="M10 40 L18 20 Q22 14 30 14 L70 14 Q78 14 82 20 L90 40 L90 48 Q90 50 88 50 L80 50 Q78 50 78 48 L78 44 L22 44 L22 48 Q22 50 20 50 L12 50 Q10 50 10 48 Z" fill="url(#errCar)" stroke="url(#errCar)"/>
+            <path d="M28 22 L34 18 L66 18 L72 22 L72 30 L28 30 Z" fill="white" opacity="0.9"/>
+            <line x1="50" y1="18" x2="50" y2="30" stroke="#0D7810" stroke-width="1.5"/>
+            <circle cx="28" cy="48" r="7" fill="#1a2e1b"/>
+            <circle cx="28" cy="48" r="3" fill="#fff"/>
+            <circle cx="72" cy="48" r="7" fill="#1a2e1b"/>
+            <circle cx="72" cy="48" r="3" fill="#fff"/>
+            <circle cx="86" cy="36" r="3" fill="#FFD86B"/>
+          </svg>
+        </span>4
+      </div>
+
+      <h1>Looks like you took a <span class="gradient-text">wrong turn</span>.</h1>
+      <p>This page doesn't exist on our map — maybe it was moved, maybe the link's a little out of date. Either way, the road home is right there.</p>
+
+      <div class="error-btns">
+        <a href="{% url 'home' %}" class="err-btn err-btn-primary">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M3 12L12 3l9 9"/><path d="M5 10v10h14V10"/>
+          </svg>
+          Back to Home
+        </a>
+        <a href="{% url 'search-rides' %}" class="err-btn err-btn-secondary">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+          </svg>
+          Find a Ride
+        </a>
+      </div>
+
+      <div class="helpful">
+        <div class="helpful-title">Or try one of these</div>
+        <div class="helpful-links">
+          <a href="{% url 'about' %}">About Us</a>
+          <a href="{% url 'how-it-works' %}">How It Works</a>
+          <a href="{% url 'login' %}">Log In</a>
+          <a href="{% url 'signup' %}">Sign Up</a>
+        </div>
+      </div>
+
+      <div class="eco-joke">
+        <svg width="14" height="14" viewBox="0 0 24 24"><path d="M11 20A7 7 0 0 1 9.8 6.1C15.5 5 17 4.48 19 2c1 2 2 4.18 2 8 0 5.5-4.78 10-10 10z"/></svg>
+        At least no fuel was wasted reaching this page
+      </div>
+    </div>
+  </main>
+
+  <div id="komute-footer"></div>
+</div>
+
+<script src="komute-include.js"></script>
+</body>
+</html>

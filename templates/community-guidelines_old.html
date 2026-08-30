@@ -1,0 +1,475 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Community Guidelines — Komüte</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800&family=DM+Sans:wght@400;500;600;700&family=Montserrat:wght@700;800&display=swap">
+<style>
+  :root{
+    --brand-green:#0D7810;
+    --grad-blue:#0C63B4;
+    --grad-green:#0CB439;
+    --light-bg:#E9F7EE;
+    --contrast-lt:#D5FBE5;
+    --card-border:#E2F0E4;
+    --input-border:#C2DFC8;
+    --nav-border:#D8EED9;
+    --text-dark:#121212;
+    --text-muted:#5A7060;
+    --danger:#DC2626;
+    --amber:#F59E0B;
+  }
+  *{margin:0;padding:0;box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  body{
+    font-family:'DM Sans',sans-serif;
+    background:var(--light-bg);
+    color:var(--text-dark);
+    line-height:1.7;
+    -webkit-font-smoothing:antialiased;
+  }
+  a{color:inherit;text-decoration:none}
+
+  /* ---------- NAV ---------- */
+  .nav{
+    position:sticky;top:0;z-index:100;
+    background:rgba(255,255,255,.92);
+    backdrop-filter:blur(10px);
+    border-bottom:1px solid var(--nav-border);
+  }
+  .nav-inner{
+    max-width:1180px;margin:0 auto;padding:14px 24px;
+    display:flex;align-items:center;justify-content:space-between;
+  }
+  .brand{display:flex;align-items:center;gap:10px}
+  .brand-mark{
+    width:38px;height:38px;border-radius:11px;
+    background:linear-gradient(135deg,var(--grad-blue),var(--grad-green));
+    display:grid;place-items:center;flex-shrink:0;
+  }
+  .brand-mark svg{width:24px;height:24px}
+  .brand-name{
+    font-family:'Montserrat',sans-serif;font-weight:800;font-size:21px;
+    letter-spacing:.04em;
+    background:linear-gradient(90deg,var(--grad-blue),var(--grad-green));
+    -webkit-background-clip:text;background-clip:text;color:transparent;
+  }
+  .nav-links{display:flex;gap:30px;align-items:center}
+  .nav-links a{font-weight:500;font-size:15px;color:var(--text-muted);transition:color .2s}
+  .nav-links a:hover{color:var(--brand-green)}
+  .nav-cta{
+    font-family:'Poppins',sans-serif;font-weight:600;font-size:14px;
+    color:#fff!important;padding:9px 20px;border-radius:9px;
+    background:var(--brand-green);transition:transform .15s,box-shadow .2s;
+  }
+  .nav-cta:hover{transform:translateY(-1px);box-shadow:0 6px 16px rgba(13,120,16,.28)}
+  .burger{display:none;background:none;border:0;cursor:pointer;padding:6px}
+  .burger span{display:block;width:24px;height:2.5px;background:var(--text-dark);
+    border-radius:2px;margin:5px 0;transition:.3s}
+
+  /* ---------- HERO ---------- */
+  .hero{
+    position:relative;overflow:hidden;
+    background:linear-gradient(135deg,var(--grad-blue),var(--grad-green));
+    color:#fff;padding:74px 24px 92px;
+  }
+  .hero::before,.hero::after{content:"";position:absolute;border-radius:50%;background:rgba(255,255,255,.09)}
+  .hero::before{width:340px;height:340px;top:-150px;right:-90px}
+  .hero::after{width:230px;height:230px;bottom:-130px;left:-70px}
+  .hero-inner{max-width:1180px;margin:0 auto;position:relative;z-index:2}
+  .crumb{font-size:13px;font-weight:500;letter-spacing:.05em;text-transform:uppercase;opacity:.85;margin-bottom:14px}
+  .crumb a:hover{text-decoration:underline}
+  .hero h1{
+    font-family:'Poppins',sans-serif;font-weight:800;
+    font-size:clamp(32px,5vw,52px);line-height:1.12;margin-bottom:14px;
+  }
+  .hero p{font-size:17px;max-width:620px;opacity:.94}
+
+  /* ---------- PROMISE STRIP ---------- */
+  .wrap{max-width:1180px;margin:-56px auto 0;padding:0 24px 90px;position:relative;z-index:5}
+  .pillars{
+    display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin-bottom:42px;
+  }
+  .pillar{
+    background:#fff;border:1px solid var(--card-border);border-radius:16px;
+    padding:22px 18px;box-shadow:0 4px 24px rgba(13,120,16,.07);
+    transition:transform .18s,box-shadow .2s;
+  }
+  .pillar:hover{transform:translateY(-4px);box-shadow:0 10px 30px rgba(13,120,16,.13)}
+  .pillar .ico{
+    width:46px;height:46px;border-radius:13px;display:grid;place-items:center;
+    background:var(--contrast-lt);margin-bottom:12px;
+  }
+  .pillar h3{
+    font-family:'Poppins',sans-serif;font-weight:600;font-size:15.5px;
+    margin-bottom:5px;color:var(--text-dark);
+  }
+  .pillar p{font-size:13.3px;color:var(--text-muted);line-height:1.55}
+
+  /* ---------- INTRO ---------- */
+  .intro-card{
+    background:#fff;border:1px solid var(--card-border);border-radius:18px;
+    padding:34px clamp(22px,4vw,44px);margin-bottom:30px;
+    box-shadow:0 4px 24px rgba(13,120,16,.07);
+  }
+  .intro-card h2{
+    font-family:'Poppins',sans-serif;font-weight:700;font-size:23px;margin-bottom:10px;
+  }
+  .intro-card p{font-size:15.3px;color:#2c3a30}
+
+  /* ---------- SECTION CARDS ---------- */
+  .gl-section{
+    background:#fff;border:1px solid var(--card-border);border-radius:18px;
+    padding:34px clamp(22px,4vw,44px);margin-bottom:22px;
+    box-shadow:0 4px 24px rgba(13,120,16,.07);
+    scroll-margin-top:90px;
+  }
+  .gl-head{display:flex;align-items:center;gap:14px;margin-bottom:18px}
+  .gl-num{
+    font-family:'Montserrat',sans-serif;font-weight:800;font-size:16px;
+    color:#fff;background:linear-gradient(135deg,var(--grad-blue),var(--grad-green));
+    min-width:42px;height:42px;border-radius:12px;display:grid;place-items:center;flex-shrink:0;
+  }
+  .gl-head h2{
+    font-family:'Poppins',sans-serif;font-weight:700;
+    font-size:clamp(19px,2.5vw,23px);color:var(--text-dark);
+  }
+  .gl-section > p{font-size:15px;color:#2c3a30;margin-bottom:14px}
+
+  /* do / don't grid */
+  .dd{display:grid;grid-template-columns:1fr 1fr;gap:18px;margin-top:6px}
+  .dd-box{border-radius:14px;padding:18px 20px}
+  .dd-do{background:var(--contrast-lt)}
+  .dd-dont{background:#FDECEC}
+  .dd-box h4{
+    font-family:'Poppins',sans-serif;font-weight:700;font-size:14px;
+    display:flex;align-items:center;gap:8px;margin-bottom:12px;
+    text-transform:uppercase;letter-spacing:.04em;
+  }
+  .dd-do h4{color:var(--brand-green)}
+  .dd-dont h4{color:var(--danger)}
+  .dd-box ul{list-style:none}
+  .dd-box li{
+    position:relative;padding-left:24px;margin-bottom:9px;
+    font-size:14px;color:#2c3a30;line-height:1.5;
+  }
+  .dd-do li::before,.dd-dont li::before{
+    position:absolute;left:0;top:1px;font-weight:700;font-size:13px;
+  }
+  .dd-do li::before{content:"\2713";color:var(--brand-green)}
+  .dd-dont li::before{content:"\2715";color:var(--danger)}
+
+  ul.plain{list-style:none;margin-top:4px}
+  ul.plain li{
+    position:relative;padding-left:26px;margin-bottom:10px;
+    font-size:15px;color:#2c3a30;
+  }
+  ul.plain li::before{
+    content:"";position:absolute;left:0;top:9px;width:9px;height:9px;border-radius:3px;
+    background:linear-gradient(135deg,var(--grad-blue),var(--grad-green));
+  }
+  ul.plain li strong{color:var(--text-dark);font-weight:600}
+
+  /* ---------- ENFORCEMENT ---------- */
+  .steps{display:flex;flex-direction:column;gap:0;margin-top:8px}
+  .step{display:flex;gap:16px;position:relative;padding-bottom:22px}
+  .step:last-child{padding-bottom:0}
+  .step:not(:last-child)::before{
+    content:"";position:absolute;left:17px;top:38px;bottom:0;
+    width:2px;background:var(--nav-border);
+  }
+  .step-dot{
+    width:36px;height:36px;border-radius:50%;flex-shrink:0;
+    background:var(--light-bg);border:2px solid var(--brand-green);
+    display:grid;place-items:center;
+    font-family:'Montserrat',sans-serif;font-weight:800;font-size:14px;
+    color:var(--brand-green);z-index:2;
+  }
+  .step-body h4{
+    font-family:'Poppins',sans-serif;font-weight:600;font-size:15.5px;
+    margin-bottom:3px;
+  }
+  .step-body p{font-size:14px;color:var(--text-muted);margin:0}
+
+  /* ---------- REPORT CTA ---------- */
+  .report{
+    background:linear-gradient(135deg,var(--grad-blue),var(--grad-green));
+    border-radius:20px;padding:40px clamp(24px,5vw,48px);margin-top:30px;
+    color:#fff;display:flex;flex-wrap:wrap;align-items:center;
+    justify-content:space-between;gap:22px;
+  }
+  .report-text h2{
+    font-family:'Poppins',sans-serif;font-weight:800;font-size:25px;margin-bottom:6px;
+  }
+  .report-text p{font-size:15px;opacity:.94;max-width:430px}
+  .report a{
+    font-family:'Poppins',sans-serif;font-weight:600;font-size:15px;
+    background:#fff;color:var(--brand-green);
+    padding:14px 28px;border-radius:11px;white-space:nowrap;
+    transition:transform .15s;
+  }
+  .report a:hover{transform:translateY(-2px)}
+
+  /* ---------- FOOTER ---------- */
+  .foot{background:var(--text-dark);color:#cdd9d0;padding:54px 24px 30px}
+  .foot-inner{max-width:1180px;margin:0 auto;display:flex;flex-wrap:wrap;gap:40px;justify-content:space-between}
+  .foot-brand{max-width:300px}
+  .foot-brand .brand-name{font-size:23px}
+  .foot-brand p{font-size:14px;color:#9fb0a4;margin-top:12px}
+  .foot-col h4{font-family:'Poppins',sans-serif;font-size:14px;font-weight:600;color:#fff;margin-bottom:14px}
+  .foot-col a{display:block;font-size:14px;color:#9fb0a4;margin-bottom:9px;transition:color .2s}
+  .foot-col a:hover{color:var(--grad-green)}
+  .foot-bottom{
+    max-width:1180px;margin:38px auto 0;padding-top:22px;border-top:1px solid #2a3a2e;
+    display:flex;flex-wrap:wrap;gap:12px;justify-content:space-between;font-size:13px;color:#7f9085;
+  }
+
+  /* ---------- RESPONSIVE ---------- */
+  @media(max-width:860px){
+    .pillars{grid-template-columns:repeat(2,1fr)}
+  }
+  @media(max-width:680px){
+    .nav-links{
+      display:none;position:absolute;top:100%;left:0;right:0;
+      flex-direction:column;gap:0;background:#fff;
+      border-bottom:1px solid var(--nav-border);padding:8px 0;
+    }
+    .nav-links.open{display:flex}
+    .nav-links a{padding:13px 24px;width:100%}
+    .nav-links .nav-cta{margin:8px 24px;text-align:center}
+    .burger{display:block}
+    .pillars{grid-template-columns:1fr}
+    .dd{grid-template-columns:1fr}
+  }
+</style>
+</head>
+<body>
+
+<!-- ============ NAV ============ -->
+{% include 'header.html' %}
+
+<!-- ============ HERO ============ -->
+<header class="hero">
+  <div class="hero-inner">
+    <div class="crumb"><a href="komute-home.html">Home</a> &nbsp;/&nbsp; Community</div>
+    <h1>Community Guidelines</h1>
+    <p>Komüte works because of trust. These guidelines keep every ride safe, respectful, and welcoming — for drivers and passengers alike.</p>
+  </div>
+</header>
+
+<div class="wrap">
+
+  <!-- PILLARS -->
+  <div class="pillars">
+    <div class="pillar">
+      <div class="ico">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none"><path d="M12 2l8 3v6c0 5-3.4 9-8 11-4.6-2-8-6-8-11V5l8-3z" stroke="#0D7810" stroke-width="2" stroke-linejoin="round"/><path d="M9 12l2 2 4-4" stroke="#0D7810" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </div>
+      <h3>Safety First</h3>
+      <p>Verified drivers, honest profiles, and zero tolerance for unsafe behaviour.</p>
+    </div>
+    <div class="pillar">
+      <div class="ico">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none"><circle cx="9" cy="8" r="3.4" stroke="#0D7810" stroke-width="2"/><path d="M3.5 19c0-3 2.5-5 5.5-5s5.5 2 5.5 5" stroke="#0D7810" stroke-width="2" stroke-linecap="round"/><path d="M16 6.5a3 3 0 010 6M18.5 19c0-2.4-1.3-4.2-3-5" stroke="#0D7810" stroke-width="2" stroke-linecap="round"/></svg>
+      </div>
+      <h3>Respect Everyone</h3>
+      <p>Treat every traveller with kindness, courtesy, and fairness.</p>
+    </div>
+    <div class="pillar">
+      <div class="ico">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none"><path d="M12 21s-7-4.5-9-9C1.5 8.5 4 5 7.5 5c2 0 3.5 1 4.5 2.5C13 6 14.5 5 16.5 5 20 5 22.5 8.5 21 12c-2 4.5-9 9-9 9z" stroke="#0D7810" stroke-width="2" stroke-linejoin="round"/></svg>
+      </div>
+      <h3>Be Reliable</h3>
+      <p>Show up on time, honour your commitments, communicate clearly.</p>
+    </div>
+    <div class="pillar">
+      <div class="ico">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none"><path d="M12 3C8 3 5 6 5 10c0 3 2 5 3.5 7 1 1.3 1.5 2.5 1.5 4h4c0-1.5.5-2.7 1.5-4C17 15 19 13 19 10c0-4-3-7-7-7z" stroke="#0D7810" stroke-width="2" stroke-linejoin="round"/><path d="M10 22h4" stroke="#0D7810" stroke-width="2" stroke-linecap="round"/></svg>
+      </div>
+      <h3>Travel Green</h3>
+      <p>Share seats, cut emissions, and help build a cleaner commute.</p>
+    </div>
+  </div>
+
+  <!-- INTRO -->
+  <div class="intro-card">
+    <h2>A shared road, a shared responsibility</h2>
+    <p>Komüte is a <strong>free community</strong> of everyday drivers and passengers helping each other get where they&rsquo;re going. We don&rsquo;t charge fees or commissions — we simply connect people. These guidelines apply to everyone, on every trip. They sit alongside our <a href="komute-terms.html" style="color:var(--brand-green);font-weight:600">Terms &amp; Conditions</a> — breaking them can affect your rating or your access to the platform. Following them keeps Komüte a place people are glad to be part of.</p>
+  </div>
+
+  <!-- 1 -->
+  <section class="gl-section" id="respect">
+    <div class="gl-head"><span class="gl-num">1</span><h2>Respect &amp; Courtesy</h2></div>
+    <p>Every person on Komüte deserves to feel safe and welcome, regardless of background, identity, or beliefs.</p>
+    <div class="dd">
+      <div class="dd-box dd-do">
+        <h4>Please do</h4>
+        <ul>
+          <li>Greet your driver or passenger and confirm trip details.</li>
+          <li>Communicate respectfully in chat and in person.</li>
+          <li>Respect personal space, belongings, and quiet preferences.</li>
+          <li>Be patient and understanding if small delays happen.</li>
+        </ul>
+      </div>
+      <div class="dd-box dd-dont">
+        <h4>Please don&rsquo;t</h4>
+        <ul>
+          <li>Harass, insult, threaten, or discriminate against anyone.</li>
+          <li>Make unwanted advances or comments of a personal nature.</li>
+          <li>Use hate speech or offensive language.</li>
+          <li>Pressure others to change agreed plans or prices unfairly.</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <!-- 2 -->
+  <section class="gl-section" id="safety">
+    <div class="gl-head"><span class="gl-num">2</span><h2>Safety on the Road</h2></div>
+    <p>Safety is non-negotiable. These rules protect everyone in the vehicle.</p>
+    <h3 style="font-family:'Poppins';font-weight:600;font-size:15.5px;color:var(--brand-green);margin:6px 0 6px">For drivers</h3>
+    <ul class="plain">
+      <li>Hold a <strong>valid licence and insurance</strong> for every trip you post.</li>
+      <li>Keep your vehicle <strong>roadworthy</strong> — tyres, brakes, lights, seatbelts.</li>
+      <li>Never drive under the influence of alcohol or any impairing substance.</li>
+      <li>Obey all traffic laws and posted speed limits.</li>
+      <li>Avoid using your phone while driving — pull over if you need to.</li>
+    </ul>
+    <h3 style="font-family:'Poppins';font-weight:600;font-size:15.5px;color:var(--brand-green);margin:16px 0 6px">For passengers</h3>
+    <ul class="plain">
+      <li>Wear your seatbelt at all times.</li>
+      <li>Don&rsquo;t distract the driver or interfere with the vehicle.</li>
+      <li>Never bring weapons, illegal substances, or hazardous items.</li>
+      <li>Speak up calmly if you ever feel unsafe — and end the trip if needed.</li>
+    </ul>
+  </section>
+
+  <!-- 3 -->
+  <section class="gl-section" id="honesty">
+    <div class="gl-head"><span class="gl-num">3</span><h2>Honesty &amp; Authentic Profiles</h2></div>
+    <p>Trust on Komüte depends on people being who they say they are.</p>
+    <ul class="plain">
+      <li>Use your <strong>real name, a clear photo</strong>, and accurate personal details.</li>
+      <li>Drivers must complete identity verification with genuine, unedited documents.</li>
+      <li>List accurate vehicle information — make, model, colour, and plate.</li>
+      <li>Post truthful trip details: real routes, times, seats, and starting prices.</li>
+      <li>Never create multiple or fake accounts, or impersonate another person.</li>
+    </ul>
+  </section>
+
+  <!-- 4 -->
+  <section class="gl-section" id="reliability">
+    <div class="gl-head"><span class="gl-num">4</span><h2>Reliability &amp; Communication</h2></div>
+    <p>A carpool only works when everyone keeps their word.</p>
+    <ul class="plain">
+      <li><strong>Be on time</strong> at the agreed pickup point — for both pickup and departure.</li>
+      <li>Keep the in-app chat updated if plans change or you&rsquo;re running late.</li>
+      <li>Cancel as early as possible if you genuinely cannot make a trip.</li>
+      <li>Avoid repeated last-minute cancellations — they affect your rating.</li>
+      <li>Honour the price you agreed on. Renegotiating at pickup is not okay.</li>
+    </ul>
+  </section>
+
+  <!-- 5 -->
+  <section class="gl-section" id="fairness">
+    <div class="gl-head"><span class="gl-num">5</span><h2>Fair Cost-Sharing</h2></div>
+    <p>Komüte is free to use. It&rsquo;s about sharing the cost of a trip, not making a profit from passengers.</p>
+    <ul class="plain">
+      <li>Any contribution should reflect a <strong>fair share</strong> of fuel and trip costs — never a commercial fare.</li>
+      <li>Agree the amount openly and respectfully through the in-app chat, before the trip.</li>
+      <li>Payment is arranged <strong>directly between driver and passenger</strong> — Komüte never charges fees or takes a cut.</li>
+      <li>Don&rsquo;t use Komüte to run a commercial taxi or ride-hailing service.</li>
+    </ul>
+  </section>
+
+  <!-- 6 -->
+  <section class="gl-section" id="prohibited">
+    <div class="gl-head"><span class="gl-num">6</span><h2>What&rsquo;s Not Allowed</h2></div>
+    <p>The following behaviour can lead to immediate suspension or a permanent ban:</p>
+    <div class="dd">
+      <div class="dd-box dd-dont">
+        <h4>Zero tolerance</h4>
+        <ul>
+          <li>Violence, threats, or intimidation of any kind.</li>
+          <li>Harassment, hate speech, or discrimination.</li>
+          <li>Driving while impaired or recklessly.</li>
+          <li>Fraud, fake documents, or identity misrepresentation.</li>
+        </ul>
+      </div>
+      <div class="dd-box dd-dont">
+        <h4>Also prohibited</h4>
+        <ul>
+          <li>Charging a commercial fare or profiting from trips.</li>
+          <li>Posting false listings or fake reviews.</li>
+          <li>Carrying weapons, drugs, or hazardous materials.</li>
+          <li>Transporting minors without consent and an adult present.</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <!-- 7 -->
+  <section class="gl-section" id="reviews">
+    <div class="gl-head"><span class="gl-num">7</span><h2>Ratings &amp; Reviews</h2></div>
+    <p>After every trip, drivers and passengers rate one another. Honest feedback keeps the community accountable.</p>
+    <ul class="plain">
+      <li>Rate based on your <strong>genuine experience</strong> of the trip.</li>
+      <li>Keep written reviews factual, fair, and free of personal attacks.</li>
+      <li>Never post private information about another user in a review.</li>
+      <li>Don&rsquo;t trade, inflate, or threaten to lower ratings to pressure someone.</li>
+    </ul>
+  </section>
+
+  <!-- 8 -->
+  <section class="gl-section" id="enforcement">
+    <div class="gl-head"><span class="gl-num">8</span><h2>How We Enforce These Guidelines</h2></div>
+    <p>When a guideline is broken, we respond in proportion to what happened. Serious safety violations skip straight to removal.</p>
+    <div class="steps">
+      <div class="step">
+        <div class="step-dot">1</div>
+        <div class="step-body">
+          <h4>Warning</h4>
+          <p>For minor or first-time issues, we send a notice explaining what went wrong and what to change.</p>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-dot">2</div>
+        <div class="step-body">
+          <h4>Temporary Suspension</h4>
+          <p>Repeated or more serious issues lead to a temporary hold on posting trips or booking rides.</p>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-dot">3</div>
+        <div class="step-body">
+          <h4>Permanent Removal</h4>
+          <p>Severe violations — violence, fraud, impaired driving — result in a permanent ban from Komüte, and may be reported to authorities.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- REPORT CTA -->
+  <div class="report">
+    <div class="report-text">
+      <h2>See something wrong?</h2>
+      <p>If a trip or a user ever makes you feel unsafe or breaks these guidelines, tell us. Every report is reviewed by our team — and kept confidential.</p>
+    </div>
+    <a href="{% url 'contact-us' %}">Report an Issue</a>
+  </div>
+
+</div>
+
+<!-- ============ FOOTER ============ -->
+{% include 'footer.html' %}
+
+<script>
+  const burger=document.getElementById('burger');
+  const navLinks=document.getElementById('navLinks');
+  burger.addEventListener('click',()=>navLinks.classList.toggle('open'));
+</script>
+</body>
+</html>

@@ -1,0 +1,106 @@
+<style>
+  #kh-loading-overlay {
+    position: fixed; inset: 0; z-index: 9999;
+    background: #E9F7EE;
+    display: none; flex-direction: column;
+    align-items: center; justify-content: center;
+    text-align: center; padding: 40px 22px;
+    transition: opacity 0.4s ease;
+    font-family: 'DM Sans', sans-serif;
+    opacity: 0;
+  }
+  #kh-loading-overlay.visible { display: flex; opacity: 1; }
+  #kh-loading-overlay.hide { opacity: 0; }
+  #kh-loading-overlay .scene { width: 100%; max-width: 480px; height: 220px; position: relative; margin-bottom: 36px; }
+  #kh-loading-overlay .scene::before {
+    content: ''; position: absolute; inset: 0 0 60px 0;
+    background: radial-gradient(circle at 80% 30%, rgba(255,216,107,0.55) 0%, transparent 14%), linear-gradient(180deg,#cdebd6,#E9F7EE);
+    border-radius: 14px;
+  }
+  #kh-loading-overlay .cloud { position: absolute; top: 28px; width: 70px; height: 22px; background: white; border-radius: 22px; opacity: 0.85; animation: kh-cloud 18s linear infinite; }
+  #kh-loading-overlay .cloud::before, #kh-loading-overlay .cloud::after { content: ''; position: absolute; background: white; border-radius: 50%; }
+  #kh-loading-overlay .cloud::before { width: 26px; height: 26px; top: -10px; left: 12px; }
+  #kh-loading-overlay .cloud::after  { width: 20px; height: 20px; top: -8px; right: 14px; }
+  #kh-loading-overlay .cloud.b { top: 16px; transform: scale(0.7); animation-duration: 22s; animation-delay: -8s; }
+  @keyframes kh-cloud { from { left: -90px; } to { left: 100%; } }
+  #kh-loading-overlay .road { position: absolute; bottom: 0; left: 0; right: 0; height: 60px; background: #2a3f2c; border-radius: 0 0 14px 14px; overflow: hidden; }
+  #kh-loading-overlay .road-line { position: absolute; top: 50%; left: 0; height: 4px; width: 200%; transform: translateY(-50%); background: repeating-linear-gradient(to right,#FFD86B 0px,#FFD86B 28px,transparent 28px,transparent 60px); animation: kh-road 0.55s linear infinite; }
+  @keyframes kh-road { from { transform: translate(0,-50%); } to { transform: translate(-60px,-50%); } }
+  #kh-loading-overlay .tree { position: absolute; bottom: 60px; width: 18px; height: 28px; }
+  #kh-loading-overlay .tree::before { content: ''; position: absolute; bottom: 0; left: 7px; width: 4px; height: 12px; background: #5a4a30; }
+  #kh-loading-overlay .tree::after  { content: ''; position: absolute; bottom: 10px; left: 0; width: 18px; height: 18px; background: #0D7810; border-radius: 50%; }
+  #kh-loading-overlay .tree.t1 { left: 8%;  animation: kh-tree 4s linear infinite; }
+  #kh-loading-overlay .tree.t2 { left: 38%; animation: kh-tree 4s linear infinite; animation-delay: -1.3s; }
+  #kh-loading-overlay .tree.t3 { left: 70%; animation: kh-tree 4s linear infinite; animation-delay: -2.6s; }
+  @keyframes kh-tree { from { transform: translateX(0); opacity: 1; } 90% { opacity: 1; } to { transform: translateX(-200px); opacity: 0; } }
+  #kh-loading-overlay .car { position: absolute; bottom: 38px; left: 50%; transform: translateX(-50%); width: 130px; animation: kh-bob 0.4s ease-in-out infinite alternate; }
+  #kh-loading-overlay .car svg { width: 100%; height: auto; display: block; }
+  @keyframes kh-bob { from { transform: translate(-50%,0); } to { transform: translate(-50%,-3px); } }
+  #kh-loading-overlay .loading-content { max-width: 460px; }
+  #kh-loading-overlay .loading-content h1 { font-family: 'Poppins',sans-serif; font-size: clamp(1.45rem,4vw,1.9rem); font-weight: 800; margin-bottom: 10px; }
+  #kh-loading-overlay .loading-content > p { color: #5a7060; font-size: 0.98rem; margin-bottom: 22px; line-height: 1.55; }
+  #kh-loading-overlay .progress-track { width: 280px; max-width: 100%; height: 6px; background: #D5FBE5; border-radius: 50px; overflow: hidden; margin: 0 auto 14px; position: relative; }
+  #kh-loading-overlay .progress-fill { position: absolute; inset: 0; background: linear-gradient(90deg,#0C63B4,#0CB439); border-radius: 50px; transform: translateX(-100%); animation: kh-prog 1.6s ease-in-out infinite; }
+  @keyframes kh-prog { 0% { transform: translateX(-100%); } 50% { transform: translateX(0); } 100% { transform: translateX(100%); } }
+  #kh-loading-overlay .status { display: inline-flex; align-items: center; gap: 7px; font-size: 0.86rem; color: #0D7810; font-weight: 600; }
+  #kh-loading-overlay .status-dot { width: 8px; height: 8px; border-radius: 50%; background: #0D7810; animation: kh-pulse 1.4s ease-in-out infinite; }
+  @keyframes kh-pulse { 0%,100% { transform: scale(1); opacity: 1; } 50% { transform: scale(1.4); opacity: 0.5; } }
+  #kh-loading-overlay .gradient-text { background: linear-gradient(90deg,#0C63B4,#0CB439); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
+  @media (max-width: 560px) { #kh-loading-overlay .scene { height: 180px; } #kh-loading-overlay .car { width: 110px; } }
+</style>
+
+<div id="kh-loading-overlay" role="status" aria-live="polite">
+  <div class="scene" aria-hidden="true">
+    <div class="cloud"></div>
+    <div class="cloud b"></div>
+    <div class="tree t1"></div><div class="tree t2"></div><div class="tree t3"></div>
+    <div class="road"><div class="road-line"></div></div>
+    <div class="car">
+      <svg viewBox="0 0 130 70" xmlns="http://www.w3.org/2000/svg" stroke-linecap="round" stroke-linejoin="round">
+        <defs><linearGradient id="khLoadCar" x1="0%" y1="0%" x2="100%" y2="0%"><stop offset="0%" stop-color="#0C63B4"/><stop offset="100%" stop-color="#0CB439"/></linearGradient></defs>
+        <path d="M8 46 Q14 28 26 20 L42 20 L52 12 L82 12 L92 20 L108 20 Q120 28 122 46 L122 56 Q122 60 118 60 L108 60 Q104 60 104 56 L104 52 L26 52 L26 56 Q26 60 22 60 L12 60 Q8 60 8 56 Z" fill="url(#khLoadCar)"/>
+        <path d="M48 22 L56 16 L80 16 L88 22 L88 30 L48 30 Z" fill="#D5FBE5" opacity="0.95"/>
+        <line x1="68" y1="16" x2="68" y2="30" stroke="#0D7810" stroke-width="1.5"/>
+        <circle cx="116" cy="44" r="3.5" fill="#FFD86B"/>
+        <g transform="translate(34,56)"><circle r="9" fill="#1a2e1b"/><circle r="3.5" fill="#fff"/><animateTransform attributeName="transform" type="rotate" from="0 0 0" to="360 0 0" dur="0.35s" repeatCount="indefinite" additive="sum"/></g>
+        <g transform="translate(96,56)"><circle r="9" fill="#1a2e1b"/><circle r="3.5" fill="#fff"/><animateTransform attributeName="transform" type="rotate" from="0 0 0" to="360 0 0" dur="0.35s" repeatCount="indefinite" additive="sum"/></g>
+      </svg>
+    </div>
+  </div>
+  <div class="loading-content">
+    <h1>We're <span class="gradient-text">on our way</span>…</h1>
+    <p>Hang tight — your page is just around the next corner.</p>
+    <div class="progress-track" role="progressbar" aria-label="Loading"><div class="progress-fill"></div></div>
+    <div class="status"><span class="status-dot"></span><span id="khStatusText">Loading Komüte</span></div>
+  </div>
+</div>
+
+<script>
+  (function() {
+    var overlay = document.getElementById('kh-loading-overlay');
+    var msgs = ['Warming up the engine','Mapping the route','Checking traffic','Connecting nearby drivers','Almost there'];
+    var i = 0, el = document.getElementById('khStatusText');
+    var ticker, shown = false;
+
+    var showTimer = setTimeout(function() {
+      if (document.readyState !== 'complete') {
+        shown = true;
+        overlay.style.display = 'flex';
+        setTimeout(function() { overlay.classList.add('visible'); }, 10);
+        ticker = setInterval(function() { i = (i+1) % msgs.length; if(el) el.textContent = msgs[i]; }, 2400);
+      }
+    }, 500);
+
+    function hideLoader() {
+      clearTimeout(showTimer);
+      if (!shown) return;
+      clearInterval(ticker);
+      overlay.classList.remove('visible');
+      overlay.classList.add('hide');
+      setTimeout(function() { overlay.style.display = 'none'; }, 400);
+    }
+
+    if (document.readyState === 'complete') { clearTimeout(showTimer); }
+    else { window.addEventListener('load', hideLoader); }
+  })();
+</script>

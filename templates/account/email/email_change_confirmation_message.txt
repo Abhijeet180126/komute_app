@@ -1,0 +1,17 @@
+Hello from Komüte!
+
+Hi {{ user.full_name }},
+
+You requested to change the email address on your Komüte account.
+
+To confirm {{ new_email }} as your new email address, click the link below:
+
+{{ activate_url }}
+
+Until you confirm, your current email address remains active.
+
+If you did not request this change, you can safely ignore this email.
+
+Thank you,
+The Komüte Team
+komute.org

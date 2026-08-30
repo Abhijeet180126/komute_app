@@ -1,0 +1,363 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<link rel="icon" type="image/png" href="{% static 'images/icon_white.png' %}">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Komüte – Messages</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800&family=DM+Sans:wght@400;500;600&family=Montserrat:wght@600;700;800&display=swap" rel="stylesheet">
+<style>
+:root{
+  --light-bg:#E9F7EE;--contrast-lt:#D5FBE5;--brand-green:#0D7810;
+  --grad-blue:#0C63B4;--grad-green:#0CB439;--white:#fff;
+  --text-dark:#121212;--text-muted:#5a7060;
+  --input-border:#c2dfc8;--input-bg:#f6fbf7;
+  --card-shadow:0 4px 24px rgba(13,120,16,0.08);
+}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
+body{font-family:'DM Sans',sans-serif;background:var(--light-bg);min-height:100vh;color:var(--text-dark);}
+
+/* ════ PAGE ════ */
+.page-outer{max-width:880px;margin:0 auto;padding:30px 24px 70px;}
+
+.page-header{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;margin-bottom:22px;flex-wrap:wrap;}
+.breadcrumb{display:inline-flex;align-items:center;gap:7px;text-decoration:none;color:var(--text-muted);font-size:.8rem;font-weight:600;margin-bottom:8px;transition:color .2s;}
+.breadcrumb:hover{color:var(--brand-green);}
+.breadcrumb svg{width:15px;height:15px;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;}
+.page-title{font-family:'Poppins',sans-serif;font-weight:800;font-size:1.8rem;color:var(--text-dark);display:flex;align-items:center;gap:10px;}
+.page-title .count-pill{font-family:'Montserrat',sans-serif;font-size:.85rem;font-weight:700;background:var(--contrast-lt);color:var(--brand-green);border-radius:50px;padding:3px 12px;}
+.page-subtitle{display:flex;align-items:center;gap:6px;color:var(--text-muted);font-size:.9rem;margin-top:5px;}
+.page-subtitle svg{width:14px;height:14px;stroke:var(--brand-green);fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;}
+
+/* Search */
+.search-wrap{position:relative;margin-bottom:16px;}
+.search-wrap svg{position:absolute;left:14px;top:50%;transform:translateY(-50%);width:17px;height:17px;stroke:var(--text-muted);fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;}
+.search-input{width:100%;padding:13px 14px 13px 42px;border:1.5px solid var(--input-border);border-radius:13px;background:var(--white);font-family:'DM Sans',sans-serif;font-size:.92rem;outline:none;transition:border-color .2s,box-shadow .2s;}
+.search-input:focus{border-color:var(--brand-green);box-shadow:0 0 0 3px rgba(13,120,16,.1);}
+.search-input::placeholder{color:#b0c8b5;}
+
+/* Filter tabs */
+.filter-tabs{display:flex;gap:8px;margin-bottom:18px;overflow-x:auto;padding-bottom:2px;}
+.filter-tabs::-webkit-scrollbar{display:none;}
+.filter-tab{flex-shrink:0;padding:8px 16px;border-radius:50px;border:1.5px solid var(--input-border);background:var(--white);font-family:'DM Sans',sans-serif;font-size:.84rem;font-weight:600;color:var(--text-muted);cursor:pointer;transition:all .18s;display:flex;align-items:center;gap:6px;}
+.filter-tab:hover{border-color:var(--brand-green);color:var(--brand-green);}
+.filter-tab.active{background:linear-gradient(90deg,#0C63B4,#0CB439);border-color:transparent;color:white;}
+.filter-tab .tab-count{background:rgba(0,0,0,.08);border-radius:50px;padding:0 7px;font-size:.72rem;font-weight:700;font-family:'Montserrat',sans-serif;}
+.filter-tab.active .tab-count{background:rgba(255,255,255,.25);}
+
+/* Conversation list */
+.convo-list{display:flex;flex-direction:column;gap:10px;}
+.convo-card{
+  background:var(--white);border:1.5px solid var(--input-border);border-radius:16px;
+  padding:14px 16px;display:flex;align-items:center;gap:14px;cursor:pointer;
+  transition:transform .15s,box-shadow .2s,border-color .2s;position:relative;overflow:hidden;
+}
+.convo-card:hover{transform:translateY(-2px);box-shadow:var(--card-shadow);border-color:var(--brand-green);}
+.convo-card.unread{background:#fbfffc;border-color:#bfe9c9;}
+.convo-strip{position:absolute;left:0;top:0;bottom:0;width:4px;}
+.convo-strip.active{background:var(--brand-green);}
+.convo-strip.upcoming{background:#f59e0b;}
+.convo-strip.completed{background:#9ca3af;}
+
+.convo-avatar{
+  width:52px;height:52px;border-radius:50%;flex-shrink:0;position:relative;
+  display:flex;align-items:center;justify-content:center;
+  font-family:'Poppins',sans-serif;font-weight:800;font-size:1rem;color:white;
+}
+.convo-avatar.c1{background:linear-gradient(135deg,#0C63B4,#0CB439);}
+.convo-avatar.c2{background:linear-gradient(135deg,#0CB439,#0D7810);}
+.convo-avatar.c3{background:linear-gradient(135deg,#7c3aed,#0C63B4);}
+.convo-avatar.c4{background:linear-gradient(135deg,#f59e0b,#0CB439);}
+.convo-avatar.c5{background:linear-gradient(135deg,#0891b2,#0CB439);}
+.convo-online{position:absolute;bottom:1px;right:1px;width:13px;height:13px;border-radius:50%;background:#4ade80;border:2.5px solid white;}
+
+.convo-body{flex:1;min-width:0;}
+.convo-top{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:2px;}
+.convo-name{font-family:'Poppins',sans-serif;font-weight:700;font-size:.97rem;color:var(--text-dark);display:flex;align-items:center;gap:7px;}
+.convo-name .role-tag{font-size:.6rem;font-weight:700;letter-spacing:.04em;text-transform:uppercase;background:var(--contrast-lt);color:var(--brand-green);border-radius:50px;padding:1px 7px;}
+.convo-time{font-size:.72rem;color:var(--text-muted);flex-shrink:0;}
+.convo-time.unread{color:var(--brand-green);font-weight:700;}
+.convo-route{display:flex;align-items:center;gap:5px;font-size:.74rem;color:var(--text-muted);margin-bottom:4px;}
+.convo-route svg{width:11px;height:11px;stroke:var(--brand-green);fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;flex-shrink:0;}
+.convo-bottom{display:flex;align-items:center;justify-content:space-between;gap:10px;}
+.convo-preview{font-size:.85rem;color:var(--text-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:1;}
+.convo-preview.unread{color:var(--text-dark);font-weight:600;}
+.convo-preview .you{color:var(--text-muted);font-weight:400;}
+.convo-preview .price-tag{color:var(--brand-green);font-weight:700;}
+.convo-unread-badge{flex-shrink:0;min-width:20px;height:20px;padding:0 6px;border-radius:50px;background:#dc2626;color:white;font-size:.68rem;font-weight:800;font-family:'Montserrat',sans-serif;display:flex;align-items:center;justify-content:center;}
+
+/* negotiation chip in preview */
+.nego-chip{display:inline-flex;align-items:center;gap:4px;background:#fef3c7;color:#92400e;border-radius:50px;padding:2px 8px;font-size:.68rem;font-weight:700;margin-right:4px;}
+.nego-chip.agreed{background:#dcfce7;color:var(--brand-green);}
+.nego-chip svg{width:10px;height:10px;stroke:currentColor;fill:none;stroke-width:2.5;stroke-linecap:round;stroke-linejoin:round;}
+
+/* Accept / Reject action row */
+.convo-actions{display:flex;gap:8px;margin-top:10px;padding-top:10px;border-top:1px solid var(--input-border);}
+.btn-accept,.btn-reject{flex:1;padding:7px 0;border-radius:9px;border:none;cursor:pointer;font-family:'DM Sans',sans-serif;font-size:.8rem;font-weight:700;display:flex;align-items:center;justify-content:center;gap:5px;transition:all .18s;}
+.btn-accept{background:#d1fae5;color:#065f46;}
+.btn-accept:hover{background:#a7f3d0;}
+.btn-reject{background:#fee2e2;color:#991b1b;}
+.btn-reject:hover{background:#fecaca;}
+.btn-accept svg,.btn-reject svg{width:13px;height:13px;stroke:currentColor;fill:none;stroke-width:2.5;stroke-linecap:round;stroke-linejoin:round;}
+
+/* pending request badge */
+.pending-chip{display:inline-flex;align-items:center;gap:4px;background:#fef9c3;color:#92400e;border-radius:50px;padding:2px 8px;font-size:.68rem;font-weight:700;margin-right:4px;}
+.pending-chip svg{width:10px;height:10px;stroke:currentColor;fill:none;stroke-width:2.5;stroke-linecap:round;stroke-linejoin:round;}
+
+/* ride status badge on card */
+.ride-status-tag{display:inline-flex;align-items:center;gap:3px;border-radius:50px;padding:2px 8px;font-size:.62rem;font-weight:700;letter-spacing:.04em;text-transform:uppercase;flex-shrink:0;}
+.ride-status-tag.active{background:#dcfce7;color:var(--brand-green);}
+.ride-status-tag.upcoming{background:#fef3c7;color:#92400e;}
+.ride-status-tag.completed{background:#f3f4f6;color:#6b7280;}
+.ride-status-tag.cancelled{background:#fee2e2;color:#991b1b;}
+
+/* Empty state */
+.empty-state{display:none;text-align:center;padding:60px 20px;}
+.empty-state.show{display:block;}
+.empty-state .empty-ico{width:80px;height:80px;border-radius:50%;background:var(--contrast-lt);display:flex;align-items:center;justify-content:center;margin:0 auto 16px;}
+.empty-state .empty-ico svg{width:38px;height:38px;stroke:var(--brand-green);fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;}
+.empty-state h3{font-family:'Poppins',sans-serif;font-weight:700;font-size:1.1rem;margin-bottom:6px;}
+.empty-state p{color:var(--text-muted);font-size:.9rem;}
+
+/* Toast */
+.toast{position:fixed;bottom:30px;left:50%;transform:translateX(-50%) translateY(20px);background:var(--brand-green);color:white;padding:11px 20px;border-radius:12px;display:flex;align-items:center;gap:8px;font-weight:600;font-size:.85rem;box-shadow:0 6px 20px rgba(13,120,16,.3);opacity:0;transition:all .3s cubic-bezier(.34,1.56,.64,1);z-index:999;}
+.toast.show{opacity:1;transform:translateX(-50%) translateY(0);}
+.toast svg{width:15px;height:15px;stroke:white;fill:none;stroke-width:2.5;stroke-linecap:round;stroke-linejoin:round;}
+
+@keyframes fadeUp{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:translateY(0)}}
+
+/* Responsive */
+@media(max-width:680px){
+  .page-outer{padding:24px 16px 60px;}
+  .page-title{font-size:1.5rem;}
+  .convo-avatar{width:46px;height:46px;font-size:.9rem;}
+  .convo-route{display:none;}
+}
+</style>
+</head>
+<body>
+
+<!-- Toast -->
+<div class="toast" id="toast"><svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg><span id="toastMsg">Marked all as read</span></div>
+
+{% include 'header.html' %}
+
+<!-- ════ PAGE ════ -->
+<div class="page-outer">
+
+  <div class="page-header">
+    <div>
+      <a href="{% url 'my-rides' %}" class="breadcrumb">
+        <svg viewBox="0 0 24 24"><rect x="1" y="3" width="15" height="13" rx="2"/><polygon points="16 8 20 8 23 11 23 16 16 16 16 8"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></svg>
+        Driver Dashboard
+      </a>
+      <h1 class="page-title">Messages <span class="count-pill" id="totalCount">{{ total_count }} chats</span></h1>
+      <p class="page-subtitle">
+        <svg viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+        All your conversations with passengers, in one place
+      </p>
+    </div>
+  </div>
+
+  <!-- Search -->
+  <div class="search-wrap">
+    <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+    <input type="text" class="search-input" id="searchInput" placeholder="Search by passenger or route..." oninput="filterConvos()">
+  </div>
+
+  <!-- Filter tabs -->
+  <div class="filter-tabs">
+    <button class="filter-tab active" data-filter="all" onclick="setFilter('all',this)">All <span class="tab-count">{{ total_count }}</span></button>
+    <button class="filter-tab" data-filter="pending" onclick="setFilter('pending',this)">Pending <span class="tab-count">{{ filter_pending_count }}</span></button>
+    <button class="filter-tab" data-filter="unread" onclick="setFilter('unread',this)">Unread <span class="tab-count">{{ filter_unread_count }}</span></button>
+    <button class="filter-tab" data-filter="negotiating" onclick="setFilter('negotiating',this)">Negotiating <span class="tab-count">{{ filter_negotiating_count }}</span></button>
+    <button class="filter-tab" data-filter="active" onclick="setFilter('active',this)">Active rides <span class="tab-count">{{ filter_active_count }}</span></button>
+    <button class="filter-tab" data-filter="completed" onclick="setFilter('completed',this)">Completed <span class="tab-count">{{ filter_completed_count }}</span></button>
+  </div>
+
+  <!-- Conversation list -->
+  <div class="convo-list" id="convoList">
+
+    {% for convo in conversations %}
+    <div class="convo-card {% if convo.is_unread %}unread{% endif %}"
+         data-status="{{ convo.status }}"
+         data-booking-status="{{ convo.booking_status }}"
+         data-booking-id="{{ convo.booking_encoded_id }}"
+         data-unread="{% if convo.is_unread %}true{% else %}false{% endif %}"
+         data-nego="{{ convo.nego_status }}"
+         data-name="{{ convo.passenger_name }}"
+         data-route="{{ convo.route }}"
+         onclick="openChat('{{ convo.chat_token }}')">
+      <div class="convo-strip {{ convo.status }}"></div>
+      <div class="convo-avatar {{ convo.avatar_class }}"{% if convo.status == 'completed' %} style="filter:grayscale(.3)"{% endif %}>
+        {{ convo.initials }}{% if convo.is_online %}<div class="convo-online"></div>{% endif %}
+      </div>
+      <div class="convo-body">
+        <div class="convo-top">
+          <div class="convo-name">{{ convo.passenger_name }} <span class="role-tag">Passenger</span></div>
+          <div style="display:flex;align-items:center;gap:6px;flex-shrink:0;">
+            <span class="ride-status-tag {{ convo.status }}">{% if convo.status == 'active' %}Confirmed{% elif convo.status == 'upcoming' %}Pending{% elif convo.status == 'completed' %}Completed{% else %}Cancelled{% endif %}</span>
+            <div class="convo-time {% if convo.is_unread %}unread{% endif %}">{{ convo.time_display }}</div>
+          </div>
+        </div>
+        <div class="convo-route">
+          <svg viewBox="0 0 24 24"><circle cx="12" cy="10" r="3"/><path d="M12 2a8 8 0 0 0-8 8c0 5.25 8 12 8 12s8-6.75 8-12a8 8 0 0 0-8-8z"/></svg>
+          {{ convo.route }}
+        </div>
+        <div class="convo-bottom">
+          <div class="convo-preview {% if convo.is_unread %}unread{% endif %}">
+            {% if convo.booking_status == 'requested' %}
+              <span class="pending-chip"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>Awaiting your approval</span>
+            {% endif %}
+            {% if convo.nego_status == 'pending' %}
+              <span class="nego-chip"><svg viewBox="0 0 24 24"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>{{ convo.nego_label }}</span>
+            {% elif convo.nego_status == 'agreed' %}
+              <span class="nego-chip agreed"><svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>{{ convo.nego_label }}</span>
+            {% endif %}
+            {% if convo.is_your_message %}<span class="you">You: </span>{% endif %}
+            {{ convo.preview_text }}
+          </div>
+          {% if convo.unread_badge_count %}<div class="convo-unread-badge">{{ convo.unread_badge_count }}</div>{% endif %}
+        </div>
+        {% if convo.booking_status == 'requested' %}
+        <div class="convo-actions" onclick="event.stopPropagation()">
+          <button class="btn-accept" onclick="respondBooking('{{ convo.booking_encoded_id }}', 'accept', this)">
+            <svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>
+            Accept
+          </button>
+          <button class="btn-reject" onclick="respondBooking('{{ convo.booking_encoded_id }}', 'reject', this)">
+            <svg viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+            Reject
+          </button>
+        </div>
+        {% endif %}
+      </div>
+    </div>
+    {% endfor %}
+
+  </div>
+
+  <!-- Empty state -->
+  <div class="empty-state" id="emptyState">
+    <div class="empty-ico"><svg viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></div>
+    <h3>No conversations found</h3>
+    <p>Try a different search or filter.</p>
+  </div>
+
+</div>
+
+<script>
+/* ── NAVIGATE TO A CHAT ── */
+function openChat(token){
+  window.location.href = '/chat/' + token + '/';
+}
+
+/* ── FILTER TABS ── */
+let currentFilter = 'all';
+function setFilter(filter, btn){
+  currentFilter = filter;
+  document.querySelectorAll('.filter-tab').forEach(t=>t.classList.remove('active'));
+  btn.classList.add('active');
+  applyFilters();
+}
+
+/* ── SEARCH + FILTER ── */
+function filterConvos(){ applyFilters(); }
+
+function applyFilters(){
+  const q = document.getElementById('searchInput').value.trim().toLowerCase();
+  let visible = 0;
+  document.querySelectorAll('.convo-card').forEach(card=>{
+    const name  = (card.dataset.name||'').toLowerCase();
+    const route = (card.dataset.route||'').toLowerCase();
+    const status= card.dataset.status;
+    const unread= card.dataset.unread === 'true';
+    const nego  = card.dataset.nego;
+
+    let matchFilter = true;
+    if(currentFilter==='unread')         matchFilter = unread;
+    else if(currentFilter==='pending')   matchFilter = (card.dataset.bookingStatus==='requested');
+    else if(currentFilter==='negotiating') matchFilter = (nego==='pending');
+    else if(currentFilter==='active')    matchFilter = (status==='active'||status==='upcoming');
+    else if(currentFilter==='completed') matchFilter = (status==='completed');
+
+    const matchSearch = !q || name.includes(q) || route.includes(q);
+    const show = matchFilter && matchSearch;
+    card.style.display = show ? 'flex' : 'none';
+    if(show){
+      visible++;
+      card.style.animation='none';
+      requestAnimationFrame(()=>{card.style.animation='fadeUp .3s ease both';});
+    }
+  });
+  document.getElementById('emptyState').classList.toggle('show', visible===0);
+}
+
+/* ── ACCEPT / REJECT BOOKING ── */
+function getCsrfToken(){
+  const m = document.cookie.match(/csrftoken=([^;]+)/);
+  return m ? m[1] : '';
+}
+
+async function respondBooking(bookingId, action, btn){
+  const card = btn.closest('.convo-card');
+  const actionsRow = btn.closest('.convo-actions');
+  actionsRow.querySelectorAll('button').forEach(b => b.disabled = true);
+
+  const url = `/bookings/${bookingId}/${action}/`;
+  try {
+    const resp = await fetch(url, {
+      method: 'POST',
+      headers: { 'X-CSRFToken': getCsrfToken(), 'X-Requested-With': 'XMLHttpRequest' },
+    });
+    const data = await resp.json();
+    if (data.ok) {
+      if (action === 'accept') {
+        card.dataset.bookingStatus = 'confirmed';
+        card.dataset.status = 'active';
+        card.querySelector('.convo-strip').className = 'convo-strip active';
+        actionsRow.remove();
+        const chip = card.querySelector('.pending-chip');
+        if (chip) chip.remove();
+        const tag = card.querySelector('.ride-status-tag');
+        if (tag) { tag.className = 'ride-status-tag active'; tag.textContent = 'Confirmed'; }
+        showToast('Booking accepted — passenger notified.');
+      } else {
+        card.style.transition = 'opacity .3s';
+        card.style.opacity = '0';
+        setTimeout(() => {
+          card.remove();
+          const remaining = document.querySelectorAll('.convo-card').length;
+          const pill = document.getElementById('totalCount');
+          if (pill) pill.textContent = remaining + ' chats';
+          applyFilters();
+        }, 320);
+        showToast('Booking rejected — seat returned to pool.');
+      }
+      applyFilters();
+    } else {
+      actionsRow.querySelectorAll('button').forEach(b => b.disabled = false);
+      showToast(data.error || 'Something went wrong. Try again.');
+    }
+  } catch(_) {
+    actionsRow.querySelectorAll('button').forEach(b => b.disabled = false);
+    showToast('Network error. Please try again.');
+  }
+}
+
+/* ── TOAST ── */
+function showToast(msg){
+  const t=document.getElementById('toast');
+  document.getElementById('toastMsg').textContent=msg;
+  t.classList.add('show');
+  clearTimeout(t._t);
+  t._t=setTimeout(()=>t.classList.remove('show'),2800);
+}
+</script>
+
+{% include 'footer.html' %}
+</body>
+</html>

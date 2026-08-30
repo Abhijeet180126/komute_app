@@ -1,0 +1,333 @@
+<!--
+  ══════════════════════════════════════════════════════════════════
+  KOMÜTE — REUSABLE FOOTER COMPONENT
+  ══════════════════════════════════════════════════════════════════
+  How to use:
+    <div id="komute-footer"></div>
+    <script src="komute-include.js"></script>
+  ══════════════════════════════════════════════════════════════════
+-->
+<style data-komute-footer>
+  #komute-footer * { box-sizing: border-box; }
+
+  .kf-footer {
+    background: #1a2e1b;
+    color: white;
+    padding: 64px 5% 28px;
+    font-family: 'DM Sans', sans-serif;
+    position: relative;
+    overflow: hidden;
+  }
+  .kf-footer::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 3px;
+    background: linear-gradient(90deg, #0C63B4 0%, #0CB439 100%);
+  }
+  .kf-footer::after {
+    content: '';
+    position: absolute;
+    top: 60px; right: -120px;
+    width: 280px; height: 280px;
+    border-radius: 50%;
+    background: radial-gradient(circle, rgba(12,180,57,0.08) 0%, transparent 70%);
+    pointer-events: none;
+  }
+
+  .kf-grid {
+    max-width: 1280px;
+    margin: 0 auto;
+    display: grid;
+    grid-template-columns: 1.6fr 1fr 1fr;
+    gap: 50px;
+    position: relative;
+    z-index: 1;
+  }
+
+  .kf-brand-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 16px;
+  }
+  .kf-brand-mark {
+    width: 42px; height: 42px;
+    border-radius: 12px;
+    background: linear-gradient(135deg, #0C63B4 0%, #0CB439 100%);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 4px 16px rgba(13,120,16,0.3);
+  }
+  .kf-brand-mark svg { width: 24px; height: 24px; stroke: #fff; fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+  .kf-brand-name {
+    font-family: 'Montserrat', sans-serif;
+    font-weight: 800;
+    font-size: 1.5rem;
+    letter-spacing: 0.5px;
+    background: linear-gradient(90deg, #6cc8ff, #7eea9c);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    line-height: 1;
+  }
+  .kf-tagline {
+    color: rgba(255,255,255,0.7);
+    font-size: 0.95rem;
+    line-height: 1.6;
+    margin-bottom: 22px;
+    max-width: 340px;
+  }
+  .kf-badges {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+  .kf-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    background: rgba(255,255,255,0.08);
+    color: rgba(255,255,255,0.9);
+    font-size: 0.74rem;
+    font-weight: 500;
+    padding: 6px 12px;
+    border-radius: 50px;
+    border: 1px solid rgba(255,255,255,0.06);
+  }
+  .kf-badge svg { stroke: #7eea9c; fill: none; stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; width: 12px; height: 12px; }
+
+  .kf-col h4 {
+    font-family: 'Poppins', sans-serif;
+    color: white;
+    font-size: 0.96rem;
+    font-weight: 700;
+    margin-bottom: 18px;
+    letter-spacing: 0.01em;
+  }
+  .kf-col ul { list-style: none; padding: 0; margin: 0; }
+  .kf-col ul li { margin-bottom: 11px; }
+  .kf-col ul li a {
+    color: rgba(255,255,255,0.7);
+    text-decoration: none;
+    font-size: 0.92rem;
+    transition: color 0.18s, padding-left 0.18s;
+    display: inline-flex;
+    align-items: center;
+  }
+  .kf-col ul li a::before {
+    content: '';
+    width: 0;
+    height: 1px;
+    background: currentColor;
+    margin-right: 0;
+    transition: width 0.2s, margin-right 0.2s;
+  }
+  .kf-col ul li a:hover { color: white; }
+  .kf-col ul li a:hover::before { width: 8px; margin-right: 8px; }
+
+  .kf-connect-sub {
+    color: rgba(255,255,255,0.65);
+    font-size: 0.88rem;
+    margin-bottom: 14px;
+    line-height: 1.5;
+  }
+  .kf-social-row {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+  }
+  .kf-social {
+    width: 40px; height: 40px;
+    border-radius: 50%;
+    background: rgba(255,255,255,0.08);
+    border: 1px solid rgba(255,255,255,0.08);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    text-decoration: none;
+    transition: background 0.2s, transform 0.18s, border-color 0.2s;
+  }
+  .kf-social:hover {
+    background: linear-gradient(135deg, #0C63B4, #0CB439);
+    transform: translateY(-2px);
+    border-color: transparent;
+  }
+  .kf-social svg { stroke: white; fill: none; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; width: 18px; height: 18px; }
+
+  .kf-newsletter {
+    margin-top: 18px;
+    display: flex;
+    gap: 8px;
+    background: rgba(255,255,255,0.06);
+    border: 1px solid rgba(255,255,255,0.1);
+    border-radius: 50px;
+    padding: 5px;
+  }
+  .kf-newsletter input {
+    flex: 1;
+    background: transparent;
+    border: none;
+    color: white;
+    padding: 8px 14px;
+    font-family: 'DM Sans', sans-serif;
+    font-size: 0.86rem;
+    outline: none;
+    min-width: 0;
+  }
+  .kf-newsletter input::placeholder { color: rgba(255,255,255,0.45); }
+  .kf-newsletter button {
+    background: linear-gradient(90deg, #0C63B4, #0CB439);
+    color: white;
+    border: none;
+    padding: 8px 16px;
+    border-radius: 50px;
+    font-family: 'Poppins', sans-serif;
+    font-weight: 600;
+    font-size: 0.82rem;
+    cursor: pointer;
+    transition: opacity 0.2s;
+  }
+  .kf-newsletter button:hover { opacity: 0.9; }
+
+  .kf-bottom {
+    max-width: 1280px;
+    margin: 44px auto 0;
+    padding-top: 24px;
+    border-top: 1px solid rgba(255,255,255,0.1);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 14px;
+    color: rgba(255,255,255,0.55);
+    font-size: 0.85rem;
+    position: relative;
+    z-index: 1;
+  }
+  .kf-bottom-links {
+    display: flex;
+    gap: 22px;
+    flex-wrap: wrap;
+  }
+  .kf-bottom-links a {
+    color: rgba(255,255,255,0.55);
+    text-decoration: none;
+    transition: color 0.18s;
+  }
+  .kf-bottom-links a:hover { color: white; }
+
+  @media (max-width: 900px) {
+    .kf-grid { grid-template-columns: 1fr 1fr; gap: 36px; }
+  }
+  @media (max-width: 560px) {
+    .kf-footer { padding: 44px 22px 22px; }
+    .kf-grid { grid-template-columns: 1fr; gap: 32px; }
+    .kf-bottom { flex-direction: column; align-items: flex-start; gap: 12px; }
+    .kf-bottom-links { flex-wrap: wrap; }
+  }
+</style>
+
+<footer class="kf-footer">
+  <div class="kf-grid">
+
+    <!-- Brand -->
+    <div>
+      <div class="kf-brand-row">
+        <span class="kf-brand-mark">
+          <svg viewBox="0 0 32 32" aria-hidden="true">
+            <path d="M5 22 L7 14 Q8 11 11 11 L21 11 Q24 11 25 14 L27 22" stroke-linecap="round" stroke-linejoin="round"/>
+            <path d="M9 14 Q9 9 13 9 L19 9 Q23 9 23 14" stroke-linecap="round" stroke-linejoin="round"/>
+            <circle cx="12.5" cy="17" r="2" fill="#fff" stroke="none"/>
+            <circle cx="19.5" cy="17" r="2" fill="#fff" stroke="none"/>
+          </svg>
+        </span>
+        <span class="kf-brand-name">KOMÜTE</span>
+      </div>
+      <p class="kf-tagline">Peer-to-peer carpooling that's cheaper than driving alone, kinder to the planet, and friendlier than a bus. Built with commuters across Canada and the US.</p>
+      <div class="kf-badges">
+        <span class="kf-badge">
+          <svg viewBox="0 0 24 24"><path d="M11 20A7 7 0 0 1 9.8 6.1C15.5 5 17 4.48 19 2c1 2 2 4.18 2 8 0 5.5-4.78 10-10 10z"/></svg>
+          Carbon Neutral
+        </span>
+        <span class="kf-badge">
+          <svg viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+          Verified Drivers
+        </span>
+      </div>
+    </div>
+
+    <!-- Quick Links -->
+    <div class="kf-col">
+      <h4>Quick Links</h4>
+      <ul>
+        <li><a href="{% url 'about' %}">About Us</a></li>
+        <li><a href="{% url 'how-it-works' %}">How It Works</a></li>
+        <li><a href="{% url 'privacy-policy' %}">Privacy &amp; Policies</a></li>
+        <li><a href="{% url 'contact-us' %}">Contact</a></li>
+      </ul>
+    </div>
+
+    <!-- Product -->
+    <div class="kf-col">
+      <h4>Product</h4>
+      <ul>
+        <li><a href="{% url 'search-rides' %}">Find a Ride</a></li>
+        <li><a href="{% url 'post-ride' %}">Post a Trip</a></li>
+        <li><a href="{% url 'my-rides' %}">My Rides</a></li>
+        <li><a href="{% url 'signup' %}">Become a Driver</a></li>
+        <li><a href="{% url 'login' %}">Log In</a></li>
+      </ul>
+    </div>
+
+    <!-- Connect (disabled until newsletter signup + real social accounts exist)
+    <div class="kf-col">
+      <h4>Stay In The Loop</h4>
+      <p class="kf-connect-sub">Get monthly tips, route news and eco impact updates.</p>
+      <div class="kf-newsletter">
+        <input type="email" placeholder="you@example.com" aria-label="Email address">
+        <button type="button">Subscribe</button>
+      </div>
+      <div class="kf-social-row" style="margin-top: 18px;">
+        <a href="#" class="kf-social" aria-label="Twitter"><svg viewBox="0 0 24 24"><path d="M22 4s-.7 2.1-2 3.4c1.6 10-9.4 17.3-18 11.6 2.2.1 4.4-.6 6-2C3 15.5.5 9.6 3 5c2.2 2.6 5.6 4.1 9 4-.9-4.2 4-6.6 7-3.8 1.1 0 3-1.2 3-1.2z"/></svg></a>
+        <a href="#" class="kf-social" aria-label="Instagram"><svg viewBox="0 0 24 24"><rect x="2" y="2" width="20" height="20" rx="5"/><path d="M16 11.37A4 4 0 1 1 12.63 8 4 4 0 0 1 16 11.37z"/><line x1="17.5" y1="6.5" x2="17.51" y2="6.5"/></svg></a>
+        <a href="#" class="kf-social" aria-label="Facebook"><svg viewBox="0 0 24 24"><path d="M18 2h-3a5 5 0 0 0-5 5v3H7v4h3v8h4v-8h3l1-4h-4V7a1 1 0 0 1 1-1h3z"/></svg></a>
+        <a href="#" class="kf-social" aria-label="LinkedIn"><svg viewBox="0 0 24 24"><path d="M16 8a6 6 0 0 1 6 6v7h-4v-7a2 2 0 0 0-2-2 2 2 0 0 0-2 2v7h-4v-7a6 6 0 0 1 6-6z"/><rect x="2" y="9" width="4" height="12"/><circle cx="4" cy="4" r="2"/></svg></a>
+      </div>
+    </div>
+    -->
+
+  </div>
+
+  <div class="kf-bottom">
+    <span>© 2026 Komüte by Indus Network LLC. Making commuting better together 🌿</span>
+    <div class="kf-bottom-links">
+      <a href="{% url 'privacy-policy' %}">Privacy &amp; Policies</a>
+      <a href="{% url 'terms-condition' %}">Terms of Service</a>
+      <a href="{% url 'community-guidelines' %}">Community Guidelines</a>
+    </div>
+  </div>
+</footer>
+
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+  document.querySelectorAll('time.local-time').forEach(function (el) {
+    var utc = new Date(el.dataset.utc);
+    if (isNaN(utc)) return;
+    var fmt       = el.dataset.fmt || 'datetime';
+    var fullDate  = { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' };
+    var longDate  = { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' };
+    var shortDate = { weekday: 'short', month: 'short', day: 'numeric' };
+    var timeOnly  = { hour: 'numeric', minute: '2-digit', hour12: true };
+    if      (fmt === 'date')          el.textContent = utc.toLocaleDateString(undefined, fullDate);
+    else if (fmt === 'longdate')      el.textContent = utc.toLocaleDateString(undefined, longDate);
+    else if (fmt === 'shortdate')     el.textContent = utc.toLocaleDateString(undefined, shortDate);
+    else if (fmt === 'time')          el.textContent = utc.toLocaleTimeString(undefined, timeOnly);
+    else if (fmt === 'datetime')      el.textContent = utc.toLocaleDateString(undefined, fullDate) + ' · ' + utc.toLocaleTimeString(undefined, timeOnly);
+    else if (fmt === 'shortdatetime') el.textContent = utc.toLocaleDateString(undefined, shortDate) + ' · ' + utc.toLocaleTimeString(undefined, timeOnly);
+    else if (fmt === 'weekdaytime')   el.textContent = utc.toLocaleDateString(undefined, { weekday: 'short' }) + ' ' + utc.toLocaleTimeString(undefined, timeOnly);
+  });
+});
+</script>

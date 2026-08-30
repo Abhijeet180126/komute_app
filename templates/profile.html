@@ -1,0 +1,2843 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<link rel="icon" type="image/png" href="{% static 'images/icon_white.png' %}">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Komüte – Complete Your Profile</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800&family=DM+Sans:wght@400;500;600&family=Montserrat:wght@600;700;800&display=swap" rel="stylesheet">
+
+<style>
+/* ── KOMÜTE BRAND TOKENS ── */
+:root {
+  --dark-bg:     #121212;
+  --light-bg:    #E9F7EE;
+  --contrast-lt: #D5FBE5;
+  --brand-green: #0D7810;
+  --grad-blue:   #0C63B4;
+  --grad-green:  #0CB439;
+  --white:       #ffffff;
+  --text-dark:   #121212;
+  --text-muted:  #5a7060;
+  --input-border:#c2dfc8;
+  --input-bg:    #f6fbf7;
+  --card-shadow: 0 4px 24px rgba(13,120,16,0.08);
+}
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  font-family: 'DM Sans', sans-serif;
+  background: var(--light-bg);
+  min-height: 100vh;
+  color: var(--text-dark);
+}
+
+/* ════════════════════════════
+   NAVBAR
+════════════════════════════ */
+nav {
+  background: var(--white);
+  border-bottom: 1px solid #d8eed9;
+  padding: 13px 36px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  box-shadow: 0 2px 12px rgba(0,0,0,0.04);
+}
+
+.nav-logo {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  text-decoration: none;
+}
+.nav-logo img { height: 38px; width: auto; object-fit: contain; }
+.nav-logo-text {
+  font-family: 'Montserrat', sans-serif;
+  font-weight: 800;
+  font-size: 1.05rem;
+  background: linear-gradient(90deg, #0C63B4, #0CB439);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  letter-spacing: 0.07em;
+}
+
+.nav-right { display: flex; align-items: center; gap: 12px; }
+
+.user-pill {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  background: linear-gradient(90deg, #0C63B4, #0CB439);
+  color: white;
+  border-radius: 50px;
+  padding: 5px 18px 5px 5px;
+  font-family: 'DM Sans', sans-serif;
+  font-weight: 600;
+  font-size: 0.9rem;
+  cursor: pointer;
+}
+
+.user-avatar-nav {
+  width: 32px; height: 32px;
+  border-radius: 50%;
+  background: rgba(255,255,255,0.22);
+  border: 2px solid rgba(255,255,255,0.4);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.user-avatar-nav svg { width: 16px; height: 16px; stroke: white; fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+
+.logout-btn {
+  width: 38px; height: 38px;
+  border-radius: 10px;
+  background: var(--input-bg);
+  border: 1.5px solid var(--input-border);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.logout-btn:hover { background: #fee2e2; border-color: #fca5a5; }
+.logout-btn:hover svg { stroke: #dc2626; }
+.logout-btn svg { width: 17px; height: 17px; stroke: var(--text-muted); fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+
+/* ════════════════════════════
+   PAGE LAYOUT
+════════════════════════════ */
+.page-outer {
+  max-width: 900px;
+  margin: 0 auto;
+  padding: 36px 24px 72px;
+}
+
+/* ── HEADER AREA ── */
+.page-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  margin-bottom: 32px;
+  flex-wrap: wrap;
+  gap: 16px;
+}
+
+.page-header-left {}
+
+.breadcrumb {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--white);
+  border: 1.5px solid var(--input-border);
+  border-radius: 50px;
+  padding: 6px 16px;
+  font-size: 0.8rem;
+  font-weight: 500;
+  color: var(--text-muted);
+  margin-bottom: 14px;
+  text-decoration: none;
+}
+.breadcrumb svg { width: 13px; height: 13px; stroke: var(--brand-green); fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+
+.page-title {
+  font-family: 'Poppins', sans-serif;
+  font-size: 1.9rem;
+  font-weight: 800;
+  color: var(--brand-green);
+  margin-bottom: 4px;
+  line-height: 1.2;
+}
+
+.page-subtitle {
+  font-size: 0.9rem;
+  color: var(--text-muted);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.page-subtitle svg { width: 14px; height: 14px; stroke: var(--brand-green); fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+
+/* Progress indicator */
+.progress-wrap {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+}
+.progress-label {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  font-weight: 600;
+}
+.progress-bar-bg {
+  width: 160px;
+  height: 7px;
+  background: var(--contrast-lt);
+  border-radius: 99px;
+  overflow: hidden;
+}
+.progress-bar-fill {
+  height: 100%;
+  width: 65%;
+  background: linear-gradient(90deg, #0C63B4, #0CB439);
+  border-radius: 99px;
+  transition: width 0.4s ease;
+}
+.progress-pct {
+  font-family: 'Montserrat', sans-serif;
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: var(--brand-green);
+}
+
+/* ════════════════════════════
+   SECTION CARDS
+════════════════════════════ */
+.section-card {
+  background: var(--white);
+  border-radius: 18px;
+  border: 1.5px solid #e2f0e4;
+  box-shadow: var(--card-shadow);
+  margin-bottom: 20px;
+  overflow: hidden;
+  animation: fadeUp 0.4s ease both;
+}
+.section-card:nth-child(1) { animation-delay: 0.05s; }
+.section-card:nth-child(2) { animation-delay: 0.12s; }
+.section-card:nth-child(3) { animation-delay: 0.19s; }
+
+@keyframes fadeUp {
+  from { opacity: 0; transform: translateY(16px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.section-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 18px 24px;
+  border-bottom: 1.5px solid #edf7ee;
+  background: linear-gradient(135deg, #f8fef9 0%, #f0faf1 100%);
+}
+
+.section-icon {
+  width: 40px; height: 40px;
+  border-radius: 11px;
+  background: linear-gradient(135deg, #0C63B4, #0CB439);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.section-icon svg { width: 20px; height: 20px; stroke: white; fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+
+.section-header-text h3 {
+  font-family: 'Poppins', sans-serif;
+  font-size: 0.98rem;
+  font-weight: 700;
+  color: var(--brand-green);
+  margin-bottom: 1px;
+}
+.section-header-text p {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+}
+
+.section-body { padding: 24px; }
+
+/* ════════════════════════════
+   FORM ELEMENTS
+════════════════════════════ */
+.form-grid-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 18px; margin-bottom: 18px; }
+.form-grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; margin-bottom: 18px; }
+.form-grid-1 { display: grid; grid-template-columns: 1fr; gap: 18px; margin-bottom: 18px; }
+.mb-0 { margin-bottom: 0 !important; }
+
+.form-group { display: flex; flex-direction: column; gap: 6px; }
+
+.form-label {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--text-dark);
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+.form-label .required { color: #ef4444; font-size: 0.75rem; }
+
+.input-wrap { position: relative; }
+
+.input-icon {
+  position: absolute;
+  left: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  pointer-events: none;
+}
+.input-icon svg { width: 15px; height: 15px; stroke: #9db8a2; fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+
+.date-picker-native {
+  position: absolute; left: 0; top: 0; width: 36px; height: 100%;
+  opacity: 0; border: none; padding: 0; margin: 0; cursor: pointer; z-index: 2;
+}
+.date-picker-native::-webkit-calendar-picker-indicator {
+  position: absolute; left: 0; top: 0; width: 100%; height: 100%; margin: 0; cursor: pointer;
+}
+
+.form-input,
+.form-select {
+  width: 100%;
+  padding: 10px 13px 10px 36px;
+  border: 1.5px solid var(--input-border);
+  border-radius: 10px;
+  font-family: 'DM Sans', sans-serif;
+  font-size: 0.88rem;
+  color: var(--text-dark);
+  background: var(--input-bg);
+  outline: none;
+  transition: border-color 0.2s, box-shadow 0.2s, background 0.2s;
+}
+.form-input.no-icon,
+.form-select.no-icon { padding-left: 13px; }
+
+.form-input::placeholder { color: #b0c8b5; }
+
+.form-input:focus,
+.form-select:focus {
+  border-color: var(--brand-green);
+  box-shadow: 0 0 0 3px rgba(13,120,16,0.1);
+  background: var(--white);
+}
+
+.form-select { appearance: auto; cursor: pointer; }
+
+.phone-row { display: flex; gap: 8px; }
+.phone-row .country-code-select { flex: 0 0 100px; width: 100px; min-width: 0; font-size: 0.74rem; }
+.phone-row .input-wrap { flex: 1; min-width: 0; }
+
+/* Password toggle */
+.pass-wrap { position: relative; }
+.pass-wrap .form-input { padding-right: 38px; }
+.pass-toggle {
+  position: absolute;
+  right: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0;
+  display: flex;
+  align-items: center;
+}
+.pass-toggle svg { width: 15px; height: 15px; stroke: #9db8a2; fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+
+/* ════════════════════════════
+   UPLOAD ZONE
+════════════════════════════ */
+.upload-section-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 20px;
+  align-items: start;
+}
+
+.upload-zone-wrap { display: flex; flex-direction: column; gap: 10px; }
+
+.upload-preview-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.avatar-ring {
+  width: 72px; height: 72px;
+  border-radius: 50%;
+  background: var(--input-bg);
+  border: 3px solid var(--input-border);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  flex-shrink: 0;
+  position: relative;
+  transition: border-color 0.2s;
+}
+.avatar-ring.has-img { border-color: var(--brand-green); }
+.avatar-ring img { width: 100%; height: 100%; object-fit: cover; display: none; }
+.avatar-ring .avatar-placeholder svg { width: 28px; height: 28px; stroke: #b0c8b5; fill: none; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
+
+.upload-drop {
+  flex: 1;
+  border: 2px dashed var(--input-border);
+  border-radius: 12px;
+  background: var(--input-bg);
+  padding: 16px 14px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  transition: all 0.2s;
+  text-align: center;
+  min-height: 90px;
+  justify-content: center;
+}
+.upload-drop:hover,
+.upload-drop.dragover {
+  border-color: var(--brand-green);
+  background: var(--contrast-lt);
+}
+.upload-drop.has-file { border-style: solid; border-color: var(--brand-green); background: #f0fdf2; }
+
+.upload-cloud {
+  width: 36px; height: 36px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #0C63B4, #0CB439);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: transform 0.2s;
+}
+.upload-drop:hover .upload-cloud { transform: translateY(-2px); }
+.upload-cloud svg { width: 17px; height: 17px; stroke: white; fill: none; stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; }
+
+.upload-main-text { font-size: 0.78rem; color: var(--text-muted); line-height: 1.4; }
+.upload-main-text strong { color: var(--brand-green); font-weight: 600; }
+
+.upload-hint { font-size: 0.7rem; color: #9db8a2; }
+
+.upload-success {
+  display: none;
+  align-items: center;
+  gap: 5px;
+  font-size: 0.75rem;
+  color: var(--brand-green);
+  font-weight: 600;
+  background: #dcfce7;
+  padding: 4px 10px;
+  border-radius: 20px;
+}
+.upload-success svg { width: 12px; height: 12px; stroke: var(--brand-green); fill: none; stroke-width: 2.5; stroke-linecap: round; stroke-linejoin: round; }
+
+/* ════════════════════════════
+   MULTI-VEHICLE ROWS
+════════════════════════════ */
+.add-vehicle-btn {
+  margin-left: auto;
+  display: inline-flex; align-items: center; gap: 6px;
+  background: var(--contrast-lt); color: var(--brand-green);
+  border: none; padding: 8px 16px;
+  font-family: 'DM Sans', sans-serif; font-size: 0.8rem; font-weight: 600;
+  border-radius: 8px; cursor: pointer; flex-shrink: 0;
+  transition: background 0.15s;
+}
+.add-vehicle-btn:hover { background: #B8F0D2; }
+
+.vehicle-row {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 16px;
+  background: var(--input-bg);
+  border: 1.5px solid var(--input-border);
+  border-radius: 14px;
+  margin-bottom: 14px;
+}
+.vehicle-row:last-child { margin-bottom: 0; }
+
+.vehicle-row-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 26px;
+}
+
+.vehicle-row-content {
+  display: grid;
+  grid-template-columns: 1fr 260px;
+  gap: 16px;
+  align-items: start;
+}
+
+.vehicle-row-fields { display: flex; flex-direction: column; gap: 12px; }
+.vehicle-row-top    { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.vehicle-row-bottom { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; }
+.vehicle-row-photo  { display: flex; flex-direction: column; gap: 6px; }
+
+.vehicle-img-zone {
+  border: 2px dashed var(--input-border);
+  border-radius: 12px;
+  background: var(--input-bg);
+  text-align: center;
+  cursor: pointer;
+  transition: border-color 0.2s, background 0.2s;
+  overflow: hidden;
+}
+.vehicle-img-zone:hover,
+.vehicle-img-zone.dragover {
+  border-color: var(--brand-green);
+  background: var(--contrast-lt);
+}
+.vehicle-img-zone.has-img {
+  border-style: solid;
+  border-color: var(--brand-green);
+}
+.vehicle-img-zone.has-img .vehicle-img-prompt { display: none; }
+.vehicle-img-prompt {
+  padding: 22px 24px 18px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 7px;
+}
+.vehicle-img-prompt-icon {
+  width: 52px; height: 52px;
+  border-radius: 50%;
+  background: var(--contrast-lt);
+  display: flex; align-items: center; justify-content: center;
+  margin-bottom: 2px;
+}
+.vehicle-img-prompt-icon svg { width: 24px; height: 24px; stroke: var(--brand-green); fill: none; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.vehicle-img-prompt-title {
+  font-family: 'Poppins', sans-serif;
+  font-size: 0.92rem;
+  font-weight: 700;
+  color: var(--text-dark);
+  margin: 0;
+}
+.vehicle-img-prompt-desc {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  line-height: 1.5;
+  max-width: 480px;
+  margin: 0;
+}
+.vehicle-img-prompt-desc strong { color: var(--text-dark); font-weight: 600; }
+.vehicle-img-prompt-cta {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  margin-top: 4px;
+}
+.vehicle-img-prompt-cta strong { color: var(--brand-green); }
+.vehicle-img-prompt-hint { font-size: 0.7rem; color: #9db8a2; }
+
+.vehicle-img-preview-wrap { position: relative; display: none; }
+.vehicle-img-zone.has-img .vehicle-img-preview-wrap { display: block; }
+.vehicle-img-preview-wrap img {
+  width: 100%;
+  max-height: 280px;
+  object-fit: cover;
+  display: block;
+}
+.vehicle-img-overlay {
+  position: absolute;
+  bottom: 8px; right: 8px;
+  display: flex; gap: 6px;
+}
+.vehicle-img-btn {
+  background: rgba(0,0,0,0.65);
+  color: #fff; border: none;
+  padding: 5px 10px;
+  border-radius: 7px;
+  font-family: 'DM Sans', sans-serif;
+  font-size: 0.75rem; font-weight: 600;
+  cursor: pointer;
+  display: inline-flex; align-items: center; gap: 4px;
+}
+.vehicle-img-btn:hover { background: rgba(0,0,0,0.85); }
+
+.remove-vehicle-btn {
+  width: 32px; height: 32px; border-radius: 8px;
+  background: #fee2e2; border: none; color: #dc2626;
+  font-size: 1.1rem; cursor: pointer; line-height: 1;
+  display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0; transition: background 0.15s;
+}
+.remove-vehicle-btn:hover { background: #fca5a5; }
+.remove-vehicle-btn:disabled { opacity: 0.3; cursor: default; background: #fee2e2; }
+.vehicle-field-error {
+  border-color: #ef4444 !important;
+  box-shadow: 0 0 0 3px rgba(239,68,68,0.12) !important;
+}
+.vehicle-error-msg {
+  display: none; align-items: center; gap: 8px;
+  background: #fee2e2; color: #dc2626;
+  padding: 10px 14px; border-radius: 10px;
+  font-size: 0.83rem; font-weight: 600;
+  margin-bottom: 14px;
+}
+.vehicle-error-msg svg { flex-shrink: 0; }
+.vehicle-verified-badge {
+  display: none; align-items: center; gap: 5px;
+  padding: 3px 10px; border-radius: 20px;
+  font-size: 0.75rem; font-weight: 600;
+  width: fit-content;
+}
+.vehicle-verified-badge.verified { background: #dcfce7; color: #16a34a; }
+.vehicle-verified-badge.unverified { background: #f3f4f6; color: #6b7280; }
+@media (max-width: 520px) {
+  .vehicle-row-top, .vehicle-row-bottom { grid-template-columns: 1fr; }
+}
+
+/* ════════════════════════════
+   SAVE FOOTER
+════════════════════════════ */
+.save-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 14px;
+  background: var(--white);
+  border-radius: 16px;
+  border: 1.5px solid #e2f0e4;
+  box-shadow: var(--card-shadow);
+  padding: 18px 24px;
+  margin-top: 8px;
+  animation: fadeUp 0.4s 0.25s ease both;
+}
+
+.save-note {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.83rem;
+  color: var(--text-muted);
+}
+.save-note svg { width: 16px; height: 16px; stroke: var(--brand-green); fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; flex-shrink: 0; }
+
+.save-actions { display: flex; gap: 12px; align-items: center; }
+
+.btn-cancel {
+  padding: 10px 22px;
+  border-radius: 10px;
+  background: transparent;
+  border: 1.5px solid var(--input-border);
+  font-family: 'DM Sans', sans-serif;
+  font-weight: 600;
+  font-size: 0.9rem;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.btn-cancel:hover { background: var(--input-bg); border-color: #9db8a2; }
+
+.btn-save {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 11px 28px;
+  border-radius: 10px;
+  background: linear-gradient(90deg, #0C63B4, #0CB439);
+  color: var(--white);
+  border: none;
+  font-family: 'Poppins', sans-serif;
+  font-weight: 700;
+  font-size: 0.92rem;
+  cursor: pointer;
+  transition: opacity 0.2s, transform 0.15s, box-shadow 0.2s;
+  box-shadow: 0 4px 14px rgba(12,99,180,0.25);
+}
+.btn-save:hover { opacity: 0.9; transform: translateY(-1px); box-shadow: 0 6px 20px rgba(12,99,180,0.32); }
+.btn-save svg { width: 16px; height: 16px; stroke: white; fill: none; stroke-width: 2.5; stroke-linecap: round; stroke-linejoin: round; }
+
+/* ════════════════════════════
+   TOAST NOTIFICATION
+════════════════════════════ */
+.toast {
+  position: fixed;
+  bottom: 28px;
+  right: 28px;
+  background: var(--brand-green);
+  color: white;
+  padding: 13px 20px;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-family: 'DM Sans', sans-serif;
+  font-weight: 600;
+  font-size: 0.9rem;
+  box-shadow: 0 8px 24px rgba(13,120,16,0.3);
+  transform: translateY(80px);
+  opacity: 0;
+  transition: all 0.3s cubic-bezier(0.34,1.56,0.64,1);
+  z-index: 999;
+}
+.toast.show { transform: translateY(0); opacity: 1; }
+.toast svg { width: 18px; height: 18px; stroke: white; fill: none; stroke-width: 2.5; stroke-linecap: round; stroke-linejoin: round; }
+.toast.toast-error { background: #dc2626; box-shadow: 0 8px 24px rgba(220,38,38,0.3); }
+
+/* ════════════════════════════
+   RESPONSIVE
+════════════════════════════ */
+.personal-grid { grid-template-columns: 1.2fr 1.3fr 0.9fr; }
+
+@media (max-width: 720px) {
+  .form-grid-3 { grid-template-columns: 1fr 1fr; }
+  .personal-grid { grid-template-columns: 1fr; }
+  .upload-section-grid { grid-template-columns: 1fr; }
+  .page-header { flex-direction: column; }
+  .progress-wrap { align-items: flex-start; }
+}
+@media (max-width: 520px) {
+  .form-grid-3, .form-grid-2 { grid-template-columns: 1fr; }
+  nav { padding: 12px 16px; }
+  .page-outer { padding: 24px 14px 60px; }
+}
+/* ── Inline edit button next to email/password labels ── */
+.form-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.inline-edit {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: var(--contrast-lt);
+  color: var(--brand-green);
+  border: none;
+  padding: 3px 9px;
+  font-family: 'DM Sans', sans-serif;
+  font-size: 0.72rem;
+  font-weight: 600;
+  border-radius: 50px;
+  cursor: pointer;
+  transition: background 0.15s, transform 0.15s;
+  margin-left: auto;
+}
+.inline-edit:hover {
+  background: #B8F0D2;
+  transform: translateY(-1px);
+}
+.label-hint {
+  font-weight: 400;
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  margin-left: auto;
+}
+
+/* ── Email verification status pill (inside input) ── */
+.email-has-status { padding-right: 115px !important; }
+.email-status-pill {
+  position: absolute;
+  right: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-family: 'DM Sans', sans-serif;
+  font-size: 0.7rem;
+  font-weight: 700;
+  padding: 3px 9px;
+  border-radius: 50px;
+}
+.email-status-verified {
+  background: var(--contrast-lt);
+  color: var(--brand-green);
+  pointer-events: none;
+}
+.email-status-unverified {
+  background: #fff1f1;
+  color: #dc2626;
+  border: none;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.email-status-unverified:hover { background: #fecaca; }
+
+/* ── Age pill inside DOB input ── */
+.age-pill {
+  position: absolute;
+  right: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  background: var(--contrast-lt);
+  color: var(--brand-green);
+  font-family: 'Montserrat', sans-serif;
+  font-size: 0.72rem;
+  font-weight: 800;
+  padding: 3px 10px;
+  border-radius: 50px;
+  pointer-events: none;
+}
+.input-wrap input[type="date"] {
+  padding-right: 95px;
+}
+
+/* ── Self description textarea ── */
+.form-textarea {
+  min-height: 96px;
+  resize: vertical;
+  padding-top: 14px;
+  padding-bottom: 14px;
+  font-family: 'DM Sans', sans-serif;
+  line-height: 1.5;
+}
+.textarea-icon {
+  top: 14px !important;
+  transform: none !important;
+}
+.char-count {
+  font-family: 'DM Sans', sans-serif;
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  text-align: right;
+  margin-top: 5px;
+  font-weight: 500;
+}
+.char-count.over {
+  color: var(--danger, #dc2626);
+  font-weight: 700;
+}
+
+/* ── Modal (change email / change password) ── */
+.modal-backdrop {
+  position: fixed; inset: 0;
+  background: rgba(20, 40, 25, 0.45);
+  backdrop-filter: blur(4px);
+  z-index: 1000;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+}
+.modal-backdrop.show {
+  display: flex;
+  animation: fadeIn 0.2s ease;
+}
+.modal {
+  background: #fff;
+  border-radius: 18px;
+  width: 100%;
+  max-width: 440px;
+  padding: 28px 26px;
+  box-shadow: 0 20px 60px rgba(13,120,16,0.18);
+  animation: modalRise 0.25s ease;
+}
+@keyframes modalRise {
+  from { opacity: 0; transform: translateY(20px) scale(0.98); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+.modal h3 {
+  font-family: 'Poppins', sans-serif;
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: var(--text-dark);
+  margin-bottom: 6px;
+}
+.modal-sub {
+  font-family: 'DM Sans', sans-serif;
+  font-size: 0.88rem;
+  color: var(--text-muted);
+  margin-bottom: 22px;
+  line-height: 1.45;
+}
+.modal-actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 18px;
+}
+.btn-modal {
+  flex: 1;
+  padding: 12px 16px;
+  border-radius: 10px;
+  font-family: 'Poppins', sans-serif;
+  font-weight: 600;
+  font-size: 0.92rem;
+  cursor: pointer;
+  transition: opacity 0.2s, transform 0.15s;
+  border: none;
+}
+.btn-modal:hover { opacity: 0.88; transform: translateY(-1px); }
+.btn-modal-primary {
+  background: linear-gradient(90deg, var(--grad-blue), var(--grad-green));
+  color: #fff;
+}
+.btn-modal-secondary {
+  background: var(--light-bg);
+  color: var(--brand-green);
+  border: 1.5px solid var(--input-border);
+}
+
+/* ── Profile Photo / Selfie Upload ── */
+.photo-upload-row {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 26px;
+  align-items: center;
+  padding: 22px;
+  background: linear-gradient(135deg, var(--light-bg) 0%, var(--input-bg) 100%);
+  border: 1.5px solid var(--input-border);
+  border-radius: 16px;
+  margin-bottom: 22px;
+}
+.photo-preview-wrap {
+  position: relative;
+  width: 110px;
+  height: 110px;
+}
+.photo-preview {
+  width: 110px;
+  height: 110px;
+  border-radius: 50%;
+  border: 3px solid var(--input-border);
+  background: #fff;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: border-color 0.25s, box-shadow 0.25s;
+}
+.photo-preview.has-img {
+  border-color: var(--brand-green);
+  box-shadow: 0 4px 18px rgba(13,120,16,0.18);
+}
+.photo-preview img {
+  width: 100%; height: 100%;
+  object-fit: cover;
+}
+.photo-placeholder svg {
+  width: 44px; height: 44px;
+}
+.photo-edit-badge {
+  position: absolute;
+  bottom: 2px; right: 2px;
+  width: 34px; height: 34px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, var(--grad-blue), var(--grad-green));
+  border: 3px solid #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  box-shadow: 0 3px 10px rgba(13,120,16,0.25);
+  transition: transform 0.18s;
+}
+.photo-edit-badge:hover { transform: scale(1.08); }
+.photo-info h4 {
+  font-family: 'Poppins', sans-serif;
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--text-dark);
+  margin-bottom: 6px;
+}
+.photo-help {
+  font-family: 'DM Sans', sans-serif;
+  font-size: 0.82rem;
+  color: var(--text-muted);
+  line-height: 1.5;
+  margin-bottom: 12px;
+}
+.photo-actions {
+  display: flex;
+  gap: 9px;
+  flex-wrap: wrap;
+}
+.btn-photo-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--brand-green);
+  color: #fff;
+  border: none;
+  padding: 8px 14px;
+  border-radius: 8px;
+  font-family: 'Poppins', sans-serif;
+  font-weight: 600;
+  font-size: 0.82rem;
+  cursor: pointer;
+  transition: opacity 0.2s, transform 0.15s;
+}
+.btn-photo-action:hover { opacity: 0.88; transform: translateY(-1px); }
+.btn-photo-secondary {
+  background: #fff;
+  color: var(--brand-green);
+  border: 1.5px solid var(--input-border);
+}
+@media (max-width: 600px) {
+  .photo-upload-row {
+    grid-template-columns: 1fr;
+    text-align: center;
+    justify-items: center;
+  }
+  .photo-info { text-align: center; }
+  .photo-actions { justify-content: center; }
+}
+
+/* ── Danger Zone ── */
+.danger-zone-card { border-color: #f5c6c6; }
+.danger-zone-card .section-header { background: linear-gradient(135deg, #fef6f6 0%, #fdeded 100%); border-bottom-color: #f5c6c6; }
+.danger-zone-card .section-icon { background: linear-gradient(135deg, #dc2626, #b91c1c); }
+.danger-zone-card .section-header-text h3 { color: #b91c1c; }
+.danger-zone-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  flex-wrap: wrap;
+}
+.danger-zone-row h4 { font-family: 'Poppins', sans-serif; font-size: 0.9rem; font-weight: 700; color: var(--text-dark, #121212); margin-bottom: 4px; }
+.danger-zone-row p { font-size: 0.8rem; color: var(--text-muted); max-width: 480px; line-height: 1.5; }
+.btn-danger {
+  flex-shrink: 0;
+  padding: 11px 22px;
+  border-radius: 10px;
+  border: none;
+  background: #dc2626;
+  color: #fff;
+  font-family: 'DM Sans', sans-serif;
+  font-size: 0.85rem;
+  font-weight: 700;
+  cursor: pointer;
+  box-shadow: 0 4px 14px rgba(220,38,38,0.25);
+  transition: opacity 0.2s, transform 0.15s;
+}
+.btn-danger:hover { opacity: 0.9; transform: translateY(-1px); }
+
+/* ── Vehicle Image Upload ── */
+.vehicle-image-block {
+  margin-top: 20px;
+  padding: 20px;
+  background: var(--input-bg);
+  border: 1.5px dashed var(--input-border);
+  border-radius: 12px;
+  text-align: center;
+  transition: border-color 0.25s, background 0.25s;
+  cursor: pointer;
+}
+.vehicle-image-block:hover,
+.vehicle-image-block.dragover {
+  border-color: var(--brand-green);
+  background: var(--light-bg);
+}
+.vehicle-image-block.has-img {
+  background: #fff;
+  border-style: solid;
+  border-color: var(--brand-green);
+  text-align: left;
+  padding: 0;
+  overflow: hidden;
+}
+.vehicle-image-block.has-img .vehicle-upload-prompt { display: none; }
+.vehicle-image-preview {
+  display: none;
+  width: 100%;
+  position: relative;
+}
+.vehicle-image-block.has-img .vehicle-image-preview { display: block; }
+.vehicle-image-preview img {
+  width: 100%;
+  max-height: 280px;
+  object-fit: cover;
+  display: block;
+}
+.vehicle-image-overlay {
+  position: absolute;
+  bottom: 12px; right: 12px;
+  display: flex;
+  gap: 8px;
+}
+.vehicle-image-btn {
+  background: rgba(0,0,0,0.65);
+  color: #fff;
+  border: none;
+  padding: 7px 12px;
+  border-radius: 8px;
+  font-family: 'DM Sans', sans-serif;
+  font-weight: 600;
+  font-size: 0.78rem;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+.vehicle-image-btn:hover { background: rgba(0,0,0,0.85); }
+.vehicle-upload-prompt h5 {
+  font-family: 'Poppins', sans-serif;
+  font-weight: 700;
+  font-size: 0.95rem;
+  color: var(--text-dark);
+  margin: 8px 0 4px;
+}
+.vehicle-upload-prompt p {
+  font-family: 'DM Sans', sans-serif;
+  font-size: 0.82rem;
+  color: var(--text-muted);
+  margin-bottom: 12px;
+  line-height: 1.45;
+}
+.vehicle-upload-icon {
+  display: inline-flex;
+  width: 52px; height: 52px;
+  border-radius: 50%;
+  background: var(--contrast-lt);
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 4px;
+}
+.vehicle-upload-icon svg { width: 26px; height: 26px; stroke: var(--brand-green); fill: none; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.plate-note {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--contrast-lt);
+  color: var(--brand-green);
+  font-family: 'DM Sans', sans-serif;
+  font-weight: 600;
+  font-size: 0.74rem;
+  padding: 5px 11px;
+  border-radius: 50px;
+  margin-top: 4px;
+}
+
+/* ── Driver-only sections hidden when role is rider ── */
+body.role-rider .driver-only { display: none; }
+
+/* ── Verify Identity row ── */
+.verify-identity-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-top: 24px;
+  padding: 16px 20px;
+  border-radius: 12px;
+  background: var(--surface-2, #f8fafc);
+  border: 1px solid var(--border, #e2e8f0);
+}
+.verify-status-wrap { display: flex; flex-direction: column; gap: 4px; }
+.verify-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 700;
+  padding: 4px 12px;
+  border-radius: 99px;
+}
+.verify-badge--ok      { background:#dcfce7; color:#15803d; }
+.verify-badge--pending { background:#fef9c3; color:#92400e; }
+.verify-hint { font-size: 12px; color: #94a3b8; margin: 0; }
+.btn-verify-identity {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 20px;
+  border-radius: 10px;
+  background: #1e40af;
+  color: #fff;
+  font-weight: 700;
+  font-size: 14px;
+  border: none;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background .2s;
+}
+.btn-verify-identity:hover  { background: #1d4ed8; }
+.btn-verify-identity:disabled { background: #94a3b8; cursor: not-allowed; }
+
+/* ── Verification modal ── */
+.verify-modal-backdrop { }
+.verify-modal-box {
+  background: #fff;
+  border-radius: 16px;
+  padding: 32px;
+  max-width: 400px;
+  width: 90%;
+  box-shadow: 0 20px 60px rgba(0,0,0,.3);
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  text-align: center;
+}
+.verify-modal-icon { font-size: 52px; line-height: 1; }
+.verify-modal-title { font-size: 22px; font-weight: 800; margin: 0; }
+.verify-modal-score { font-size: 15px; color: #64748b; margin: 0; }
+.btn-verify-modal-close {
+  align-self: center;
+  padding: 10px 28px;
+  border-radius: 8px;
+  border: 1.5px solid #e2e8f0;
+  background: #f8fafc;
+  font-weight: 600;
+  cursor: pointer;
+}
+.btn-verify-modal-close:hover { background: #e2e8f0; }
+
+/* ── In-browser camera modal ── */
+.camera-shell {
+  background: #000;
+  border-radius: 14px 14px 0 0;
+  overflow: hidden;
+  position: relative;
+  line-height: 0;
+}
+.camera-shell video,
+.camera-shell canvas {
+  width: 100%;
+  max-height: 55vh;
+  object-fit: cover;
+  display: block;
+}
+.camera-footer {
+  padding: 18px 20px 20px;
+  display: flex;
+  gap: 10px;
+  justify-content: center;
+  flex-wrap: wrap;
+  background: #fff;
+  border-radius: 0 0 14px 14px;
+}
+.camera-shutter {
+  width: 58px; height: 58px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, var(--grad-blue), var(--grad-green));
+  border: 4px solid #fff;
+  box-shadow: 0 0 0 3px var(--brand-green);
+  cursor: pointer;
+  transition: transform 0.15s;
+  flex-shrink: 0;
+}
+.camera-shutter:hover { transform: scale(1.07); }
+
+
+</style>
+</head>
+<body>
+
+<!-- ════ TOAST ════ -->
+<div class="toast" id="toast">
+  <svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>
+  Profile saved successfully!
+</div>
+<div class="toast toast-error" id="toast-error">
+  <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+  <span id="toast-error-msg"></span>
+</div>
+
+<!-- ════ NAVBAR ════ -->
+<!-- <nav>
+  <a href="#" class="nav-logo">
+    <img src="{% static 'images/logo_white.png' %}" alt="Komüte"
+         onerror="this.style.display='none';this.nextElementSibling.style.display='block'">
+    <span class="nav-logo-text" style="display:none">KOMÜTE</span>
+  </a>
+  <div class="nav-right">
+    <div class="user-pill">
+      <div class="user-avatar-nav">
+        <svg viewBox="0 0 24 24"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+      </div>
+      {{ full_name|default:"User" }}
+    </div>
+    <button class="logout-btn" title="Logout">
+      <svg viewBox="0 0 24 24"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+    </button>
+  </div>
+</nav> -->
+{% include 'header.html' %}
+<!-- ════ PAGE ════ -->
+<div class="page-outer">
+
+  <!-- Header -->
+  <div class="page-header">
+    <div class="page-header-left">
+      <a href="#" class="breadcrumb">
+        <svg viewBox="0 0 24 24"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+        User Profile
+      </a>
+      <h1 class="page-title">Complete Your Profile</h1>
+      <p class="page-subtitle">
+        <svg viewBox="0 0 24 24"><path d="M11 20A7 7 0 0 1 9.8 6.1C15.5 5 17 4.48 19 2c1 2 2 4.18 2 8 0 5.5-4.78 10-10 10z"/><path d="M2 21c0-3 1.85-5.36 5.08-6C9.5 14.52 12 13 13 12"/></svg>
+        Fill in your details to start eco-commuting
+      </p>
+    </div>
+    <div class="progress-wrap">
+      <span class="progress-label">Profile Completion</span>
+      <div class="progress-bar-bg">
+        <div class="progress-bar-fill" id="progressFill"></div>
+      </div>
+      <span class="progress-pct" id="progressPct">65% Complete</span>
+    </div>
+  </div>
+
+  <form method="POST" enctype="multipart/form-data">
+  {% csrf_token %}
+
+  <!-- ── CARD 1: Personal Info ── -->
+  <div class="section-card">
+    <div class="section-header">
+      <div class="section-icon">
+        <svg viewBox="0 0 24 24"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+      </div>
+      <div class="section-header-text">
+        <h3>Personal Information</h3>
+        <p>Your basic account details</p>
+      </div>
+    </div>
+    <div class="section-body">
+
+      <!-- ── Profile Photo / Selfie Upload ── -->
+      <div class="photo-upload-row">
+        <div class="photo-preview-wrap">
+          <div class="photo-preview {% if selfie_url %}has-img{% endif %}" id="selfiePreviewWrap">
+            <img id="selfiePreview" alt="Your selfie"
+                 {% if selfie_url %}src="{{ selfie_url }}" style="display:block"{% else %}style="display:none"{% endif %}>
+            <div class="photo-placeholder" id="selfiePlaceholder" {% if selfie_url %}style="display:none"{% endif %}>
+              <svg viewBox="0 0 24 24" fill="none" stroke="#b0c8b5" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
+                <circle cx="12" cy="7" r="4"/>
+              </svg>
+            </div>
+          </div>
+          <button type="button" class="photo-edit-badge" onclick="document.getElementById('selfieFile').click()" title="Upload selfie">
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/>
+              <circle cx="12" cy="13" r="4"/>
+            </svg>
+          </button>
+        </div>
+
+        <div class="photo-info">
+          <h4>Profile Photo / Selfie <span class="required">*</span></h4>
+          <p class="photo-help">
+            Upload a clear, well-lit selfie. This will be compared with the photo on your driver's licence to confirm it's really you. Face the camera, no sunglasses or hats.
+          </p>
+          <div class="photo-actions">
+            <button type="button" class="btn-photo-action" onclick="document.getElementById('selfieFile').click()">
+              <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+              <span id="selfieBtnLabel">Upload Selfie</span>
+            </button>
+            <button type="button" class="btn-photo-action btn-photo-secondary" onclick="openCameraModal()">
+              <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
+              Use Camera
+            </button>
+          </div>
+          <input type="file" id="selfieFile" name="selfie_file" accept="image/*" style="position:absolute;width:1px;height:1px;opacity:0;overflow:hidden" onchange="handleSelfieUpload(this)">
+          <input type="file" id="selfieCameraFile" name="selfie_file" accept="image/*" capture="user" style="position:absolute;width:1px;height:1px;opacity:0;overflow:hidden" onchange="handleSelfieUpload(this)">
+        </div>
+      </div>
+
+      <div class="form-grid-3 personal-grid" style="align-items: end;">
+        <!-- Full Name -->
+        <div class="form-group">
+          <label class="form-label">Full Name <span class="required">*</span></label>
+          <div class="input-wrap" style="text-transform: uppercase;">
+            <span class="input-icon"><svg viewBox="0 0 24 24"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></span>
+            <input type="text" name="full_name" class="form-input" style="text-transform: uppercase;" value="{{ full_name }}" placeholder="John Doe" oninput="updateProgress()">
+          </div>
+        </div>
+        <!-- Email -->
+        <div class="form-group">
+          <label class="form-label">
+            Email Address <span class="required">*</span>
+            <button type="button" class="inline-edit" onclick="openEmailModal()" title="Change email">
+              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+              Change
+            </button>
+          </label>
+          <div class="input-wrap">
+            <span class="input-icon"><svg viewBox="0 0 24 24"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg></span>
+            <input type="email" name="email" class="form-input email-has-status" id="emailInput" value="{{ email }}" placeholder="john@example.com" oninput="updateProgress()" readonly>
+            {% if email_verified %}
+            <span class="email-status-pill email-status-verified">
+              <svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+              Verified
+            </span>
+            {% else %}
+            <button type="button" class="email-status-pill email-status-unverified" onclick="VerifyEmail()" title="Click to send verification email">
+              <svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+              <!-- Not Verified -->
+               Verify Now
+            </button>
+            {% endif %}
+          </div>
+        </div>
+        <!-- Mobile -->
+        <div class="form-group">
+          <label class="form-label">Mobile Number <span class="required">*</span></label>
+          <div class="phone-row">
+            <select name="country_code" class="form-select no-icon country-code-select" onchange="updateProgress()">
+              <option value="" {% if not country_code %}selected{% endif %}>Country Code</option>
+              {% for c in priority_countries %}
+                <option value="{{ c.dial_code }}" {% if country_code == c.dial_code %}selected{% endif %}>{{ c.dial_code }} {{ c.name }}</option>
+              {% endfor %}
+              <option disabled>──────────</option>
+              {% for c in countries %}
+                <option value="{{ c.dial_code }}" {% if country_code == c.dial_code %}selected{% endif %}>{{ c.dial_code }} {{ c.name }}</option>
+              {% endfor %}
+            </select>
+            <div class="input-wrap">
+              <span class="input-icon"><svg viewBox="0 0 24 24"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07A19.5 19.5 0 0 1 4.69 12 19.79 19.79 0 0 1 1.62 3.38 2 2 0 0 1 3.59 1h3a2 2 0 0 1 2 1.72c.127.96.361 1.903.7 2.81a2 2 0 0 1-.45 2.11L7.91 8.56a16 16 0 0 0 6.07 6.07l.96-.96a2 2 0 0 1 2.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0 1 22 16.92z"/></svg></span>
+              <input type="tel" name="phone_number" class="form-input" value="{{ phone_number }}" placeholder="4155552671" inputmode="numeric" oninput="updateProgress()">
+            </div>
+          </div>
+          {% if errors.country_code %}
+          <p class="verify-hint" style="color:#b91c1c;font-weight:600;">{{ errors.country_code }}</p>
+          {% endif %}
+          {% if errors.phone_number %}
+          <p class="verify-hint" style="color:#b91c1c;font-weight:600;">{{ errors.phone_number }}</p>
+          {% endif %}
+        </div>
+      </div>
+
+      <div class="form-grid-3">
+        <!-- Date of Birth -->
+        <div class="form-group">
+          <label class="form-label">Date of Birth <span class="required">*</span></label>
+          <div class="input-wrap">
+            <span class="input-icon"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg></span>
+            <input type="text" id="dobDisplay" class="form-input" placeholder="MM-DD-YYYY" maxlength="10" inputmode="numeric" autocomplete="off"
+              value="{% if dob %}{{ dob|slice:'5:7' }}-{{ dob|slice:'8:10' }}-{{ dob|slice:'0:4' }}{% endif %}"
+              oninput="autoDateFmt(this,'dobInput'); updateAge(); updateProgress()">
+            <input type="hidden" name="dob" id="dobInput" value="{{ dob }}">
+            <input type="date" class="date-picker-native" id="dobPicker" tabindex="-1" max="{% now 'Y-m-d' %}" value="{{ dob }}"
+              onchange="pickNativeDate(this,'dobDisplay','dobInput'); updateAge(); updateProgress()">
+            <span class="age-pill" id="agePill" style="display:none">— yrs</span>
+          </div>
+          {% if errors.dob %}
+          <p class="verify-hint" style="color:#b91c1c;font-weight:600;">{{ errors.dob }}</p>
+          {% endif %}
+        </div>
+        <!-- Gender -->
+        <div class="form-group">
+          <label class="form-label">Gender</label>
+          <div class="input-wrap">
+            <span class="input-icon"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><line x1="12" y1="2" x2="12" y2="8"/><line x1="12" y1="16" x2="12" y2="22"/><line x1="2" y1="12" x2="8" y2="12"/><line x1="16" y1="12" x2="22" y2="12"/></svg></span>
+            <select class="form-select" name="gender">
+              <option value="">— Select Gender —</option>
+              <option value="male" {% if gender == "male" %}selected{% endif %}>Male</option>
+              <option value="female" {% if gender == "female" %}selected{% endif %}>Female</option>
+              <option value="other" {% if gender == "other" %}selected{% endif %}>Other</option>
+            </select>
+          </div>
+        </div>
+        <!-- Role -->
+        <div class="form-group">
+          <label class="form-label">Role <span class="required">*</span></label>
+          <div class="input-wrap">
+            <span class="input-icon"><svg viewBox="0 0 24 24"><rect x="1" y="3" width="15" height="13" rx="2"/><polygon points="16 8 20 8 23 11 23 16 16 16 16 8"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></svg></span>
+            <select class="form-select" name="role" id="roleSelect" onchange="toggleDriverSections()">
+              <option value="driver" {% if role == "driver" %}selected{% endif %}>Driver</option>
+              <option value="rider" {% if role == "rider" %}selected{% endif %}>Rider</option>
+            </select>
+          </div>
+        </div>
+      </div>
+
+      <!-- Password (full row) -->
+      <div class="form-group">
+        <label class="form-label">
+          Password <span class="required">*</span>
+          <button type="button" class="inline-edit" onclick="openPasswordModal()" title="Change password">
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+            Change
+          </button>
+        </label>
+        <div class="input-wrap pass-wrap">
+          <span class="input-icon"><svg viewBox="0 0 24 24"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg></span>
+          <input type="password" class="form-input" id="passInput" value="••••••••" readonly>
+          <button type="button" class="pass-toggle" onclick="togglePass()">
+            <svg id="eyeIcon" viewBox="0 0 24 24"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+          </button>
+        </div>
+      </div>
+
+      <!-- Self Description (full width, last row) -->
+      <div class="form-group mb-0">
+        <label class="form-label">
+          Self Description
+          <span class="label-hint">A short bio shown on your public profile</span>
+        </label>
+        <div class="input-wrap">
+          <span class="input-icon textarea-icon"><svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg></span>
+          <textarea class="form-input form-textarea" name="bio" id="bioInput" maxlength="280" placeholder="Tell other Komüte users a bit about yourself — your travel style, favourite music, anything that helps people get to know you. (Up to 280 characters.)" oninput="updateBioCount(); updateProgress()">{{ bio }}</textarea>
+        </div>
+        <div class="char-count"><span id="bioCount">0</span>/280</div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- ── CARD 2: License Details (driver only) ── -->
+  <div class="section-card driver-only">
+    <div class="section-header">
+      <div class="section-icon">
+        <svg viewBox="0 0 24 24"><rect x="1" y="4" width="22" height="16" rx="2" ry="2"/><line x1="1" y1="10" x2="23" y2="10"/></svg>
+      </div>
+      <div class="section-header-text">
+        <h3>License Details</h3>
+        <p>Your driving license information</p>
+      </div>
+    </div>
+    <div class="section-body">
+
+      <div class="form-grid-3">
+        <!-- License Number -->
+        <div class="form-group">
+          <label class="form-label">License Number <span class="required">*</span></label>
+          <div class="input-wrap">
+            <span class="input-icon"><svg viewBox="0 0 24 24"><rect x="2" y="7" width="20" height="14" rx="2" ry="2"/><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/></svg></span>
+            <input type="text" name="license_number" class="form-input" value="{{ license_number }}" placeholder="e.g. DL1234567" oninput="updateProgress()">
+          </div>
+        </div>
+        <!-- Issuing Province -->
+        <div class="form-group">
+          <label class="form-label">Issuing Province <span class="required">*</span></label>
+          <div class="input-wrap">
+            <span class="input-icon"><svg viewBox="0 0 24 24"><path d="M12 22s-8-4.5-8-11.8A8 8 0 0 1 12 2a8 8 0 0 1 8 8.2c0 7.3-8 11.8-8 11.8z"/><circle cx="12" cy="10" r="3"/></svg></span>
+            <select class="form-select" name="license_province" id="issuingProvince" onchange="updateProgress()">
+              <option value="">— Select Province —</option>
+              <option value="AB" {% if license_province == "AB" %}selected{% endif %}>AB — Alberta</option>
+              <option value="BC" {% if license_province == "BC" %}selected{% endif %}>BC — British Columbia</option>
+              <option value="MB" {% if license_province == "MB" %}selected{% endif %}>MB — Manitoba</option>
+              <option value="NB" {% if license_province == "NB" %}selected{% endif %}>NB — New Brunswick</option>
+              <option value="NL" {% if license_province == "NL" %}selected{% endif %}>NL — Newfoundland &amp; Labrador</option>
+              <option value="NS" {% if license_province == "NS" %}selected{% endif %}>NS — Nova Scotia</option>
+              <option value="NT" {% if license_province == "NT" %}selected{% endif %}>NT — Northwest Territories</option>
+              <option value="NU" {% if license_province == "NU" %}selected{% endif %}>NU — Nunavut</option>
+              <option value="ON" {% if license_province == "ON" %}selected{% endif %}>ON — Ontario</option>
+              <option value="PE" {% if license_province == "PE" %}selected{% endif %}>PE — Prince Edward Island</option>
+              <option value="QC" {% if license_province == "QC" %}selected{% endif %}>QC — Quebec</option>
+              <option value="SK" {% if license_province == "SK" %}selected{% endif %}>SK — Saskatchewan</option>
+              <option value="YT" {% if license_province == "YT" %}selected{% endif %}>YT — Yukon</option>
+            </select>
+          </div>
+        </div>
+        <!-- Expiry -->
+        <div class="form-group">
+          <label class="form-label">License Expiry Date <span class="required">*</span></label>
+          <div class="input-wrap">
+            <span class="input-icon"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg></span>
+            <input type="text" id="licExpDisplay" class="form-input" placeholder="MM-DD-YYYY" maxlength="10" inputmode="numeric" autocomplete="off"
+              value="{% if license_expiry %}{{ license_expiry|slice:'5:7' }}-{{ license_expiry|slice:'8:10' }}-{{ license_expiry|slice:'0:4' }}{% endif %}"
+              oninput="autoDateFmt(this,'licExpInput'); updateProgress()">
+            <input type="hidden" name="license_expiry" id="licExpInput" value="{{ license_expiry }}">
+            <input type="date" class="date-picker-native" id="licExpPicker" tabindex="-1" min="{% now 'Y-m-d' %}" value="{{ license_expiry }}"
+              onchange="pickNativeDate(this,'licExpDisplay','licExpInput'); updateProgress()">
+          </div>
+        </div>
+      </div>
+
+      <!-- License Image Upload -->
+      <div class="form-group upload-zone-wrap mb-0">
+        <label class="form-label">License Image</label>
+        <div class="upload-preview-row">
+          <div class="avatar-ring" id="avatarRing">
+            <div class="avatar-placeholder">
+              <svg viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+            </div>
+            <img id="licensePreview" src="" alt="License Preview">
+          </div>
+          <div class="upload-drop" id="dropZone" onclick="document.getElementById('licenseFile').click()">
+            <div class="upload-cloud">
+              <svg viewBox="0 0 24 24"><polyline points="16 16 12 12 8 16"/><line x1="12" y1="12" x2="12" y2="21"/><path d="M20.39 18.39A5 5 0 0 0 18 9h-1.26A8 8 0 1 0 3 16.3"/></svg>
+            </div>
+            <div class="upload-main-text">
+              <strong>Click to upload</strong> or drag & drop
+            </div>
+            <div class="upload-hint">PNG, JPG, PDF · Max 5MB</div>
+            <div class="upload-success" id="uploadSuccess">
+              <svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>
+              <span id="uploadFileName"></span>
+            </div>
+          </div>
+          <input type="file" id="licenseFile" name="license_file" accept="image/*" style="display:none" onchange="handleUpload(this)">
+        </div>
+      </div>
+
+      <!-- ── Driver Verification Status + Button ── -->
+      <div class="verify-identity-row" id="verifyIdentityRow">
+        <div class="verify-status-wrap">
+          {% if driver_verified %}
+          <span class="verify-badge verify-badge--ok">
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+            Identity Verified
+            {% if face_match_score %}&nbsp;·&nbsp;{% widthratio face_match_score 1 100 %}% match{% endif %}
+          </span>
+          {% else %}
+          <span class="verify-badge verify-badge--pending" id="verifyStatusBadge">
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+            Not Verified
+          </span>
+          {% if errors.reverify %}
+          <p class="verify-hint" style="color:#b45309;font-weight:600;">⚠️ Your {% if errors.reverify == "license" %}driving license{% else %}selfie{% endif %} was updated — please re-verify your identity to restore your verified badge.</p>
+          {% else %}
+          <p class="verify-hint">Upload your driving license image above and save your profile. Then click the button to verify — you'll be asked to take a quick selfie at that point.</p>
+          {% endif %}
+          {% endif %}
+        </div>
+        {% if not driver_verified %}
+        <button type="button" class="btn-verify-identity" id="verifyIdentityBtn" onclick="runDriverVerification()">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+          <span id="verifyBtnLabel">Verify Identity</span>
+        </button>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Verification Result Modal ── -->
+  <div id="verifyModal" style="display:none;position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,.6);align-items:center;justify-content:center;" class="verify-modal-backdrop">
+    <div class="verify-modal-box" id="verifyModalBox">
+      <div id="verifyModalContent"></div>
+      <button type="button" class="btn-verify-modal-close" onclick="closeVerifyModal()">Close</button>
+    </div>
+  </div>
+
+  <!-- ── Verification Selfie Step Modal ── -->
+  <div id="verifySelfieModal" style="display:none;position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,.6);align-items:center;justify-content:center;">
+    <div class="verify-modal-box" style="max-width:420px;">
+      <div class="verify-modal-icon">🤳</div>
+      <p class="verify-modal-title" style="font-size:18px;">Verification Selfie</p>
+      <p class="verify-modal-score" style="text-align:left;font-size:13px;">
+        Face the camera directly. No sunglasses, hats, or filters. Your face will be compared with the photo on your driving license.
+      </p>
+
+      <!-- Preview shown after photo is taken -->
+      <div id="vsPreviewWrap" style="display:none;text-align:center;">
+        <img id="vsPreview" alt="Verification selfie"
+          style="width:160px;height:160px;border-radius:50%;object-fit:cover;border:3px solid #e2e8f0;display:block;margin:0 auto;">
+      </div>
+
+      <!-- Camera / upload buttons (shown before photo) -->
+      <div id="vsCaptureBtns" style="display:flex;gap:10px;justify-content:center;flex-wrap:wrap;">
+        <button type="button" class="btn-modal btn-modal-primary" onclick="openCameraForVerify()">
+          <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right:5px"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
+          Open Camera
+        </button>
+        <button type="button" class="btn-modal btn-modal-secondary" onclick="document.getElementById('verifySelfieFileInput').click()">
+          Upload Photo
+        </button>
+      </div>
+      <input type="file" id="verifySelfieFileInput" accept="image/*" capture="user" style="display:none" onchange="handleVerifyFileInput(this)">
+
+      <!-- Retake + Verify buttons (shown after photo) -->
+      <div id="vsActionBtns" style="display:none;flex-direction:column;align-items:center;gap:10px;">
+        <button type="button" id="vsVerifyBtn" class="btn-verify-identity" onclick="submitVerificationWithSelfie()">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+          <span id="vsVerifyBtnLabel">Verify Identity</span>
+        </button>
+        <button type="button" class="btn-verify-modal-close" onclick="retakeVerifySelfie()">Retake</button>
+      </div>
+
+      <button type="button" class="btn-verify-modal-close" style="margin-top:4px;" onclick="closeVerifySelfieModal()">Cancel</button>
+    </div>
+  </div>
+
+  <!-- ── CARD 3: Vehicle Details (driver only) ── -->
+  <div class="section-card driver-only">
+    <div class="section-header">
+      <div class="section-icon">
+        <svg viewBox="0 0 24 24"><rect x="1" y="3" width="15" height="13" rx="2"/><polygon points="16 8 20 8 23 11 23 16 16 16 16 8"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></svg>
+      </div>
+      <div class="section-header-text">
+        <h3>Your Vehicles</h3>
+        <p>Add all vehicles you drive</p>
+      </div>
+      <button type="button" class="add-vehicle-btn" onclick="addVehicle()">
+        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+        Add Vehicle
+      </button>
+    </div>
+    <div class="section-body">
+      <div class="vehicle-error-msg" id="vehicleError" {% if errors.vehicles %}style="display:flex"{% endif %}>
+        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+        <span id="vehicleErrorText">{% if errors.vehicles %}{{ errors.vehicles }}{% else %}Please fill in Make, Model, Year, Color and Plate for every vehicle before saving.{% endif %}</span>
+      </div>
+      <div id="vehicleList"></div>
+    </div>
+  </div>
+
+  <!-- ── SAVE FOOTER ── -->
+  <div class="save-footer">
+    <div class="save-note">
+      <svg viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+      Your data is encrypted and stored securely
+    </div>
+    <div class="save-actions">
+      <button class="btn-cancel" type="button">Cancel</button>
+      <button class="btn-save" type="submit">
+        <svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>
+        Save Profile
+      </button>
+    </div>
+  </div>
+
+  </form>
+
+  <!-- ── DANGER ZONE ── -->
+  <div class="section-card danger-zone-card">
+    <div class="section-header">
+      <div class="section-icon">
+        <svg viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+      </div>
+      <div class="section-header-text">
+        <h3>Danger Zone</h3>
+        <p>Irreversible account actions</p>
+      </div>
+    </div>
+    <div class="section-body">
+      <div class="danger-zone-row">
+        <div>
+          <h4>Deactivate Account</h4>
+          <p>We'll email a confirmation link first — nothing happens until you click it. Once confirmed, you'll be signed out immediately and won't be able to log back in until support reactivates your account. If your account isn't reactivated, your personal data — profile info, ride history, search logs, verification records, and chat messages — will be deleted or anonymized within 45 days, per our <a href="{% url 'privacy-policy' %}" target="_blank" rel="noopener">Privacy Policy</a>.</p>
+        </div>
+        <button type="button" class="btn-danger" onclick="openDeactivateModal()">Deactivate Account</button>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+{{ vehicles|json_script:"vehicles-data" }}
+
+<script>
+  /* ── VEHICLE MAKE → MODEL CASCADING DATA ── */
+  const vehicleModels = {
+    "Acura":         ["ILX","TLX","RLX","RDX","MDX","NSX","Integra","ZDX"],
+    "Alfa Romeo":    ["Giulia","Stelvio","Tonale"],
+    "Audi":          ["A3","A4","A5","A6","A7","A8","Q3","Q5","Q7","Q8","TT","R8","e-tron","e-tron GT","Q4 e-tron","Q6 e-tron","SQ5"],
+    "BMW":           ["2 Series","3 Series","4 Series","5 Series","7 Series","X1","X2","X3","X5","X6","X7","M3","M5","iX","iX1","iX2","i4","i5","i7"],
+    "Buick":         ["Encore","Encore GX","Envision","Enclave","LaCrosse"],
+    "Cadillac":      ["CT4","CT5","XT4","XT5","XT6","Escalade","Lyriq","Optiq","Vistiq","Celestiq"],
+    "Chevrolet":     ["Silverado","Silverado EV","Equinox","Equinox EV","Traverse","Malibu","Blazer","Blazer EV","Trax","Trailblazer","Tahoe","Suburban","Colorado","Camaro","Corvette","Bolt EV","Bolt EUV"],
+    "Chrysler":      ["Pacifica","Voyager","Grand Caravan","300"],
+    "Dodge":         ["Challenger","Charger","Durango","Hornet"],
+    "Ford":          ["F-150","F-150 Lightning","F-250","Escape","Explorer","Edge","Mustang","Bronco","Bronco Sport","Maverick","Expedition","Ranger","Mustang Mach-E","E-Transit","Transit Connect"],
+    "Genesis":       ["G70","G80","G90","GV70","GV80","GV60","Electrified G80","Electrified GV70"],
+    "GMC":           ["Sierra 1500","Sierra 2500","Terrain","Acadia","Yukon","Yukon XL","Canyon","Envoy","Envision","Hummer EV"],
+    "Honda":         ["Civic","Accord","CR-V","Pilot","HR-V","Odyssey","Passport","Ridgeline","Fit","Insight","ZR-V","Prologue"],
+    "Hyundai":       ["Elantra","Sonata","Tucson","Santa Fe","Kona","Palisade","Venue","IONIQ 5","IONIQ 6","IONIQ 9","Nexo","Santa Cruz"],
+    "Infiniti":      ["Q50","Q60","QX50","QX55","QX60","QX80"],
+    "Jaguar":        ["F-PACE","E-PACE","I-PACE","XF","XE","F-TYPE"],
+    "Jeep":          ["Wrangler","Grand Cherokee","Cherokee","Compass","Renegade","Gladiator","Grand Wagoneer","Wagoneer","Avenger"],
+    "Kia":           ["K4","Forte","K5","Sportage","Sorento","Telluride","Soul","Seltos","Stinger","EV6","EV9","Niro","Carnival"],
+    "Land Rover":    ["Defender","Discovery","Discovery Sport","Range Rover","Range Rover Sport","Range Rover Evoque","Range Rover Velar"],
+    "Lexus":         ["IS","ES","GS","LS","UX","NX","RX","GX","LX","LC","RC","RZ"],
+    "Lincoln":       ["Corsair","Nautilus","Aviator","Navigator","Continental"],
+    "Lucid":         ["Air","Gravity"],
+    "Mazda":         ["Mazda3","Mazda6","CX-3","CX-30","CX-5","CX-50","CX-60","CX-90","MX-5 Miata","MX-30"],
+    "Mercedes-Benz": ["C-Class","E-Class","S-Class","G-Class","GLA","GLB","GLC","GLE","GLS","A-Class","CLA","EQB","EQG","EQS","EQE","AMG GT"],
+    "Mini":          ["Cooper","Cooper SE","Countryman","Countryman SE","Convertible","John Cooper Works"],
+    "Mitsubishi":    ["Outlander","Eclipse Cross","RVR","Mirage","Outlander PHEV"],
+    "Nissan":        ["Altima","Sentra","Maxima","Rogue","Murano","Pathfinder","Armada","Frontier","Titan","Kicks","Versa","LEAF","Ariya","Qashqai","Z"],
+    "Polestar":      ["Polestar 2","Polestar 3","Polestar 4"],
+    "Porsche":       ["911","Cayenne","Macan","Panamera","Taycan","718 Boxster","718 Cayman"],
+    "Ram":           ["1500","2500","3500","ProMaster","ProMaster City","TRX"],
+    "Rivian":        ["R1T","R1S"],
+    "Subaru":        ["Impreza","Legacy","Outback","Forester","Crosstrek","Ascent","WRX","BRZ","Solterra","Uncharted"],
+    "Tesla":         ["Model 3","Model Y","Model S","Model X","Cybertruck"],
+    "Toyota":        ["Camry","Corolla","RAV4","Highlander","Grand Highlander","Prius","Venza","4Runner","Tundra","Tacoma","Sienna","Sequoia","Yaris","C-HR","bZ4X","Crown","Land Cruiser"],
+    "VinFast":       ["VF 8","VF 9"],
+    "Volkswagen":    ["Golf","Jetta","Passat","Tiguan","Atlas","Atlas Cross Sport","Taos","ID.4","Arteon","GTI","Golf R"],
+    "Volvo":         ["S60","S90","V60","V90","XC40","XC60","XC90","EX30","EX90","C40 Recharge"],
+  };
+
+  /* ── VEHICLE ROW HELPERS ── */
+  const _vehicleColors = ['White','Black','Silver','Gray','Charcoal','Space Gray','Gunmetal','Red','Bright Red','Burgundy','Maroon','Blue','Navy Blue','Midnight Blue','Sky Blue','Green','Forest Green','Teal','Brown','Bronze','Beige','Cream','Champagne','Gold','Orange','Yellow','Purple','Pearl White','Rose Gold','Slate'];
+
+  function _makeOpts(placeholder, items) {
+    let h = `<option value="">${placeholder}</option>`;
+    items.forEach(v => { h += `<option>${v}</option>`; });
+    return h;
+  }
+
+  function populateRowModels(makeSelect) {
+    const make = makeSelect.value;
+    const row = makeSelect.closest('.vehicle-row');
+    const modelWrap  = row.querySelector('.vehicle-model-wrap');
+    const modelSelect = row.querySelector('.vehicle-model-select');
+    const customMake  = row.querySelector('.vehicle-custom-make');
+    const customModel = row.querySelector('.vehicle-custom-model');
+
+    if (make === 'other') {
+      customMake.style.display = '';
+      customMake.name = 'vehicle_make';
+      makeSelect.removeAttribute('name');
+      modelWrap.style.display = 'none';
+      modelSelect.removeAttribute('name');
+      customModel.style.display = '';
+      customModel.name = 'vehicle_model';
+    } else {
+      customMake.style.display = 'none';
+      customMake.removeAttribute('name');
+      makeSelect.name = 'vehicle_make';
+      modelWrap.style.display = '';
+      modelSelect.name = 'vehicle_model';
+      customModel.style.display = 'none';
+      customModel.removeAttribute('name');
+      customModel.value = '';
+      const models = vehicleModels[make] || [];
+      if (models.length) {
+        let h = '<option value="">— Model —</option>';
+        models.forEach(v => { h += `<option>${v}</option>`; });
+        h += '<option value="other">Other (not listed)…</option>';
+        modelSelect.innerHTML = h;
+      } else {
+        modelSelect.innerHTML = '<option value="">— Select Make First —</option>';
+      }
+    }
+    updateProgress();
+  }
+
+  function toggleModelOther(modelSelect) {
+    const row = modelSelect.closest('.vehicle-row');
+    const customModel = row.querySelector('.vehicle-custom-model');
+    if (modelSelect.value === 'other') {
+      customModel.style.display = '';
+      customModel.name = 'vehicle_model';
+      modelSelect.removeAttribute('name');
+    } else {
+      customModel.style.display = 'none';
+      customModel.removeAttribute('name');
+      modelSelect.name = 'vehicle_model';
+    }
+    updateProgress();
+  }
+
+  function getCookie(name) {
+      let cookieValue = null;
+      if (document.cookie && document.cookie !== '') {
+        const cookies = document.cookie.split(';');
+        for (let i = 0; i < cookies.length; i++) {
+          const cookie = cookies[i].trim();
+          if (cookie.substring(0, name.length + 1) === (name + '=')) {
+            cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+            break;
+          }
+        }
+      }
+      return cookieValue;
+    }
+
+
+
+  function createVehicleRow(data) {
+    const carSvg = `<svg viewBox="0 0 24 24"><rect x="1" y="3" width="15" height="13" rx="2"/><polygon points="16 8 20 8 23 11 23 16 16 16 16 8"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></svg>`;
+    const calSvg = `<svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>`;
+    const colSvg = `<svg viewBox="0 0 24 24"><circle cx="13.5" cy="6.5" r=".5" fill="currentColor"/><circle cx="17.5" cy="10.5" r=".5" fill="currentColor"/><circle cx="8.5" cy="7.5" r=".5" fill="currentColor"/><circle cx="6.5" cy="12.5" r=".5" fill="currentColor"/><path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10c.926 0 1.648-.746 1.648-1.688 0-.437-.18-.835-.437-1.125-.29-.289-.438-.652-.438-1.125a1.64 1.64 0 0 1 1.668-1.668h1.996c3.051 0 5.555-2.503 5.555-5.554C21.965 6.012 17.461 2 12 2z"/></svg>`;
+    const plateSvg = `<svg viewBox="0 0 24 24"><rect x="2" y="7" width="20" height="10" rx="2"/><line x1="7" y1="12" x2="7.01" y2="12"/><line x1="12" y1="12" x2="17" y2="12"/></svg>`;
+
+    let yearOpts = '<option value="">— Year —</option>';
+    for (let y = new Date().getFullYear(); y >= 1990; y--) yearOpts += `<option>${y}</option>`;
+
+    const uploadSvg = `<svg viewBox="0 0 24 24"><polyline points="16 16 12 12 8 16"/><line x1="12" y1="12" x2="12" y2="21"/><path d="M20.39 18.39A5 5 0 0 0 18 9h-1.26A8 8 0 1 0 3 16.3"/></svg>`;
+    const editSvg   = `<svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>`;
+    const trashSvg  = `<svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg>`;
+
+    const row = document.createElement('div');
+    row.className = 'vehicle-row';
+    row.innerHTML = `
+      <div class="vehicle-row-header">
+        <div class="vehicle-verified-badge"></div>
+        <button type="button" class="remove-vehicle-btn" onclick="removeVehicle(this)" title="Remove vehicle">×</button>
+      </div>
+      <div class="vehicle-row-fields">
+        <input type="hidden" name="vehicle_id" value="">
+        <div class="vehicle-row-top">
+          <div class="form-group">
+            <label class="form-label">Make</label>
+            <div class="input-wrap">
+              <span class="input-icon">${carSvg}</span>
+              <select class="form-select vehicle-make-select" name="vehicle_make" onchange="populateRowModels(this)">
+                ${_makeOpts('— Make —', Object.keys(vehicleModels))}
+                <option value="other">Other (not listed)…</option>
+              </select>
+            </div>
+            <input type="text" class="form-input vehicle-custom-make" placeholder="Enter make (e.g. BYD, Rivian)" style="display:none;margin-top:8px;" oninput="updateProgress()">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Model</label>
+            <div class="input-wrap vehicle-model-wrap">
+              <span class="input-icon">${carSvg}</span>
+              <select class="form-select vehicle-model-select" name="vehicle_model" onchange="toggleModelOther(this)">
+                <option value="">— Select Make First —</option>
+              </select>
+            </div>
+            <input type="text" class="form-input vehicle-custom-model" placeholder="Enter model (e.g. Cybertruck)" style="display:none;margin-top:8px;" oninput="updateProgress()">
+          </div>
+        </div>
+        <div class="vehicle-row-bottom">
+          <div class="form-group">
+            <label class="form-label">Year</label>
+            <div class="input-wrap">
+              <span class="input-icon">${calSvg}</span>
+              <select class="form-select" name="vehicle_year" onchange="updateProgress()">${yearOpts}</select>
+            </div>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Color</label>
+            <div class="input-wrap">
+              <span class="input-icon">${colSvg}</span>
+              <select class="form-select" name="vehicle_color" onchange="updateProgress()">
+                ${_makeOpts('— Color —', _vehicleColors)}
+              </select>
+            </div>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Plate</label>
+            <div class="input-wrap">
+              <span class="input-icon">${plateSvg}</span>
+              <input type="text" class="form-input" name="vehicle_plate" placeholder="e.g. DL01AB1234" oninput="updateProgress()">
+            </div>
+          </div>
+        </div>
+        <div class="vehicle-row-photo">
+          <label class="form-label">
+            Vehicle Photo
+            <span class="plate-note">
+              <svg viewBox="0 0 24 24" width="10" height="10" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+              Number plate must be clearly visible
+            </span>
+          </label>
+          <div class="vehicle-img-zone" onclick="if(!this.classList.contains('has-img')) this.querySelector('.vehicle-img-file').click()">
+            <div class="vehicle-img-prompt">
+              <div class="vehicle-img-prompt-icon">${uploadSvg}</div>
+              <h5 class="vehicle-img-prompt-title">Upload a photo of your vehicle</h5>
+              <p class="vehicle-img-prompt-desc">Take a clear, well-lit photo from the rear or front-three-quarter angle. Make sure the <strong>number plate is legible</strong> — this helps us verify your vehicle and builds trust with passengers.</p>
+              <div class="vehicle-img-prompt-cta">
+                <strong>Click to upload</strong> or drag &amp; drop
+              </div>
+              <div class="vehicle-img-prompt-hint">JPG, PNG · Max 5 MB</div>
+            </div>
+            <div class="vehicle-img-preview-wrap">
+              <img class="vehicle-img-preview" alt="Vehicle photo">
+              <div class="vehicle-img-overlay">
+                <button type="button" class="vehicle-img-btn" onclick="event.stopPropagation(); this.closest('.vehicle-img-zone').querySelector('.vehicle-img-file').click()">${editSvg} Replace</button>
+                <button type="button" class="vehicle-img-btn" onclick="event.stopPropagation(); removeVehicleImgInRow(this)">${trashSvg} Remove</button>
+              </div>
+            </div>
+            <input type="file" class="vehicle-img-file" name="vehicle_image_file" accept="image/*" style="display:none" onchange="handleVehicleImgInRow(this)">
+          </div>
+        </div>
+      </div>
+    `;
+    if (data) {
+      const makeSelect = row.querySelector('.vehicle-make-select');
+      if (data.make && !vehicleModels[data.make]) {
+        makeSelect.value = 'other';
+        populateRowModels(makeSelect);
+        row.querySelector('.vehicle-custom-make').value = data.make;
+        row.querySelector('.vehicle-custom-model').value = data.model || '';
+      } else {
+        makeSelect.value = data.make || '';
+        populateRowModels(makeSelect);
+        const modelSelect = row.querySelector('.vehicle-model-select');
+        const knownModel = Array.from(modelSelect.options).some(o => o.value === data.model && o.value !== '');
+        if (data.model && !knownModel) {
+          modelSelect.value = 'other';
+          toggleModelOther(modelSelect);
+          row.querySelector('.vehicle-custom-model').value = data.model;
+        } else {
+          modelSelect.value = data.model || '';
+        }
+      }
+      row.querySelector('[name="vehicle_id"]').value = data.id || '';
+      row.querySelector('[name="vehicle_year"]').value = data.year || '';
+      row.querySelector('[name="vehicle_color"]').value = data.color || '';
+      row.querySelector('[name="vehicle_plate"]').value = data.plate || '';
+      const badge = row.querySelector('.vehicle-verified-badge');
+      if (data.vehicle_verified) {
+        badge.textContent = '✓ Verified';
+        badge.classList.add('verified');
+      } else {
+        badge.textContent = 'Not Verified';
+        badge.classList.add('unverified');
+      }
+      badge.style.display = 'inline-flex';
+      if (data.photo_url) {
+        const zone = row.querySelector('.vehicle-img-zone');
+        zone.querySelector('.vehicle-img-preview').src = data.photo_url;
+        zone.classList.add('has-img');
+      }
+    }
+    /* per-row drag-and-drop */
+    const zone = row.querySelector('.vehicle-img-zone');
+    zone.addEventListener('dragover', e => { e.preventDefault(); zone.classList.add('dragover'); });
+    zone.addEventListener('dragleave', () => zone.classList.remove('dragover'));
+    zone.addEventListener('drop', e => {
+      e.preventDefault();
+      zone.classList.remove('dragover');
+      const file = e.dataTransfer.files[0];
+      if (file && file.type.startsWith('image/')) {
+        const dt = new DataTransfer();
+        dt.items.add(file);
+        zone.querySelector('.vehicle-img-file').files = dt.files;
+        handleVehicleImgInRow(zone.querySelector('.vehicle-img-file'));
+      }
+    });
+    return row;
+  }
+
+  function addVehicle(data) {
+    document.getElementById('vehicleList').appendChild(createVehicleRow(data));
+    _syncRemoveBtns();
+    updateProgress();
+  }
+
+  let _pendingDeleteRow = null;
+
+  function removeVehicle(btn) {
+    _pendingDeleteRow = btn.closest('.vehicle-row');
+    document.getElementById('vehicleDeleteModal').classList.add('show');
+  }
+
+  function closeVehicleDeleteModal() {
+    _pendingDeleteRow = null;
+    document.getElementById('vehicleDeleteModal').classList.remove('show');
+  }
+
+  function confirmVehicleDelete() {
+    if (_pendingDeleteRow) {
+      _pendingDeleteRow.remove();
+      _pendingDeleteRow = null;
+      _syncRemoveBtns();
+      updateProgress();
+    }
+    document.getElementById('vehicleDeleteModal').classList.remove('show');
+  }
+
+  function validateVehicles() {
+    if (document.getElementById('roleSelect').value !== 'driver') return true;
+    const required = ['[name="vehicle_make"]','[name="vehicle_model"]', '[name="vehicle_year"]', '[name="vehicle_color"]', '[name="vehicle_plate"]'];
+    let valid = true;
+    let errorMsg = 'Please fill in Make, Model, Year, Color and Plate for every vehicle before saving.';
+
+    document.querySelectorAll('#vehicleList .vehicle-row').forEach(row => {
+      required.forEach(sel => {
+        const f = row.querySelector(sel);
+        if (f && !f.value) { f.classList.add('vehicle-field-error'); valid = false; }
+        else if (f) { f.classList.remove('vehicle-field-error'); }
+      });
+    });
+
+    // Check for duplicate plates within the form
+    const seenPlates = {};
+    document.querySelectorAll('#vehicleList .vehicle-row').forEach(row => {
+      const f = row.querySelector('[name="vehicle_plate"]');
+      if (f && f.value.trim()) {
+        const key = f.value.trim().toUpperCase();
+        if (seenPlates[key]) {
+          seenPlates[key].classList.add('vehicle-field-error');
+          f.classList.add('vehicle-field-error');
+          errorMsg = 'Duplicate plate numbers are not allowed.';
+          valid = false;
+        } else {
+          seenPlates[key] = f;
+        }
+      }
+    });
+
+    document.getElementById('vehicleErrorText').textContent = errorMsg;
+    return valid;
+  }
+
+  function _syncRemoveBtns() {
+    const rows = document.querySelectorAll('#vehicleList .vehicle-row');
+    rows.forEach(r => {
+      r.querySelector('.remove-vehicle-btn').disabled = rows.length === 1;
+    });
+  }
+
+  /* ── PASSWORD TOGGLE ── */
+  function togglePass() {
+    const input = document.getElementById('passInput');
+    const icon  = document.getElementById('eyeIcon');
+    const hiding = input.type === 'text';
+    input.type  = hiding ? 'password' : 'text';
+    input.value = hiding ? '••••••••' : 'Use “Change” to update password';
+    icon.innerHTML = hiding
+      ? '<path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>'
+      : '<path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/>';
+  }
+
+  /* ── FILE UPLOAD ── */
+  function handleUpload(input) {
+    if (input.files && input.files[0]) {
+      const file = input.files[0];
+      const reader = new FileReader();
+      reader.onload = e => {
+        const img = document.getElementById('licensePreview');
+        img.src = e.target.result;
+        img.style.display = 'block';
+        document.querySelector('.avatar-placeholder').style.display = 'none';
+        document.getElementById('avatarRing').classList.add('has-img');
+        const drop = document.getElementById('dropZone');
+        drop.classList.add('has-file');
+        document.getElementById('uploadFileName').textContent = file.name.length > 18 ? file.name.substring(0,15)+'...' : file.name;
+        document.getElementById('uploadSuccess').style.display = 'flex';
+      };
+      reader.readAsDataURL(file);
+    }
+  }
+
+  /* ── DRAG & DROP ── */
+  const dropZone = document.getElementById('dropZone');
+  dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('dragover'); });
+  dropZone.addEventListener('dragleave', () => dropZone.classList.remove('dragover'));
+  dropZone.addEventListener('drop', e => {
+    e.preventDefault();
+    dropZone.classList.remove('dragover');
+    const file = e.dataTransfer.files[0];
+    if (file && file.type.startsWith('image/')) {
+      const dt = new DataTransfer();
+      dt.items.add(file);
+      document.getElementById('licenseFile').files = dt.files;
+      handleUpload(document.getElementById('licenseFile'));
+    }
+  });
+
+  /* ── SELFIE / PROFILE PHOTO UPLOAD ── */
+  function handleSelfieUpload(input) {
+    if (!input.files || !input.files[0]) return;
+    const file = input.files[0];
+    /* createObjectURL: browser displays natively — no JS heap decode, no base64, no canvas */
+    const previewImg = document.getElementById('selfiePreview');
+    if (previewImg._blobUrl) URL.revokeObjectURL(previewImg._blobUrl);
+    previewImg._blobUrl = URL.createObjectURL(file);
+    previewImg.src = previewImg._blobUrl;
+    previewImg.style.display = 'block';
+    document.getElementById('selfiePlaceholder').style.display = 'none';
+    document.getElementById('selfiePreviewWrap').classList.add('has-img');
+    document.getElementById('selfieBtnLabel').textContent = 'Change Selfie';
+    updateProgress();
+  }
+
+  /* ── VEHICLE IMAGE UPLOAD (per-row) ── */
+  function handleVehicleImgInRow(input) {
+    if (!input.files || !input.files[0]) return;
+    const file = input.files[0];
+    const zone = input.closest('.vehicle-img-zone');
+    const previewImg = zone.querySelector('.vehicle-img-preview');
+    if (previewImg._blobUrl) URL.revokeObjectURL(previewImg._blobUrl);
+    previewImg._blobUrl = URL.createObjectURL(file);
+    previewImg.src = previewImg._blobUrl;
+    zone.classList.add('has-img');
+    updateProgress();
+  }
+  function removeVehicleImgInRow(btn) {
+    const zone = btn.closest('.vehicle-img-zone');
+    zone.querySelector('.vehicle-img-file').value = '';
+    zone.querySelector('.vehicle-img-preview').src = '';
+    zone.classList.remove('has-img');
+    updateProgress();
+  }
+
+  /* ── PROGRESS BAR ── */
+  function updateProgress() {
+    const allFields = document.querySelectorAll('.form-input, .form-select');
+    const fields = Array.from(allFields).filter(f => !f.closest('.modal') && !f.closest('.modal-backdrop'));
+    let filled = 0;
+    fields.forEach(f => {
+      // Skip hidden driver-only fields when user is a rider
+      if (document.body.classList.contains('role-rider') && f.closest('.driver-only')) return;
+      if (f.value && f.value.trim() !== '') filled++;
+    });
+    const total = fields.filter(f =>
+      !(document.body.classList.contains('role-rider') && f.closest('.driver-only'))
+    ).length;
+    const pct = total ? Math.round((filled / total) * 100) : 0;
+    document.getElementById('progressFill').style.width = pct + '%';
+    document.getElementById('progressPct').textContent = pct + '% Complete';
+  }
+
+  /* ── MM-DD-YYYY date input formatter ── */
+  function autoDateFmt(display, hiddenId) {
+    let raw = display.value.replace(/\D/g, '').substring(0, 8);
+    if (raw.length > 4)      display.value = raw.slice(0,2) + '-' + raw.slice(2,4) + '-' + raw.slice(4);
+    else if (raw.length > 2) display.value = raw.slice(0,2) + '-' + raw.slice(2);
+    else                     display.value = raw;
+    const h = document.getElementById(hiddenId);
+    h.value = raw.length === 8
+      ? raw.slice(4,8) + '-' + raw.slice(0,2) + '-' + raw.slice(2,4)
+      : '';
+  }
+
+  /* ── Open the native calendar picker when the text field itself is clicked ── */
+  function openDatePicker(id) {
+    const el = document.getElementById(id);
+    if (el && el.showPicker) {
+      try { el.showPicker(); } catch (e) {}
+    }
+  }
+
+  /* ── Sync native date-picker selection into the display + hidden inputs ── */
+  function pickNativeDate(native, displayId, hiddenId) {
+    if (!native.value) return;
+    const [y, m, d] = native.value.split('-');
+    document.getElementById(displayId).value = `${m}-${d}-${y}`;
+    const hidden = document.getElementById(hiddenId);
+    hidden.value = native.value;
+    hidden.dispatchEvent(new Event('change'));
+  }
+
+  /* ── DOB → AGE ── */
+  function updateAge() {
+    const dob = document.getElementById('dobInput').value;
+    const pill = document.getElementById('agePill');
+    if (!dob) { pill.style.display = 'none'; return; }
+    const birth = new Date(dob);
+    const today = new Date();
+    let age = today.getFullYear() - birth.getFullYear();
+    const m = today.getMonth() - birth.getMonth();
+    if (m < 0 || (m === 0 && today.getDate() < birth.getDate())) age--;
+    if (age < 0) age = 0;
+    pill.textContent = age + ' yrs';
+    pill.style.display = 'inline-block';
+  }
+
+  /* ── BIO CHARACTER COUNTER ── */
+  function updateBioCount() {
+    const bio = document.getElementById('bioInput');
+    const count = document.getElementById('bioCount');
+    count.textContent = bio.value.length;
+    count.parentElement.classList.toggle('over', bio.value.length > 280);
+  }
+
+  /* ── ROLE TOGGLE — show/hide driver sections ── */
+  function toggleDriverSections() {
+    const role = document.getElementById('roleSelect').value;
+    document.body.classList.toggle('role-rider', role === 'rider');
+    document.body.classList.toggle('role-driver', role === 'driver');
+    updateProgress();
+  }
+
+  /* ── EMAIL CHANGE MODAL ── */
+  function openEmailModal() {
+    document.getElementById('emailModal').classList.add('show');
+  }
+  function closeEmailModal() {
+    document.getElementById('emailModal').classList.remove('show');
+  }
+  function submitEmailChange() {
+    const newEmail = document.getElementById('newEmailInput').value.trim();
+    const pwd      = document.getElementById('emailModalPwd').value;
+    if (!newEmail || !pwd) {
+      alert('Please enter both your new email and current password.');
+      return;
+    }
+    const csrf = document.querySelector('[name=csrfmiddlewaretoken]').value;
+    const body = new URLSearchParams({ new_email: newEmail, password: pwd });
+
+    fetch("{% url 'change-email' %}", {
+      method:  'POST',
+      headers: { 'X-CSRFToken': csrf },
+      body:    body,
+    })
+    .then(r => r.json())
+    .then(data => {
+      if (data.error) {
+        alert(data.error);
+      } else {
+        closeEmailModal();
+        alert(data.message);
+      }
+    })
+    .catch(() => alert('Failed to send verification email. Please try again.'));
+  }
+
+  /* ── PASSWORD CHANGE MODAL ── */
+  function openPasswordModal() {
+    document.getElementById('passwordModal').classList.add('show');
+  }
+  function closePasswordModal() {
+    document.getElementById('passwordModal').classList.remove('show');
+  }
+  function submitPasswordChange() {
+    const cur = document.getElementById('curPwd').value;
+    const nw  = document.getElementById('newPwd').value;
+    const cf  = document.getElementById('confirmPwd').value;
+    if (!cur || !nw || !cf) {
+      alert('Please fill in all three fields.');
+      return;
+    }
+    if (nw !== cf) {
+      alert('New password and confirm password do not match.');
+      return;
+    }
+    if (nw.length < 8) {
+      alert('Password must be at least 8 characters long.');
+      return;
+    }
+
+    const csrf = document.querySelector('[name=csrfmiddlewaretoken]').value;
+    const body = new URLSearchParams({
+      current_password:  cur,
+      new_password:      nw,
+      confirm_password:  cf,
+    });
+
+    fetch("{% url 'change-password' %}", {
+      method:  'POST',
+      headers: { 'X-CSRFToken': csrf },
+      body:    body,
+    })
+    .then(r => r.json())
+    .then(data => {
+      if (data.ok) {
+        closePasswordModal();
+        document.getElementById('curPwd').value = '';
+        document.getElementById('newPwd').value  = '';
+        document.getElementById('confirmPwd').value = '';
+        saveProfile();
+      } else {
+        alert(data.error || 'Could not update password.');
+      }
+    })
+    .catch(() => alert('Network error — please try again.'));
+  }
+
+  /* ── DEACTIVATE ACCOUNT MODAL ── */
+  function openDeactivateModal() {
+    document.getElementById('deactivateModal').classList.add('show');
+  }
+  function closeDeactivateModal() {
+    document.getElementById('deactivateModal').classList.remove('show');
+  }
+  function submitDeactivateAccount() {
+    const btn = document.getElementById('deactivateConfirmBtn');
+    btn.disabled = true;
+    btn.textContent = 'Sending…';
+
+    fetch("{% url 'request-deactivate-account' %}", {
+      method:  'POST',
+      headers: { 'X-CSRFToken': getCsrfToken() },
+    })
+    .then(r => r.json())
+    .then(data => {
+      btn.disabled = false;
+      btn.textContent = 'Send Confirmation Link';
+      if (data.error) {
+        alert(data.error);
+      } else {
+        closeDeactivateModal();
+        alert(data.message);
+      }
+    })
+    .catch(() => {
+      btn.disabled = false;
+      btn.textContent = 'Send Confirmation Link';
+      alert('Failed to send confirmation email. Please try again.');
+    });
+  }
+
+  /* ── SAVE TOAST ── */
+  function saveProfile() {
+    const toast = document.getElementById('toast');
+    toast.classList.add('show');
+    setTimeout(() => toast.classList.remove('show'), 3000);
+  }
+
+  /* ── DRIVER IDENTITY VERIFICATION ── */
+  // _camMode: 'profile' (default) or 'verify' (verification selfie step)
+  let _camMode = 'profile';
+  let _verifySelfieBlob = null;
+  let _verifyModalHiddenForCamera = false;
+
+  function runDriverVerification() {
+    // Open the selfie-capture step instead of going straight to the API.
+    _verifySelfieBlob = null;
+    document.getElementById('vsPreviewWrap').style.display  = 'none';
+    document.getElementById('vsCaptureBtns').style.display  = 'flex';
+    document.getElementById('vsActionBtns').style.display   = 'none';
+    const lbl = document.getElementById('vsVerifyBtnLabel');
+    if (lbl) lbl.textContent = 'Verify Identity';
+    const vBtn = document.getElementById('vsVerifyBtn');
+    if (vBtn) vBtn.disabled = false;
+    document.getElementById('verifySelfieModal').style.display = 'flex';
+  }
+
+  function closeVerifySelfieModal() {
+    document.getElementById('verifySelfieModal').style.display = 'none';
+    _verifySelfieBlob = null;
+    _camMode = 'profile';
+  }
+
+  function openCameraForVerify() {
+    _camMode = 'verify';
+    _verifyModalHiddenForCamera = true;
+    document.getElementById('verifySelfieModal').style.display = 'none';
+    openCameraModal();
+  }
+
+  function retakeVerifySelfie() {
+    const img = document.getElementById('vsPreview');
+    if (img._blobUrl) { URL.revokeObjectURL(img._blobUrl); img._blobUrl = null; }
+    _verifySelfieBlob = null;
+    document.getElementById('vsPreviewWrap').style.display = 'none';
+    document.getElementById('vsCaptureBtns').style.display = 'flex';
+    document.getElementById('vsActionBtns').style.display  = 'none';
+  }
+
+  function handleVerifyFileInput(input) {
+    if (!input.files || !input.files[0]) return;
+    _verifySelfieBlob = input.files[0];
+    showVerifySelfiePreview(URL.createObjectURL(_verifySelfieBlob));
+    input.value = '';
+  }
+
+  function showVerifySelfiePreview(blobUrl) {
+    const img = document.getElementById('vsPreview');
+    if (img._blobUrl) URL.revokeObjectURL(img._blobUrl);
+    img._blobUrl = blobUrl;
+    img.src = blobUrl;
+    document.getElementById('vsPreviewWrap').style.display  = 'block';
+    document.getElementById('vsCaptureBtns').style.display  = 'none';
+    document.getElementById('vsActionBtns').style.display   = 'flex';
+  }
+
+  function submitVerificationWithSelfie() {
+    if (!_verifySelfieBlob) return;
+
+    const vBtn = document.getElementById('vsVerifyBtn');
+    const lbl  = document.getElementById('vsVerifyBtnLabel');
+    vBtn.disabled = true;
+    lbl.textContent = 'Verifying…';
+
+    const fd = new FormData();
+    fd.append('selfie', _verifySelfieBlob, 'verify_selfie.jpg');
+
+    fetch('/profile/verify-driver/', {
+      method: 'POST',
+      headers: { 'X-CSRFToken': getCsrfToken() },
+      body: fd,
+    })
+    .then(r => r.json())
+    .then(data => {
+      closeVerifySelfieModal();
+      if (data.error) { showVerifyModal(false, 0, data.error); return; }
+
+      let failMsg = null;
+      if (!data.verified && data.decision && data.decision.details) {
+          failMsg = data.decision.details;
+      }
+
+      showVerifyModal(data.verified, data.similarity, failMsg);
+      if (data.verified) {
+        const badge = document.getElementById('verifyStatusBadge');
+        if (badge) {
+          badge.className = 'verify-badge verify-badge--ok';
+          badge.innerHTML = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg> Identity Verified · ' + data.similarity + '% match';
+        }
+        const mainBtn = document.getElementById('verifyIdentityBtn');
+        if (mainBtn) mainBtn.style.display = 'none';
+      }
+    })
+    .catch(() => {
+      vBtn.disabled = false;
+      lbl.textContent = 'Verify Identity';
+      showVerifyModal(false, 0, 'Could not reach the server. Please try again.');
+    });
+  }
+
+  function showVerifyModal(verified, score, errorMsg) {
+    const modal   = document.getElementById('verifyModal');
+    const content = document.getElementById('verifyModalContent');
+    modal.style.display = 'flex';
+
+    if (errorMsg) {
+      content.innerHTML = `
+        <div class="verify-modal-icon">⚠️</div>
+        <p class="verify-modal-title" style="color:#b91c1c">Verification Failed</p>
+        <p class="verify-modal-score" style="margin-top:10px;line-height:1.4;">${errorMsg}</p>`;
+      return;
+    }
+
+    if (verified) {
+      content.innerHTML = `
+        <div class="verify-modal-icon">✅</div>
+        <p class="verify-modal-title" style="color:#15803d">Identity Verified!</p>
+        <p class="verify-modal-score">Face match score: <strong>${score}%</strong></p>`;
+    } else {
+      content.innerHTML = `
+        <div class="verify-modal-icon">❌</div>
+        <p class="verify-modal-title" style="color:#b91c1c">Verification Failed</p>
+        <p class="verify-modal-score">Score: <strong>${score}%</strong> — face did not match the license photo.</p>`;
+    }
+  }
+
+  function closeVerifyModal() {
+    document.getElementById('verifyModal').style.display = 'none';
+  }
+
+  function getCsrfToken() {
+    const el = document.querySelector('[name=csrfmiddlewaretoken]');
+    if (el) return el.value;
+    const match = document.cookie.match(/csrftoken=([^;]+)/);
+    return match ? match[1] : '';
+  }
+
+  /* ── SEND VERIFICATION EMAIL ── */
+  function VerifyEmail() {
+      console.log("Sending verification email...");
+      fetch("/profile/send-verification/", {
+          method: "POST",
+          headers: {
+              "X-CSRFToken": getCookie("csrftoken")
+          }
+      })
+      .then(res => {
+          if (!res.ok) {
+              throw new Error(`HTTP error! status: ${res.status}`);
+          }
+          return res.json();
+      })
+      .then(data => {
+          if (data.error) {
+              alert("Unable to send verification email. Please try again later or contact support if the issue persists.");
+          } else {
+              alert(data.message);
+          }
+      })
+      .catch(error => {
+          console.error("Error:", error);
+          alert("We are currently facing an issue sending the verification email. Please try again after some time.");
+      });
+  }
+
+
+
+  {% if selfie_url %}
+  document.getElementById('selfieBtnLabel').textContent = 'Change Selfie';
+  {% endif %}
+
+  {% if license_front_url %}
+  (function() {
+    const img = document.getElementById('licensePreview');
+    img.src = '{{ license_front_url }}';
+    img.style.display = 'block';
+    document.querySelector('.avatar-placeholder').style.display = 'none';
+    document.getElementById('avatarRing').classList.add('has-img');
+    document.getElementById('dropZone').classList.add('has-file');
+    document.getElementById('uploadSuccess').style.display = 'flex';
+    document.getElementById('uploadFileName').textContent = 'Current license';
+  })();
+  {% endif %}
+
+  const _savedVehicles = JSON.parse(document.getElementById('vehicles-data').textContent);
+  if (_savedVehicles.length) {
+    _savedVehicles.forEach(v => addVehicle(v));
+  } else {
+    addVehicle();
+  }
+  toggleDriverSections();
+  updateProgress();
+  updateBioCount();
+  updateAge();
+
+  document.getElementById('vehicleList').addEventListener('change', e => e.target.classList.remove('vehicle-field-error'));
+  document.getElementById('vehicleList').addEventListener('input', e => {
+    e.target.classList.remove('vehicle-field-error');
+    if (validateVehicles()) document.getElementById('vehicleError').style.display = 'none';
+  });
+  document.querySelector('form').addEventListener('submit', function(e) {
+    if (!validateVehicles()) {
+      e.preventDefault();
+      const err = document.getElementById('vehicleError');
+      err.style.display = 'flex';
+      err.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      return;
+    }
+    _formDirty = false;
+  });
+
+  /* ── WARN BEFORE LOSING UNSAVED CHANGES ──
+     Vehicle rows / profile fields only reach the DB when "Save Profile" is
+     submitted. Driver identity verification (verify-driver fetch) saves
+     immediately server-side, so changes inside #verifySelfieModal are excluded. */
+  let _formDirty = false;
+  const _profileForm = document.querySelector('form');
+  function _markFormDirty(e) {
+    if (e.target.closest('#verifySelfieModal')) return;
+    _formDirty = true;
+  }
+  _profileForm.addEventListener('input', _markFormDirty);
+  _profileForm.addEventListener('change', _markFormDirty);
+
+  window.addEventListener('beforeunload', function(e) {
+    if (!_formDirty) return;
+    e.preventDefault();
+    e.returnValue = '';
+  });
+
+  /* ── IN-BROWSER CAMERA (getUserMedia) ── */
+  let _camStream = null;
+
+  function _camFallbackClick() {
+    if (_camMode === 'verify') {
+      document.getElementById('verifySelfieFileInput').click();
+    } else {
+      document.getElementById('selfieCameraFile').click();
+    }
+  }
+
+  function openCameraModal() {
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      closeCameraModal();
+      _camFallbackClick();
+      _camMode = 'profile';
+      return;
+    }
+    const modal = document.getElementById('cameraModal');
+    const video = document.getElementById('cameraVideo');
+    const canvas = document.getElementById('cameraCanvas');
+    canvas.style.display = 'none';
+    video.style.display = 'block';
+    document.getElementById('cameraShutterBtn').style.display = '';
+    document.getElementById('cameraRetakeBtn').style.display = 'none';
+    document.getElementById('cameraUseBtn').style.display = 'none';
+    modal.classList.add('show');
+
+    navigator.mediaDevices.getUserMedia({
+      video: { facingMode: 'user', width: { ideal: 1200 }, height: { ideal: 1200 } },
+      audio: false
+    })
+    .then(stream => {
+      _camStream = stream;
+      video.srcObject = stream;
+    })
+    .catch(() => {
+      closeCameraModal();
+      _camFallbackClick();
+      _camMode = 'profile';
+    });
+  }
+
+  function _stopCamStream() {
+    if (_camStream) { _camStream.getTracks().forEach(t => t.stop()); _camStream = null; }
+  }
+
+  function closeCameraModal() {
+    _stopCamStream();
+    document.getElementById('cameraVideo').srcObject = null;
+    document.getElementById('cameraModal').classList.remove('show');
+    if (_verifyModalHiddenForCamera) {
+      document.getElementById('verifySelfieModal').style.display = 'flex';
+      _verifyModalHiddenForCamera = false;
+    }
+  }
+
+  function cameraCapture() {
+    const video  = document.getElementById('cameraVideo');
+    const canvas = document.getElementById('cameraCanvas');
+    canvas.width  = video.videoWidth  || 1200;
+    canvas.height = video.videoHeight || 900;
+    canvas.getContext('2d').drawImage(video, 0, 0);
+    _stopCamStream();
+    video.style.display = 'none';
+    canvas.style.display = 'block';
+    document.getElementById('cameraShutterBtn').style.display = 'none';
+    document.getElementById('cameraRetakeBtn').style.display = '';
+    document.getElementById('cameraUseBtn').style.display = '';
+  }
+
+  function cameraRetake() {
+    const video  = document.getElementById('cameraVideo');
+    const canvas = document.getElementById('cameraCanvas');
+    canvas.style.display = 'none';
+    video.style.display = 'block';
+    document.getElementById('cameraShutterBtn').style.display = '';
+    document.getElementById('cameraRetakeBtn').style.display = 'none';
+    document.getElementById('cameraUseBtn').style.display = 'none';
+    navigator.mediaDevices.getUserMedia({
+      video: { facingMode: 'user', width: { ideal: 1200 }, height: { ideal: 1200 } },
+      audio: false
+    })
+    .then(stream => { _camStream = stream; video.srcObject = stream; })
+    .catch(() => { closeCameraModal(); _camFallbackClick(); _camMode = 'profile'; });
+  }
+
+  function cameraUse() {
+    const canvas = document.getElementById('cameraCanvas');
+    canvas.toBlob(function(blob) {
+      if (!blob) { closeCameraModal(); return; }
+
+      if (_camMode === 'verify') {
+        // Verification selfie — don't touch the profile selfie field
+        _verifySelfieBlob = blob;
+        _camMode = 'profile';
+        closeCameraModal();
+        showVerifySelfiePreview(URL.createObjectURL(blob));
+        return;
+      }
+
+      // Profile selfie upload
+      const previewImg = document.getElementById('selfiePreview');
+      if (previewImg._blobUrl) URL.revokeObjectURL(previewImg._blobUrl);
+      previewImg._blobUrl = URL.createObjectURL(blob);
+      previewImg.src = previewImg._blobUrl;
+      previewImg.style.display = 'block';
+      document.getElementById('selfiePlaceholder').style.display = 'none';
+      document.getElementById('selfiePreviewWrap').classList.add('has-img');
+      document.getElementById('selfieBtnLabel').textContent = 'Change Selfie';
+      try {
+        const f = new File([blob], 'selfie.jpg', { type: 'image/jpeg' });
+        const dt = new DataTransfer();
+        dt.items.add(f);
+        document.getElementById('selfieFile').files = dt.files;
+      } catch (_) {}
+      closeCameraModal();
+      updateProgress();
+    }, 'image/jpeg', 0.90);
+  }
+
+  {% if messages %}
+  (function() {
+    let hasSuccess = false;
+    const errMsgs = [];
+    {% for message in messages %}
+    {% if 'success' in message.tags %}
+    hasSuccess = true;
+    {% elif 'error' in message.tags %}
+    errMsgs.push("{{ message|escapejs }}");
+    {% endif %}
+    {% endfor %}
+    if (hasSuccess) {
+      const _t = document.getElementById('toast');
+      _t.classList.add('show');
+      setTimeout(() => _t.classList.remove('show'), 3000);
+    }
+    if (errMsgs.length) {
+      const _te = document.getElementById('toast-error');
+      document.getElementById('toast-error-msg').textContent = errMsgs.join(' ');
+      _te.classList.add('show');
+      setTimeout(() => _te.classList.remove('show'), 4000);
+    }
+  })();
+  {% endif %}
+</script>
+
+<!-- ══════════════════════════════════
+     MODAL: Remove Vehicle
+     ══════════════════════════════════ -->
+<div class="modal-backdrop" id="vehicleDeleteModal" onclick="if(event.target===this) closeVehicleDeleteModal()">
+  <div class="modal">
+    <h3>Remove Vehicle?</h3>
+    <p class="modal-sub">This vehicle will be permanently deleted when you save your profile. This action cannot be undone.</p>
+    <div class="modal-actions">
+      <button class="btn-modal btn-modal-secondary" onclick="closeVehicleDeleteModal()">Keep it</button>
+      <button class="btn-modal" style="background:#dc2626;color:#fff;box-shadow:0 4px 14px rgba(220,38,38,0.25);" onclick="confirmVehicleDelete()">Yes, Remove</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════
+     MODAL: Change Email
+     ══════════════════════════════════ -->
+<div class="modal-backdrop" id="emailModal" onclick="if(event.target===this) closeEmailModal()">
+  <div class="modal">
+    <h3>Change Email Address</h3>
+    <p class="modal-sub">Enter your new email and your current password. We'll send a verification link to your new address before the change takes effect.</p>
+
+    <div class="form-group">
+      <label class="form-label">New Email Address</label>
+      <div class="input-wrap">
+        <span class="input-icon"><svg viewBox="0 0 24 24"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg></span>
+        <input type="email" class="form-input" id="newEmailInput" placeholder="new@example.com">
+      </div>
+    </div>
+
+    <div class="form-group mb-0">
+      <label class="form-label">Current Password</label>
+      <div class="input-wrap">
+        <span class="input-icon"><svg viewBox="0 0 24 24"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg></span>
+        <input type="password" class="form-input" id="emailModalPwd" placeholder="Your current password">
+      </div>
+    </div>
+
+    <div class="modal-actions">
+      <button class="btn-modal btn-modal-secondary" onclick="closeEmailModal()">Cancel</button>
+      <button class="btn-modal btn-modal-primary" onclick="submitEmailChange()">Send Verification</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════
+     MODAL: Change Password
+     ══════════════════════════════════ -->
+<div class="modal-backdrop" id="passwordModal" onclick="if(event.target===this) closePasswordModal()">
+  <div class="modal">
+    <h3>Change Password</h3>
+    <p class="modal-sub">Choose a new password — at least 8 characters with at least one number and one letter.</p>
+
+    <div class="form-group">
+      <label class="form-label">Current Password</label>
+      <div class="input-wrap">
+        <span class="input-icon"><svg viewBox="0 0 24 24"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg></span>
+        <input type="password" class="form-input" id="curPwd" placeholder="Current password">
+      </div>
+    </div>
+
+    <div class="form-group">
+      <label class="form-label">New Password</label>
+      <div class="input-wrap">
+        <span class="input-icon"><svg viewBox="0 0 24 24"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg></span>
+        <input type="password" class="form-input" id="newPwd" placeholder="New password (min 8 chars)">
+      </div>
+    </div>
+
+    <div class="form-group mb-0">
+      <label class="form-label">Confirm New Password</label>
+      <div class="input-wrap">
+        <span class="input-icon"><svg viewBox="0 0 24 24"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg></span>
+        <input type="password" class="form-input" id="confirmPwd" placeholder="Re-enter new password">
+      </div>
+    </div>
+
+    <div class="modal-actions">
+      <button class="btn-modal btn-modal-secondary" onclick="closePasswordModal()">Cancel</button>
+      <button class="btn-modal btn-modal-primary" onclick="submitPasswordChange()">Update Password</button>
+    </div>
+  </div>
+</div>
+<!-- ══════════════════════════════════
+     MODAL: Deactivate Account
+     ══════════════════════════════════ -->
+<div class="modal-backdrop" id="deactivateModal" onclick="if(event.target===this) closeDeactivateModal()">
+  <div class="modal">
+    <h3>Deactivate Account</h3>
+    <p class="modal-sub">We'll send a confirmation link to <strong>{{ email }}</strong>. Nothing happens until you click it — once you do, you'll be signed out and unable to log back in until support reactivates your account. Unless your account is reactivated, your personal data will be deleted or anonymized within 45 days of confirmation, in accordance with our <a href="{% url 'privacy-policy' %}" target="_blank" rel="noopener">Privacy Policy</a>.</p>
+
+    <div class="modal-actions">
+      <button class="btn-modal btn-modal-secondary" onclick="closeDeactivateModal()">Cancel</button>
+      <button class="btn-modal" id="deactivateConfirmBtn" style="background:#dc2626;color:#fff;box-shadow:0 4px 14px rgba(220,38,38,0.25);" onclick="submitDeactivateAccount()">Send Confirmation Link</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════
+     MODAL: In-browser Camera
+     ══════════════════════════════════ -->
+<div class="modal-backdrop" id="cameraModal" onclick="if(event.target===this) closeCameraModal()">
+  <div class="modal" style="max-width:520px; padding:0; overflow:hidden; border-radius:14px;">
+    <div class="camera-shell">
+      <video id="cameraVideo" playsinline autoplay muted></video>
+      <canvas id="cameraCanvas" style="display:none;"></canvas>
+    </div>
+    <div class="camera-footer">
+      <button class="btn-modal btn-modal-secondary" onclick="closeCameraModal()" style="flex:0 0 auto; min-width:88px;">Cancel</button>
+      <button class="camera-shutter" id="cameraShutterBtn" onclick="cameraCapture()" title="Take photo"></button>
+      <button class="btn-modal btn-modal-secondary" id="cameraRetakeBtn" onclick="cameraRetake()" style="display:none; flex:0 0 auto; min-width:88px;">Retake</button>
+      <button class="btn-modal btn-modal-primary" id="cameraUseBtn" onclick="cameraUse()" style="display:none; flex:0 0 auto; min-width:88px;">Use Photo</button>
+    </div>
+  </div>
+</div>
+
+{% include 'footer.html' %}
+</body>
+</html>

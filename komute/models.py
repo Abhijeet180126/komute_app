@@ -1,0 +1,697 @@
+import logging
+from datetime import date
+
+from django.conf import settings
+from django.contrib.auth.base_user import BaseUserManager
+from django.contrib.auth.models import AbstractUser
+from django.core.exceptions import ValidationError
+from django.core.validators import RegexValidator, MinValueValidator, MaxValueValidator
+from django.db import models
+from django.utils import timezone
+from encrypted_model_fields.fields import EncryptedMixin, EncryptedTextField
+
+logger = logging.getLogger(__name__)
+
+
+class EncryptedFloatField(EncryptedMixin, models.FloatField):
+    def to_python(self, value):
+        try:
+            return super().to_python(value)
+        except (ValidationError, ValueError, TypeError):
+            logger.error(
+                "EncryptedFloatField: failed to decrypt/parse stored value for "
+                "field %r; returning None. This can indicate a key-rotation "
+                "problem in FIELD_ENCRYPTION_KEY causing data loss.",
+                self.name,
+                exc_info=True,
+            )
+            return None
+
+
+phone_validator = RegexValidator(
+regex=r'^\+?[1-9]\d{1,14}$',
+message="Phone number must be in E.164 format."
+)
+
+
+class CustomUserManager(BaseUserManager):
+    # AbstractUser's default UserManager hard-codes `username` as the
+    # identifying field (create_superuser(self, username, email=None, ...)).
+    # CustomUser sets USERNAME_FIELD = "email" instead, so createsuperuser
+    # never passes `username` at all -- this manager fills it in from email,
+    # matching the username==email convention used everywhere else (e.g.
+    # signup_view).
+    def create_user(self, email, password=None, **extra_fields):
+        if not email:
+            raise ValueError("Users must have an email address.")
+        email = self.normalize_email(email)
+        extra_fields.setdefault("username", email)
+        user = self.model(email=email, **extra_fields)
+        user.set_password(password)
+        user.save(using=self._db)
+        return user
+
+    def create_superuser(self, email, password=None, **extra_fields):
+        extra_fields.setdefault("is_staff", True)
+        extra_fields.setdefault("is_superuser", True)
+        return self.create_user(email, password, **extra_fields)
+
+
+class CustomUser(AbstractUser):
+    # Remove default username fields
+    # username = None
+    first_name = None
+    last_name = None
+
+    ROLE_CHOICES = (
+        ("rider", "Rider"),
+        ("driver", "Driver"),
+        ("admin", "Admin"),
+    )
+
+    GENDER_CHOICES = (
+        ("male", "Male"),
+        ("female", "Female"),
+        ("other", "Other"),
+    )
+
+    # Core fields
+    full_name = models.TextField()
+
+    email = models.EmailField(
+        unique=True
+    )
+
+    email_verified = models.BooleanField(
+        default=False
+    )
+
+    pending_email = models.EmailField(
+        null=True,
+        blank=True
+    )
+
+    phone = models.CharField(
+    max_length=16,
+    validators=[phone_validator],
+    null=True,
+    blank=True
+    )
+    phone_verified = models.BooleanField(
+        default=False
+    )
+
+    # OAuth
+    oauth_provider = models.TextField(
+        null=True,
+        blank=True
+    )
+
+    oauth_subject = models.TextField(
+        null=True,
+        blank=True
+    )
+
+    # Role
+    role = models.TextField(
+        choices=ROLE_CHOICES,
+        default="rider"
+    )
+
+    # Profile
+    dob = models.DateField(null=True)
+
+    gender = models.TextField(
+        choices=GENDER_CHOICES,
+        null=True,
+        blank=True
+    )
+
+    bio = models.TextField(
+        null=True,
+        blank=True
+    )
+
+    avatar_url = models.TextField(
+        null=True,
+        blank=True
+    )
+
+    # Driver verification
+    driver_verified = models.BooleanField(
+        default=False
+    )
+
+    license_number = models.TextField(
+        null=True,
+        blank=True
+    )
+
+    license_province = models.TextField(
+        null=True,
+        blank=True
+    )
+
+    license_expiry = models.DateField(
+        null=True,
+        blank=True
+    )
+
+    license_front_url = models.TextField(
+        null=True,
+        blank=True
+    )
+
+    license_back_url = models.TextField(
+        null=True,
+        blank=True
+    )
+
+    selfie_url = models.TextField(
+        null=True,
+        blank=True
+    )
+
+    face_match_score = EncryptedFloatField(
+        null=True,
+        blank=True
+    )
+
+    # Stats
+    avg_rating = models.FloatField(
+        default=0
+    )
+
+    total_rides = models.IntegerField(
+        default=0
+    )
+
+    # Deactivation / deletion request (Section 8 of the privacy policy).
+    # deactivated_at is set the moment the user confirms via the emailed link
+    # (is_active=False blocks login immediately) and anchors the
+    # ACCOUNT_DELETION_GRACE_DAYS clock. data_purged_at is set once
+    # purge_deactivated_accounts has anonymized/purged the account, so the
+    # job doesn't reprocess it.
+    deactivated_at = models.DateTimeField(
+        null=True,
+        blank=True
+    )
+
+    data_purged_at = models.DateTimeField(
+        null=True,
+        blank=True
+    )
+
+    # Timestamps
+    created_at = models.DateTimeField(
+        auto_now_add=True
+    )
+
+    updated_at = models.DateTimeField(
+        auto_now=True
+    )
+
+    # Auth config
+    USERNAME_FIELD = "email"
+    REQUIRED_FIELDS = ["full_name", "dob"]
+
+    objects = CustomUserManager()
+
+    class Meta:
+        db_table = "users"
+
+    def clean(self):
+        super().clean()
+
+        if self.dob is None:
+            return
+
+        today = date.today()
+
+        age = (
+            today.year - self.dob.year
+            - (
+                (today.month, today.day)
+                < (self.dob.month, self.dob.day)
+            )
+        )
+
+        if age < 18:
+            raise ValidationError(
+                "User must be at least 18 years old."
+            )
+
+    def __str__(self):
+        return self.email
+    
+
+class Vehicle(models.Model):
+    owner = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="vehicles"
+    )
+    
+    make = models.CharField(max_length=100)
+    model = models.CharField(max_length=100)
+    year = models.IntegerField()
+    color = models.CharField(max_length=50)
+    plate = models.CharField(max_length=20, unique=True)
+
+    seat_capacity = models.IntegerField(default=4)
+    photo_url = models.TextField(null=True, blank=True)
+
+    is_primary = models.BooleanField(default=False)
+
+    vehicle_verified = models.BooleanField(default=True)
+
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = "vehicles"
+
+    def __str__(self):
+        return f"{self.make} {self.model} ({self.plate})"
+
+class Rides(models.Model):
+    driver = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="trips"
+    )
+
+    vehicle = models.ForeignKey(
+        "Vehicle",
+        on_delete=models.SET_NULL,
+        null=True,
+        related_name="trips"
+    )
+
+    origin = models.TextField()
+    origin_lat = models.FloatField()
+    origin_lng = models.FloatField()
+
+    destination = models.TextField()
+    dest_lat = models.FloatField()
+    dest_lng = models.FloatField()
+
+    depart_at = models.DateTimeField()
+    arrive_at = models.DateTimeField(null=True, blank=True)
+
+    seats_total = models.IntegerField()
+    seats_available = models.IntegerField()
+
+    price_cents = models.IntegerField(default=0)
+    currency = models.TextField(default="CAD")
+
+    STATUS_CHOICES = (
+        ("posted", "Posted"),
+        ("full", "Full"),
+        ("cancelled", "Cancelled"),
+        ("completed", "Completed"),
+    )
+    status = models.TextField(choices=STATUS_CHOICES, default="posted")
+
+    cancelled_at = models.DateTimeField(null=True, blank=True)
+
+    PASSENGER_PREF_CHOICES = (
+        ("any", "Any"),
+        ("women_only", "Women Only"),
+        ("men_only", "Men Only"),
+    )
+    passenger_gender_pref = models.TextField(
+        choices=PASSENGER_PREF_CHOICES, default="any"
+    )
+
+    recurring_group_id = models.TextField(null=True, blank=True)
+    preferences_json = models.JSONField(null=True, blank=True)
+    notes = models.TextField(null=True, blank=True)
+    tz = models.TextField(null=True, blank=True)
+    expected_duration_seconds = models.IntegerField(null=True, blank=True)
+
+    created_at = models.DateTimeField(default=timezone.now, editable=False)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "rides"
+
+    @property
+    def price_display(self):
+        return f"${self.price_cents / 100:.2f}"
+
+    def __str__(self):
+        return f"{self.origin} → {self.destination}"
+
+
+class RideStop(models.Model):
+    ride = models.ForeignKey(
+        "Rides",
+        on_delete=models.CASCADE,
+        related_name="stops"
+    )
+
+    stop_order = models.IntegerField()
+    location = models.TextField()
+    lat = models.FloatField()
+    lng = models.FloatField()
+    scheduled_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        db_table = "ride_stops"
+        ordering = ["stop_order"]
+
+    def __str__(self):
+        return f"Stop {self.stop_order}: {self.location}"
+
+
+class RideBooking(models.Model):
+
+    STATUS_DRAFT = "draft"
+    STATUS_REQUESTED = "requested"
+    STATUS_CONFIRMED = "confirmed"
+    STATUS_REJECTED = "rejected"
+    STATUS_CANCELLED = "cancelled"
+    STATUS_COMPLETED = "completed"
+
+    STATUS_CHOICES = [
+        (STATUS_DRAFT, "Draft"),
+        (STATUS_REQUESTED, "Requested"),
+        (STATUS_CONFIRMED, "Confirmed"),
+        (STATUS_REJECTED, "Rejected"),
+        (STATUS_CANCELLED, "Cancelled"),
+        (STATUS_COMPLETED, "Completed"),
+    ]
+
+    ride = models.ForeignKey(
+        "Rides",
+        on_delete=models.CASCADE,
+        related_name="bookings",
+    )
+
+    passenger = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="ride_bookings",
+    )
+
+    pickup_stop = models.ForeignKey(
+        "RideStop",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="pickup_bookings",
+        help_text="Intermediate boarding stop if not ride origin",
+    )
+
+    dropoff_stop = models.ForeignKey(
+        "RideStop",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="dropoff_bookings",
+        help_text="Intermediate drop-off stop if not final destination",
+    )
+
+    seats = models.PositiveIntegerField(default=1)
+
+    agreed_price_cents = models.PositiveIntegerField()
+
+    status = models.CharField(
+        max_length=20,
+        choices=STATUS_CHOICES,
+        default=STATUS_REQUESTED,
+    )
+
+    booked_at = models.DateTimeField(auto_now_add=True)
+
+    confirmed_at = models.DateTimeField(
+        null=True,
+        blank=True,
+    )
+
+    cancelled_at = models.DateTimeField(
+        null=True,
+        blank=True,
+    )
+
+    cancellation_reason = models.TextField(
+        null=True,
+        blank=True,
+    )
+
+    class Meta:
+        db_table = "ride_bookings"
+        ordering = ["-booked_at"]
+
+    def __str__(self):
+        return f"Booking #{self.id} - Ride {self.ride_id}"
+
+
+class Message(models.Model):
+    ride = models.ForeignKey(
+        'Rides',
+        on_delete=models.CASCADE,
+        related_name='messages',
+    )
+    sender = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name='sent_messages',
+    )
+    receiver = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name='received_messages',
+    )
+    body = models.TextField()
+    read_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(default=timezone.now, editable=False)
+
+    class Meta:
+        db_table = 'messages'
+        ordering = ['created_at']
+
+    def __str__(self):
+        return f"Msg #{self.id} in ride {self.ride_id}"
+
+
+class PriceOffer(models.Model):
+
+    STATUS_PENDING   = "pending"
+    STATUS_ACCEPTED  = "accepted"
+    STATUS_DECLINED  = "declined"
+    STATUS_COUNTERED = "countered"
+
+    STATUS_CHOICES = [
+        (STATUS_PENDING,   "Pending"),
+        (STATUS_ACCEPTED,  "Accepted"),
+        (STATUS_DECLINED,  "Declined"),
+        (STATUS_COUNTERED, "Countered"),
+    ]
+
+    booking = models.ForeignKey(
+        "RideBooking",
+        on_delete=models.CASCADE,
+        related_name="price_offers",
+    )
+
+    proposed_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="price_offers",
+        help_text="Driver or passenger who proposed this price.",
+    )
+
+    price_cents = models.PositiveIntegerField()
+
+    status = models.CharField(
+        max_length=20,
+        choices=STATUS_CHOICES,
+        default=STATUS_PENDING,
+    )
+
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    responded_at = models.DateTimeField(
+        null=True,
+        blank=True,
+    )
+
+    class Meta:
+        db_table = "negotiations"
+        ordering = ["created_at"]
+
+    def __str__(self):
+        return f"Offer #{self.id} on booking {self.booking_id} — {self.price_cents}¢ ({self.status})"
+
+
+class RideSearch(models.Model):
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="ride_searches",
+    )
+
+    origin = models.TextField()
+    origin_lat = models.FloatField()
+    origin_lng = models.FloatField()
+
+    destination = models.TextField()
+    dest_lat = models.FloatField()
+    dest_lng = models.FloatField()
+
+    search_date = models.DateField()
+    passenger_count = models.PositiveIntegerField(default=1)
+
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = "search_log"
+        ordering = ["-created_at"]
+
+    def __str__(self):
+        return f"{self.origin} → {self.destination} on {self.search_date}"
+
+
+class VerificationLog(models.Model):
+    RESULT_APPROVED = "approved"
+    RESULT_MANUAL_REVIEW = "manual_review"
+    RESULT_REJECTED = "rejected"
+
+    RESULT_CHOICES = [
+        (RESULT_APPROVED, "Approved"),
+        (RESULT_MANUAL_REVIEW, "Manual Review"),
+        (RESULT_REJECTED, "Rejected"),
+    ]
+
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="verification_logs",
+    )
+
+    ocr_extracted_json = EncryptedTextField(null=True, blank=True)
+
+    face_score = EncryptedFloatField(null=True, blank=True)
+
+    result = models.TextField(choices=RESULT_CHOICES)
+
+    reviewer = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="reviewed_verifications",
+    )
+
+    notes = models.TextField(null=True, blank=True)
+
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = "verification_log"
+
+    def __str__(self):
+        return f"VerificationLog #{self.id} — {self.user_id} ({self.result})"
+
+
+class Review(models.Model):
+    booking = models.ForeignKey(
+        "RideBooking",
+        on_delete=models.SET_NULL,
+        null=True,
+        related_name="reviews",
+    )
+
+    reviewer = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        related_name="reviews_given",
+    )
+
+    reviewee = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="reviews_received",
+    )
+
+    rating = models.PositiveSmallIntegerField(
+        validators=[
+            MinValueValidator(1),
+            MaxValueValidator(5),
+        ]
+    )
+
+    body = models.TextField(null=True, blank=True)
+
+    tags_json = models.JSONField(null=True, blank=True)
+
+    subratings_json = models.JSONField(null=True, blank=True)
+
+    is_anonymous = models.BooleanField(default=False)
+
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = "review"
+        constraints = [
+            models.UniqueConstraint(
+                fields=["booking", "reviewer"],
+                name="unique_review_per_booking_reviewer",
+            )
+        ]
+
+    def __str__(self):
+        return f"Review #{self.id} — {self.reviewer_id} → {self.reviewee_id} ({self.rating}★)"
+
+
+class RideInvite(models.Model):
+    STATUS_SENT     = "sent"
+    STATUS_VIEWED   = "viewed"
+    STATUS_ACCEPTED = "accepted"
+    STATUS_DECLINED = "declined"
+    STATUS_EXPIRED  = "expired"
+
+    STATUS_CHOICES = [
+        (STATUS_SENT,     "Sent"),
+        (STATUS_VIEWED,   "Viewed"),
+        (STATUS_ACCEPTED, "Accepted"),
+        (STATUS_DECLINED, "Declined"),
+        (STATUS_EXPIRED,  "Expired"),
+    ]
+
+    driver = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="sent_invites",
+    )
+
+    passenger = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="received_invites",
+    )
+
+    ride = models.ForeignKey(
+        "Rides",
+        on_delete=models.CASCADE,
+        related_name="invites",
+    )
+
+    status = models.TextField(
+        choices=STATUS_CHOICES,
+        default=STATUS_SENT,
+    )
+
+    sent_at = models.DateTimeField(auto_now_add=True)
+
+    responded_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        db_table = "invites"
+
+    def __str__(self):
+        return f"Invite #{self.id} — ride {self.ride_id} → {self.passenger_id} ({self.status})"

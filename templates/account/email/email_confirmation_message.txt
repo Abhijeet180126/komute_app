@@ -1,0 +1,13 @@
+{% autoescape off %}{% load account %}Hello from Komüte!
+
+{% user_display user as user_display %}You're receiving this email because {{ user_display }} registered an account on Komüte using this email address.
+
+To confirm your email address and activate your account, click the link below:
+
+{{ activate_url }}
+
+If you did not sign up for Komüte, you can safely ignore this email.
+
+Thank you for joining Komüte!
+komute.org
+{% endautoescape %}

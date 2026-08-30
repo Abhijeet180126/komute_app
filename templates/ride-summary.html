@@ -1,0 +1,561 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Komüte – Ride Summary</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800&family=DM+Sans:wght@400;500;600&family=Montserrat:wght@600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<style>
+:root{
+  --light-bg:#E9F7EE;--contrast-lt:#D5FBE5;--brand-green:#0D7810;
+  --grad-blue:#0C63B4;--grad-green:#0CB439;--white:#fff;
+  --text-dark:#121212;--text-muted:#5a7060;
+  --input-border:#c2dfc8;--input-bg:#f6fbf7;
+  --card-shadow:0 4px 24px rgba(13,120,16,.08);
+  --amber:#f59e0b;
+}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
+body{font-family:'DM Sans',sans-serif;background:var(--light-bg);min-height:100vh;color:var(--text-dark);}
+
+/* ════ PAGE ════ */
+.page-outer{max-width:900px;margin:0 auto;padding:30px 24px 70px;}
+
+.breadcrumb{display:inline-flex;align-items:center;gap:7px;text-decoration:none;color:var(--text-muted);font-size:.82rem;font-weight:600;margin-bottom:16px;transition:color .2s;}
+.breadcrumb:hover{color:var(--brand-green);}
+.breadcrumb svg{width:15px;height:15px;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;}
+
+/* ════ HERO CARD ════ */
+.hero-card{
+  background:linear-gradient(135deg,#0D7810,#0C63B4);
+  border-radius:22px;padding:32px;color:white;margin-bottom:20px;position:relative;overflow:hidden;
+  box-shadow:0 10px 36px rgba(13,120,16,.18);
+}
+.hero-card::before{content:"";position:absolute;top:-60px;right:-60px;width:240px;height:240px;border-radius:50%;background:rgba(255,255,255,.06);}
+.hero-card::after{content:"";position:absolute;bottom:-90px;left:-50px;width:200px;height:200px;border-radius:50%;background:rgba(255,255,255,.05);}
+.hero-content{position:relative;z-index:2;}
+.hero-status{
+  display:inline-flex;align-items:center;gap:6px;
+  background:rgba(255,255,255,.18);border:1px solid rgba(255,255,255,.3);
+  border-radius:50px;padding:5px 14px;
+  font-family:'Poppins',sans-serif;font-weight:700;font-size:.8rem;
+  letter-spacing:.05em;text-transform:uppercase;margin-bottom:14px;
+}
+.hero-status svg{width:13px;height:13px;stroke:white;fill:none;stroke-width:2.5;stroke-linecap:round;stroke-linejoin:round;}
+.hero-status.completed{background:rgba(74,222,128,.22);border-color:rgba(74,222,128,.5);}
+.hero-title{font-family:'Poppins',sans-serif;font-weight:800;font-size:1.6rem;margin-bottom:6px;line-height:1.2;}
+.hero-meta{display:flex;align-items:center;gap:14px;font-size:.9rem;color:rgba(255,255,255,.85);flex-wrap:wrap;}
+.hero-meta-item{display:flex;align-items:center;gap:6px;}
+.hero-meta-item svg{width:14px;height:14px;stroke:rgba(255,255,255,.75);fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;}
+
+/* ════ STATS GRID ════ */
+.stats-grid{
+  display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:20px;
+}
+.stat-card{
+  background:var(--white);border:1.5px solid var(--input-border);
+  border-radius:16px;padding:18px;text-align:center;
+  transition:transform .15s,box-shadow .2s;
+}
+.stat-card:hover{transform:translateY(-2px);box-shadow:var(--card-shadow);}
+.stat-icon{
+  width:42px;height:42px;border-radius:12px;margin:0 auto 10px;
+  display:flex;align-items:center;justify-content:center;
+  background:var(--contrast-lt);
+}
+.stat-icon svg{width:20px;height:20px;stroke:var(--brand-green);fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;}
+.stat-card.eco .stat-icon{background:linear-gradient(135deg,#dcfce7,#bbf7d0);}
+.stat-card.eco .stat-icon svg{stroke:var(--brand-green);}
+.stat-value{font-family:'Montserrat',sans-serif;font-weight:800;font-size:1.5rem;color:var(--text-dark);line-height:1;}
+.stat-value .unit{font-size:.75rem;font-weight:600;color:var(--text-muted);margin-left:2px;}
+.stat-label{font-size:.8rem;font-weight:600;color:var(--text-muted);margin-top:4px;}
+
+/* ════ SECTION CARD ════ */
+.section-card{
+  background:var(--white);border:1.5px solid var(--input-border);
+  border-radius:18px;padding:24px;margin-bottom:18px;
+  box-shadow:var(--card-shadow);
+}
+.section-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:18px;flex-wrap:wrap;gap:8px;}
+.section-title{font-family:'Poppins',sans-serif;font-weight:700;font-size:1.05rem;color:var(--text-dark);display:flex;align-items:center;gap:8px;}
+.section-title svg{width:18px;height:18px;stroke:var(--brand-green);fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;}
+
+/* ════ ROUTE TIMELINE ════ */
+.route-timeline{position:relative;padding-left:20px;}
+.route-timeline::before{content:"";position:absolute;left:7px;top:18px;bottom:18px;width:2px;background:linear-gradient(180deg,#4ade80 0%,var(--brand-green) 50%,#60a5fa 100%);}
+.route-stop{position:relative;padding:6px 0 6px 22px;}
+.route-stop-dot{position:absolute;left:-19px;top:10px;width:16px;height:16px;border-radius:50%;background:var(--white);border:3px solid var(--brand-green);box-shadow:0 0 0 3px rgba(13,120,16,.1);}
+.route-stop.from .route-stop-dot{border-color:#4ade80;}
+.route-stop.to .route-stop-dot{border-color:#60a5fa;}
+.route-stop.via .route-stop-dot{width:12px;height:12px;left:-17px;top:12px;border-width:2.5px;}
+.route-label{font-size:.75rem;font-weight:700;color:var(--brand-green);text-transform:uppercase;letter-spacing:.05em;margin-bottom:2px;}
+.route-stop.from .route-label{color:#16a34a;}
+.route-stop.to .route-label{color:#0891b2;}
+.route-place{font-family:'Poppins',sans-serif;font-weight:600;font-size:.95rem;color:var(--text-dark);}
+.route-time{font-size:.78rem;color:var(--text-muted);margin-top:1px;}
+.route-time .actual{font-weight:600;color:var(--brand-green);}
+
+/* ════ MAP ════ */
+#routeMap {
+  width:100%;height:280px;border-radius:14px;margin-top:16px;
+  border:1.5px solid var(--input-border);overflow:hidden;
+}
+#routeMapStats {
+  display:none;align-items:center;justify-content:center;gap:24px;flex-wrap:wrap;
+  margin-top:12px;padding:10px 16px;
+  background:linear-gradient(135deg,#f0fdf4,#f0f7ff);
+  border:1.5px solid #c2dfc8;border-radius:10px;
+  font-family:'Montserrat',sans-serif;font-weight:700;font-size:.85rem;
+  color:var(--brand-green);
+}
+#routeMapStats .stat-item{display:flex;align-items:center;gap:6px;}
+#routeMapStats .stat-item svg{width:15px;height:15px;stroke:var(--brand-green);fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;}
+#routeMapStats .stat-divider{width:1px;height:18px;background:#c2dfc8;}
+
+/* ════ PASSENGER LIST ════ */
+.passenger-row{
+  display:flex;align-items:center;gap:14px;padding:14px 0;
+  border-bottom:1px solid #ecf3ee;
+}
+.passenger-row:last-child{border-bottom:none;}
+.p-row-avatar{
+  width:46px;height:46px;border-radius:50%;flex-shrink:0;
+  display:flex;align-items:center;justify-content:center;
+  font-family:'Poppins',sans-serif;font-weight:800;font-size:.9rem;color:white;
+}
+.p-row-avatar.c1{background:linear-gradient(135deg,#0C63B4,#0CB439);}
+.p-row-avatar.c2{background:linear-gradient(135deg,#0CB439,#0D7810);}
+.p-row-info{flex:1;min-width:0;}
+.p-row-name{font-family:'Poppins',sans-serif;font-weight:700;font-size:.93rem;color:var(--text-dark);display:flex;align-items:center;gap:6px;}
+.p-row-name .verified-pill{font-size:.72rem;font-weight:700;color:var(--brand-green);background:var(--contrast-lt);border-radius:50px;padding:1px 7px;display:inline-flex;align-items:center;gap:3px;}
+.p-row-name .verified-pill svg{width:9px;height:9px;stroke:currentColor;fill:none;stroke-width:3;stroke-linecap:round;stroke-linejoin:round;}
+.p-row-meta{font-size:.76rem;color:var(--text-muted);margin-top:3px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;}
+.p-row-meta .seat-tag{background:var(--input-bg);border-radius:50px;padding:1px 8px;color:var(--text-dark);font-weight:600;}
+.p-row-cost{
+  font-family:'Montserrat',sans-serif;font-weight:800;font-size:1.05rem;
+  color:var(--brand-green);min-width:60px;text-align:right;
+}
+.p-row-cost-label{font-size:.72rem;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:2px;}
+.p-row-actions{display:flex;flex-direction:column;align-items:flex-end;gap:6px;}
+.review-given{
+  display:inline-flex;align-items:center;gap:4px;
+  font-size:.8rem;font-weight:600;color:var(--text-muted);
+}
+.review-given .stars{color:var(--amber);font-size:.78rem;}
+.btn-mini-review{
+  background:#fffbeb;border:1.5px solid #fbbf24;color:#b45309;
+  border-radius:8px;padding:10px 12px;min-height:44px;
+  font-family:'DM Sans',sans-serif;font-size:.8rem;font-weight:700;
+  cursor:pointer;transition:background .2s;
+  display:inline-flex;align-items:center;gap:5px;
+}
+.btn-mini-review:hover{background:#fef3c7;}
+.btn-mini-review svg{width:11px;height:11px;fill:#fbbf24;stroke:#fbbf24;}
+
+/* ════ ECO CARD ════ */
+.eco-card{
+  background:linear-gradient(135deg,#dcfce7,#bbf7d0);
+  border:1.5px solid #86efac;
+  border-radius:18px;padding:22px;display:flex;align-items:center;gap:18px;
+  margin-bottom:18px;
+}
+.eco-icon{
+  width:64px;height:64px;border-radius:18px;background:white;
+  display:flex;align-items:center;justify-content:center;flex-shrink:0;
+  box-shadow:0 4px 14px rgba(13,120,16,.15);
+}
+.eco-icon svg{width:32px;height:32px;stroke:var(--brand-green);fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;}
+.eco-text{flex:1;}
+.eco-headline{font-family:'Poppins',sans-serif;font-weight:700;font-size:1rem;color:#14532d;}
+.eco-detail{font-size:.85rem;color:#166534;margin-top:3px;line-height:1.5;}
+.eco-stat{
+  font-family:'Montserrat',sans-serif;font-weight:800;
+  font-size:1.4rem;color:var(--brand-green);
+}
+
+/* ════ COST SUMMARY ════ */
+.cost-row{display:flex;justify-content:space-between;align-items:center;padding:10px 0;font-size:.92rem;}
+.cost-row + .cost-row{border-top:1px solid #ecf3ee;}
+.cost-row.total{font-family:'Poppins',sans-serif;font-weight:700;font-size:1.05rem;color:var(--text-dark);padding-top:14px;margin-top:6px;border-top:2px solid var(--input-border);}
+.cost-row.total .cost-amount{font-family:'Montserrat',sans-serif;font-weight:800;font-size:1.3rem;background:linear-gradient(90deg,#0C63B4,#0CB439);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;}
+.cost-label{color:var(--text-muted);}
+.cost-label .you{color:var(--text-dark);font-weight:600;}
+.cost-amount{font-family:'Montserrat',sans-serif;font-weight:700;color:var(--text-dark);}
+
+/* Free-platform callout */
+.free-callout{
+  background:var(--input-bg);border-radius:12px;padding:12px 16px;margin-top:14px;
+  display:flex;gap:10px;align-items:flex-start;
+  border-left:3px solid var(--brand-green);
+}
+.free-callout svg{width:18px;height:18px;stroke:var(--brand-green);fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;flex-shrink:0;margin-top:2px;}
+.free-callout p{font-size:.78rem;color:var(--text-muted);line-height:1.55;}
+.free-callout strong{color:var(--brand-green);font-weight:700;}
+
+/* ════ FOOTER ACTIONS ════ */
+.footer-actions{display:flex;gap:10px;margin-top:24px;flex-wrap:wrap;}
+.footer-actions button,.footer-actions a{
+  flex:1;min-width:170px;
+  padding:13px 18px;border-radius:13px;
+  font-family:'Poppins',sans-serif;font-weight:700;font-size:.9rem;
+  cursor:pointer;transition:all .2s;text-decoration:none;
+  display:flex;align-items:center;justify-content:center;gap:7px;
+}
+.btn-primary{background:linear-gradient(90deg,#0C63B4,#0CB439);color:white;border:none;box-shadow:0 4px 14px rgba(12,99,180,.25);}
+.btn-primary:hover{opacity:.92;transform:translateY(-1px);}
+.btn-primary svg{width:15px;height:15px;stroke:white;fill:none;stroke-width:2.5;stroke-linecap:round;stroke-linejoin:round;}
+.btn-secondary{background:var(--white);color:var(--text-dark);border:1.5px solid var(--input-border);}
+.btn-secondary:hover{border-color:var(--brand-green);color:var(--brand-green);}
+.btn-secondary svg{width:15px;height:15px;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;}
+.btn-issue{background:#fff5f5;color:#dc2626;border:1.5px solid #fca5a5;}
+.btn-issue:hover{background:#fee2e2;}
+.btn-issue svg{width:15px;height:15px;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;}
+
+/* ════ TOAST ════ */
+.toast{position:fixed;bottom:30px;left:50%;transform:translateX(-50%) translateY(20px);background:var(--brand-green);color:white;padding:11px 20px;border-radius:12px;display:flex;align-items:center;gap:8px;font-weight:600;font-size:.85rem;box-shadow:0 6px 20px rgba(13,120,16,.3);opacity:0;transition:all .3s cubic-bezier(.34,1.56,.64,1);z-index:999;}
+.toast.show{opacity:1;transform:translateX(-50%) translateY(0);}
+.toast svg{width:15px;height:15px;stroke:white;fill:none;stroke-width:2.5;stroke-linecap:round;stroke-linejoin:round;}
+
+@keyframes fadeUp{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:translateY(0)}}
+
+/* Responsive */
+@media(max-width:680px){
+  nav{padding:12px 18px;}
+  .page-outer{padding:24px 16px 60px;}
+  .hero-card{padding:24px 20px;}
+  .hero-title{font-size:1.3rem;}
+  .stats-grid{grid-template-columns:repeat(2,1fr);}
+  .section-card{padding:20px 18px;}
+  .eco-card{flex-direction:column;text-align:center;}
+  .p-row-cost,.p-row-actions{align-self:flex-end;}
+  .footer-actions button,.footer-actions a{min-width:0;}
+}
+@media(max-width:480px){
+  .stats-grid{grid-template-columns:1fr;}
+  .passenger-row{flex-wrap:wrap;gap:8px;}
+  .p-row-info{min-width:calc(100% - 60px);}
+  .p-row-actions{width:100%;align-items:flex-start;flex-direction:row;flex-wrap:wrap;}
+}
+</style>
+</head>
+<body>
+
+<!-- Toast -->
+<div class="toast" id="toast"><svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg><span id="toastMsg">Receipt downloaded</span></div>
+
+{% include "header.html" %}
+
+<!-- ════ PAGE ════ -->
+<div class="page-outer">
+
+  <a href="{% url 'my-rides' %}" class="breadcrumb">
+    <svg viewBox="0 0 24 24"><polyline points="15 18 9 12 15 6"/></svg>
+    Back to My Rides
+  </a>
+
+  <!-- ════ HERO CARD ════ -->
+  <div class="hero-card">
+    <div class="hero-content">
+      <div class="hero-status completed">
+        <svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>
+        {{ ride.get_status_display }}
+      </div>
+      <h1 class="hero-title">{{ origin_city }} → {{ dest_city }}</h1>
+      <div class="hero-meta">
+        <span class="hero-meta-item">
+          <svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+          <time class="local-time" data-utc="{{ ride.depart_at|date:'c' }}" data-fmt="longdate">{{ ride.depart_at|date:"l, F j, Y" }}</time>
+        </span>
+        <span class="hero-meta-item">
+          <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+          Departed <time class="local-time" data-utc="{{ ride.depart_at|date:'c' }}" data-fmt="time">{{ ride.depart_at|time:"g:i A" }}</time>{% if ride.arrive_at %} · Arrived <time class="local-time" data-utc="{{ ride.arrive_at|date:'c' }}" data-fmt="time">{{ ride.arrive_at|time:"g:i A" }}</time>{% endif %}
+        </span>
+        <span class="hero-meta-item">
+          <svg viewBox="0 0 24 24"><path d="M9 12l2 2 4-4M21 12c0 4.97-4.03 9-9 9s-9-4.03-9-9 4.03-9 9-9c2.39 0 4.57.93 6.18 2.45"/></svg>
+          Ride #{{ ride_id }}
+        </span>
+        <span class="hero-meta-item">
+          <svg viewBox="0 0 24 24"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+          Driver: {{ driver_name }}
+        </span>
+      </div>
+    </div>
+  </div>
+
+  <!-- ════ STATS GRID ════ -->
+  <div class="stats-grid">
+    <div class="stat-card">
+      <div class="stat-icon"><svg viewBox="0 0 24 24"><path d="M3 6l3 12h12l3-12-6 6-3-9-3 9-6-6z"/></svg></div>
+      <div class="stat-value">{{ distance_km }}<span class="unit">km</span></div>
+      <div class="stat-label">Distance</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-icon"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg></div>
+      <div class="stat-value">{{ duration }}</div>
+      <div class="stat-label">Duration</div>
+    </div>
+    <div class="stat-card eco">
+      <div class="stat-icon"><svg viewBox="0 0 24 24"><path d="M12 3C8 3 5 6 5 10c0 3 2 5 3.5 7 1 1.3 1.5 2.5 1.5 4h4c0-1.5.5-2.7 1.5-4C17 15 19 13 19 10c0-4-3-7-7-7z"/></svg></div>
+      <div class="stat-value">{{ co2_saved_kg }}<span class="unit">kg</span></div>
+      <div class="stat-label">CO₂ Saved</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-icon"><svg viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg></div>
+      <div class="stat-value">{{ passenger_count }}<span class="unit">people</span></div>
+      <div class="stat-label">Passengers</div>
+    </div>
+  </div>
+
+  <!-- ════ ROUTE CARD ════ -->
+  <div class="section-card">
+    <div class="section-head">
+      <h2 class="section-title">
+        <svg viewBox="0 0 24 24"><circle cx="12" cy="10" r="3"/><path d="M12 2a8 8 0 0 0-8 8c0 5.25 8 12 8 12s8-6.75 8-12a8 8 0 0 0-8-8z"/></svg>
+        Trip Route
+      </h2>
+    </div>
+
+    <div class="route-timeline">
+      <div class="route-stop from">
+        <div class="route-stop-dot"></div>
+        <div class="route-label">Pickup</div>
+        <div class="route-place">{{ ride.origin }}</div>
+        <div class="route-time"><time class="local-time" data-utc="{{ ride.depart_at|date:'c' }}" data-fmt="time">{{ ride.depart_at|time:"g:i A" }}</time> · <span class="actual">on time</span></div>
+      </div>
+      {% for stop in stops %}
+      <div class="route-stop via">
+        <div class="route-stop-dot"></div>
+        <div class="route-label">Stop {{ forloop.counter }}</div>
+        <div class="route-place">{{ stop.location }}</div>
+        <div class="route-time"><time class="local-time" data-utc="{{ stop.scheduled_at|date:'c' }}" data-fmt="time">{{ stop.scheduled_at|time:"g:i A" }}</time> · {{ stop.passengers_picked_up }} passenger{{ stop.passengers_picked_up|pluralize }} picked up</div>
+      </div>
+      {% endfor %}
+      <div class="route-stop to">
+        <div class="route-stop-dot"></div>
+        <div class="route-label">Drop-off</div>
+        <div class="route-place">{{ ride.destination }}</div>
+        <div class="route-time">{% if ride.arrive_at %}<time class="local-time" data-utc="{{ ride.arrive_at|date:'c' }}" data-fmt="time">{{ ride.arrive_at|time:"g:i A" }}</time> · {% endif %}<span class="actual">{{ arrival_note }}</span></div>
+      </div>
+    </div>
+
+    <div id="routeMap"></div>
+    <div id="routeMapStats"></div>
+  </div>
+
+  <!-- ════ PASSENGERS CARD ════ -->
+  <div class="section-card">
+    <div class="section-head">
+      <h2 class="section-title">
+        <svg viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+        Passengers ({{ passenger_count }})
+      </h2>
+    </div>
+
+    {% for booking in bookings %}
+    <div class="passenger-row">
+      <div class="p-row-avatar c{{ forloop.counter }}">{{ booking.initials }}</div>
+      <div class="p-row-info">
+        <div class="p-row-name">
+          {{ booking.passenger_name }}
+          {% if booking.is_verified %}
+          <span class="verified-pill"><svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>Verified</span>
+          {% endif %}
+        </div>
+        <div class="p-row-meta">
+          <span class="seat-tag">{{ booking.seats }} seat{{ booking.seats|pluralize }}</span>
+          <span>Picked up at {{ booking.pickup_name }}</span>
+        </div>
+      </div>
+      <div>
+        <div class="p-row-cost-label">Contribution</div>
+        <div class="p-row-cost">{{ booking.contribution }}</div>
+      </div>
+      <div class="p-row-actions">
+        {% if is_driver %}
+          {% if booking.already_reviewed %}
+          <span class="review-given"><span class="stars">★</span> Reviewed</span>
+          {% else %}
+          <a class="btn-mini-review" href="{% url 'leave-review' booking.booking_id %}">
+            <svg viewBox="0 0 24 24"><polygon points="12 2 15 8.5 22 9.27 17 14 18.5 21 12 17.5 5.5 21 7 14 2 9.27 9 8.5 12 2"/></svg>
+            Rate {{ booking.passenger_first_name }}
+          </a>
+          {% endif %}
+        {% endif %}
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+
+  <!-- ════ ECO IMPACT ════ -->
+  <div class="eco-card">
+    <div class="eco-icon">
+      <svg viewBox="0 0 24 24"><path d="M12 3C8 3 5 6 5 10c0 3 2 5 3.5 7 1 1.3 1.5 2.5 1.5 4h4c0-1.5.5-2.7 1.5-4C17 15 19 13 19 10c0-4-3-7-7-7z"/></svg>
+    </div>
+    <div class="eco-text">
+      <div class="eco-headline">🌿 Great trip, {{ driver_first_name }}! You helped save <span class="eco-stat">{{ co2_saved_kg }} kg of CO₂</span></div>
+      <p class="eco-detail">That's roughly equivalent to <strong>planting {{ trees_equiv }} trees</strong>. By carpooling, your {{ passenger_count }} passenger{{ passenger_count|pluralize }} avoided {{ passenger_count }} separate solo trip{{ passenger_count|pluralize }} — keeping ~{{ km_avoided }} km of extra driving off the road.</p>
+    </div>
+  </div>
+
+  <!-- ════ COST-SHARE SUMMARY ════ -->
+  <div class="section-card">
+    <div class="section-head">
+      <h2 class="section-title">
+        <svg viewBox="0 0 24 24"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
+        Cost-Share Summary
+      </h2>
+    </div>
+
+    {% for booking in bookings %}
+    <div class="cost-row">
+      <span class="cost-label">{{ booking.passenger_name }} <span style="color:#9ca3af;font-size:.8rem">· {{ booking.seats }} seat{{ booking.seats|pluralize }}</span></span>
+      <span class="cost-amount">{{ booking.contribution }}</span>
+    </div>
+    {% endfor %}
+    <div class="cost-row total">
+      <span><span class="you">Total contribution received</span></span>
+      <span class="cost-amount">{{ total_contributions }}</span>
+    </div>
+
+    <div class="free-callout">
+      <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+      <p><strong>Komüte is free to use.</strong> The amounts above were agreed and paid directly between you and your passengers. Komüte didn't process or hold any money — it just connected you.</p>
+    </div>
+  </div>
+
+  <!-- ════ PASSENGER: RATE DRIVER ════ -->
+  {% if is_passenger and viewer_booking_id %}
+  <div class="section-card" style="text-align:center;padding:22px;">
+    {% if viewer_already_reviewed %}
+    <span style="color:var(--brand-green);font-weight:600;">★ You have already reviewed this trip.</span>
+    {% else %}
+    <a class="btn-primary" href="{% url 'leave-review' viewer_booking_id %}" style="text-decoration:none;display:inline-flex;padding:13px 28px;">
+      <svg viewBox="0 0 24 24"><polygon points="12 2 15 8.5 22 9.27 17 14 18.5 21 12 17.5 5.5 21 7 14 2 9.27 9 8.5 12 2"/></svg>
+      Rate {{ driver_name }}
+    </a>
+    {% endif %}
+  </div>
+  {% endif %}
+
+  <!-- ════ FOOTER ACTIONS ════ -->
+  <div class="footer-actions">
+    <button class="btn-primary" onclick="downloadReceipt()">
+      <svg viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+      Download Receipt (PDF)
+    </button>
+    <a class="btn-secondary" href="{% url 'post-ride' %}">
+      <svg viewBox="0 0 24 24"><path d="M21 12a9 9 0 0 1-9 9m9-9a9 9 0 0 0-9-9m9 9H3m9 9a9 9 0 0 1-9-9m9 9c1.66 0 3-4.03 3-9s-1.34-9-3-9m0 18c-1.66 0-3-4.03-3-9s1.34-9 3-9"/></svg>
+      Post Similar Ride
+    </a>
+    <a class="btn-issue" href="{% url 'contact-us' %}">
+      <svg viewBox="0 0 24 24"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+      Report Issue
+    </a>
+  </div>
+
+
+</div>
+
+{% include "footer.html" %}
+
+<script>
+const RIDE_ID = "{{ ride_id }}";
+
+/* ── ROUTE MAP ── */
+(function () {
+  const originLat = {{ ride.origin_lat|default:0 }};
+  const originLng = {{ ride.origin_lng|default:0 }};
+  const destLat   = {{ ride.dest_lat|default:0 }};
+  const destLng   = {{ ride.dest_lng|default:0 }};
+  const stops     = [{% for stop in stops %}{% if stop.lat and stop.lng %}{ lat: {{ stop.lat }}, lng: {{ stop.lng }}, name: "{{ stop.location|escapejs }}" },{% endif %}{% endfor %}];
+
+  if (!originLat || !originLng || !destLat || !destLng) return;
+
+  const map = L.map('routeMap', { zoomControl: false, attributionControl: false, scrollWheelZoom: false, doubleClickZoom: false, dragging: false, touchZoom: false, boxZoom: false, keyboard: false });
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+
+  const mkDot = (color) => L.divIcon({
+    className: '',
+    html: `<div style="width:14px;height:14px;border-radius:50%;background:${color};border:3px solid white;box-shadow:0 2px 6px rgba(0,0,0,.35)"></div>`,
+    iconSize: [14, 14], iconAnchor: [7, 7],
+  });
+
+  L.marker([originLat, originLng], { icon: mkDot('#0D7810') })
+    .addTo(map)
+    .bindPopup('<b>{{ ride.origin|escapejs }}</b><br><span style="font-size:.8rem;color:#555">Departure point</span>');
+
+  stops.forEach((s, i) => {
+    L.marker([s.lat, s.lng], { icon: mkDot('#f59e0b') })
+      .addTo(map)
+      .bindPopup(`<b>Stop ${i + 1}</b><br><span style="font-size:.8rem;color:#555">${s.name}</span>`);
+  });
+
+  L.marker([destLat, destLng], { icon: mkDot('#0C63B4') })
+    .addTo(map)
+    .bindPopup('<b>{{ ride.destination|escapejs }}</b><br><span style="font-size:.8rem;color:#555">Destination</span>');
+
+  const waypoints = [[originLng, originLat], ...stops.map(s => [s.lng, s.lat]), [destLng, destLat]];
+  const coordStr  = waypoints.map(w => w.join(',')).join(';');
+
+  fetch(`https://router.project-osrm.org/route/v1/driving/${coordStr}?overview=full&geometries=geojson`)
+    .then(r => r.json())
+    .then(data => {
+      if (data.code !== 'Ok' || !data.routes.length) {
+        map.fitBounds([[originLat, originLng], [destLat, destLng]], { padding: [30, 30] });
+        return;
+      }
+      const route = data.routes[0];
+      const line = L.geoJSON(route.geometry, {
+        style: { color: '#0D7810', weight: 4, opacity: 0.85 },
+      }).addTo(map);
+      map.fitBounds(line.getBounds(), { padding: [30, 30] });
+
+      const km   = (route.distance / 1000).toFixed(1);
+      const mins = Math.round(route.duration / 60);
+      const hrs  = Math.floor(mins / 60);
+      const rem  = mins % 60;
+      const timeStr = hrs > 0 ? `${hrs}h ${rem}m` : `${mins} min`;
+      const stats = document.getElementById('routeMapStats');
+      stats.innerHTML = `
+        <div class="stat-item">
+          <svg viewBox="0 0 24 24"><line x1="3" y1="12" x2="21" y2="12"/><polyline points="15 6 21 12 15 18"/></svg>
+          Distance: ${km} km
+        </div>
+        <div class="stat-divider"></div>
+        <div class="stat-item">
+          <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+          Duration: ~ ${timeStr}
+        </div>
+      `;
+      stats.style.display = 'flex';
+    })
+    .catch(() => {
+      map.fitBounds([[originLat, originLng], [destLat, destLng]], { padding: [30, 30] });
+    });
+})();
+
+function downloadReceipt(){
+  showToast('Preparing receipt…');
+  window.location.href = "{% url 'ride-receipt-pdf' ride_id_encoded %}";
+}
+
+function reportIssue(){
+  if(confirm('Report an issue with this trip?\n\nOur support team will reach out within 24 hours.')){
+    showToast('Issue reported · ticket #SR-{{ ride.id }}');
+  }
+}
+
+function showToast(msg){
+  const t=document.getElementById('toast');
+  document.getElementById('toastMsg').textContent=msg;
+  t.classList.add('show');
+  clearTimeout(t._t);
+  t._t=setTimeout(()=>t.classList.remove('show'),3000);
+}
+</script>
+</body>
+</html>

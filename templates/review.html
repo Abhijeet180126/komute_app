@@ -1,0 +1,618 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Komüte – Leave a Review</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800&family=DM+Sans:wght@400;500;600&family=Montserrat:wght@600;700;800&display=swap" rel="stylesheet">
+<style>
+:root{
+  --light-bg:#E9F7EE;--contrast-lt:#D5FBE5;--brand-green:#0D7810;
+  --grad-blue:#0C63B4;--grad-green:#0CB439;--white:#fff;
+  --text-dark:#121212;--text-muted:#5a7060;
+  --input-border:#c2dfc8;--input-bg:#f6fbf7;
+  --card-shadow:0 4px 24px rgba(13,120,16,.08);
+  --amber:#f59e0b;--amber-light:#fef3c7;--danger:#dc2626;
+}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
+body{font-family:'DM Sans',sans-serif;background:var(--light-bg);min-height:100vh;color:var(--text-dark);}
+
+/* ════ PAGE ════ */
+.page-outer{max-width:680px;margin:0 auto;padding:30px 24px 70px;}
+
+.breadcrumb{display:inline-flex;align-items:center;gap:7px;text-decoration:none;color:var(--text-muted);font-size:.82rem;font-weight:600;margin-bottom:16px;transition:color .2s;}
+.breadcrumb:hover{color:var(--brand-green);}
+.breadcrumb svg{width:15px;height:15px;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;}
+
+/* ════ HERO ════ */
+.review-hero{
+  background:var(--white);border-radius:22px;padding:32px 28px;text-align:center;
+  margin-bottom:18px;border:1.5px solid var(--input-border);box-shadow:var(--card-shadow);
+  position:relative;overflow:hidden;
+}
+.review-hero::before{
+  content:"";position:absolute;top:-50px;left:50%;transform:translateX(-50%);
+  width:300px;height:120px;border-radius:50%;
+  background:radial-gradient(ellipse at center,rgba(13,120,16,.08),transparent 70%);
+}
+.review-hero-content{position:relative;z-index:2;}
+.hero-eyebrow{font-family:'Poppins',sans-serif;font-weight:600;font-size:.74rem;color:var(--brand-green);text-transform:uppercase;letter-spacing:.08em;margin-bottom:14px;}
+.hero-avatar{
+  width:88px;height:88px;border-radius:50%;margin:0 auto 14px;
+  display:flex;align-items:center;justify-content:center;
+  font-family:'Poppins',sans-serif;font-weight:800;font-size:1.7rem;color:white;
+  box-shadow:0 6px 20px rgba(13,120,16,.18);
+  background:linear-gradient(135deg,#0C63B4,#0CB439);
+}
+.hero-name{font-family:'Poppins',sans-serif;font-weight:700;font-size:1.5rem;color:var(--text-dark);margin-bottom:4px;}
+.hero-role-tag{
+  display:inline-flex;align-items:center;gap:5px;
+  background:var(--contrast-lt);color:var(--brand-green);
+  border-radius:50px;padding:3px 12px;font-size:.74rem;font-weight:700;
+  text-transform:uppercase;letter-spacing:.04em;margin-bottom:10px;
+}
+.hero-trip{display:flex;align-items:center;justify-content:center;gap:6px;color:var(--text-muted);font-size:.85rem;flex-wrap:wrap;}
+.hero-trip svg{width:14px;height:14px;stroke:var(--brand-green);fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;}
+
+/* ════ SECTION CARD ════ */
+.section-card{
+  background:var(--white);border:1.5px solid var(--input-border);
+  border-radius:18px;padding:26px;margin-bottom:16px;
+  box-shadow:var(--card-shadow);
+}
+.section-title{
+  font-family:'Poppins',sans-serif;font-weight:700;font-size:1.05rem;color:var(--text-dark);
+  margin-bottom:6px;display:flex;align-items:center;gap:8px;
+}
+.section-title svg{width:18px;height:18px;stroke:var(--brand-green);fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;}
+.section-sub{font-size:.85rem;color:var(--text-muted);margin-bottom:18px;}
+
+/* ════ STAR RATING ════ */
+.stars-wrap{
+  display:flex;justify-content:center;gap:8px;margin:18px 0 10px;
+}
+.star-btn{
+  background:none;border:none;cursor:pointer;
+  padding:6px;transition:transform .15s;
+}
+.star-btn:hover{transform:scale(1.12);}
+.star-btn:active{transform:scale(.96);}
+.star-btn svg{width:44px;height:44px;transition:all .2s;}
+.star-btn svg path{
+  fill:none;stroke:#d1d5db;stroke-width:1.5;stroke-linejoin:round;
+  transition:all .2s;
+}
+.star-btn.active svg path,.star-btn.hover svg path{
+  fill:var(--amber);stroke:var(--amber);
+  filter:drop-shadow(0 2px 6px rgba(245,158,11,.4));
+}
+.rating-label{
+  text-align:center;font-family:'Poppins',sans-serif;font-weight:700;font-size:1.05rem;
+  color:var(--text-muted);min-height:28px;transition:color .2s;
+}
+.rating-label.has-rating{color:var(--amber);}
+.rating-label .rating-num{
+  font-family:'Montserrat',sans-serif;font-weight:800;font-size:1.4rem;
+  color:var(--amber);margin-right:4px;
+}
+
+/* ════ TAG CHIPS ════ */
+.tags-wrap{display:flex;flex-wrap:wrap;gap:8px;}
+.tag-chip{
+  border:1.5px solid var(--input-border);background:var(--white);
+  border-radius:50px;padding:7px 14px;
+  font-family:'DM Sans',sans-serif;font-size:.82rem;font-weight:600;color:var(--text-muted);
+  cursor:pointer;transition:all .15s;
+  display:inline-flex;align-items:center;gap:5px;
+  user-select:none;
+}
+.tag-chip:hover{border-color:var(--brand-green);color:var(--brand-green);}
+.tag-chip.selected{
+  background:var(--contrast-lt);border-color:var(--brand-green);color:var(--brand-green);
+}
+.tag-chip.selected::before{
+  content:"✓";font-weight:800;
+}
+
+/* ════ SUB-RATINGS (categories) ════ */
+.subratings-toggle{
+  width:100%;background:none;border:1.5px dashed var(--input-border);
+  border-radius:12px;padding:14px;cursor:pointer;
+  font-family:'DM Sans',sans-serif;font-size:.88rem;font-weight:600;color:var(--text-muted);
+  display:flex;align-items:center;justify-content:center;gap:8px;
+  transition:all .2s;margin-bottom:16px;
+}
+.subratings-toggle:hover{border-color:var(--brand-green);color:var(--brand-green);background:var(--input-bg);}
+.subratings-toggle .arrow{transition:transform .2s;}
+.subratings-toggle.open .arrow{transform:rotate(180deg);}
+.subratings-wrap{
+  display:none;flex-direction:column;gap:14px;
+  margin-bottom:18px;animation:fadeUp .25s ease;
+}
+.subratings-wrap.open{display:flex;}
+.subrating-row{
+  display:grid;grid-template-columns:1fr auto;gap:14px;align-items:center;
+  background:var(--input-bg);border:1.5px solid var(--input-border);border-radius:13px;padding:12px 16px;
+}
+.subrating-label{font-family:'DM Sans',sans-serif;font-size:.9rem;font-weight:600;color:var(--text-dark);display:flex;align-items:center;gap:8px;}
+.subrating-label svg{width:16px;height:16px;stroke:var(--brand-green);fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;}
+.mini-stars{display:flex;gap:3px;}
+.mini-star{background:none;border:none;cursor:pointer;padding:2px;}
+.mini-star svg{width:18px;height:18px;}
+.mini-star svg path{fill:none;stroke:#d1d5db;stroke-width:2;stroke-linejoin:round;transition:all .2s;}
+.mini-star.active svg path{fill:var(--amber);stroke:var(--amber);}
+
+/* ════ COMMENT TEXTAREA ════ */
+.comment-wrap{position:relative;}
+.comment-input{
+  width:100%;min-height:120px;
+  border:1.5px solid var(--input-border);border-radius:13px;
+  padding:14px;font-family:'DM Sans',sans-serif;font-size:.92rem;line-height:1.55;
+  background:var(--input-bg);color:var(--text-dark);
+  outline:none;resize:vertical;
+  transition:border-color .2s,background .2s,box-shadow .2s;
+}
+.comment-input:focus{border-color:var(--brand-green);background:var(--white);box-shadow:0 0 0 3px rgba(13,120,16,.1);}
+.comment-input::placeholder{color:#b0c8b5;}
+.comment-counter{
+  position:absolute;bottom:10px;right:14px;
+  font-size:.74rem;color:var(--text-muted);font-family:'Montserrat',sans-serif;font-weight:700;
+}
+.comment-counter.warn{color:var(--amber);}
+.comment-counter.over{color:var(--danger);}
+
+.suggested-prompts{margin-top:12px;display:flex;flex-wrap:wrap;gap:6px;}
+.prompt-chip{
+  background:var(--white);border:1px dashed var(--input-border);
+  border-radius:50px;padding:5px 12px;
+  font-size:.76rem;font-weight:500;color:var(--text-muted);cursor:pointer;
+  transition:all .15s;
+}
+.prompt-chip:hover{border-color:var(--brand-green);color:var(--brand-green);background:var(--input-bg);}
+
+/* ════ PRIVACY TOGGLE ════ */
+.privacy-row{
+  display:flex;align-items:flex-start;gap:12px;
+  padding:14px;background:var(--input-bg);border:1.5px solid var(--input-border);
+  border-radius:13px;cursor:pointer;
+  transition:border-color .2s;
+}
+.privacy-row:hover{border-color:var(--brand-green);}
+.toggle-switch{
+  flex-shrink:0;width:42px;height:24px;border-radius:50px;
+  background:#d1d5db;position:relative;cursor:pointer;
+  transition:background .2s;margin-top:2px;
+}
+.toggle-switch::after{
+  content:"";position:absolute;top:2px;left:2px;
+  width:20px;height:20px;border-radius:50%;background:white;
+  box-shadow:0 2px 4px rgba(0,0,0,.15);transition:left .2s;
+}
+.toggle-switch.on{background:var(--brand-green);}
+.toggle-switch.on::after{left:20px;}
+.privacy-text{flex:1;}
+.privacy-title{font-family:'Poppins',sans-serif;font-weight:600;font-size:.92rem;color:var(--text-dark);margin-bottom:2px;}
+.privacy-desc{font-size:.78rem;color:var(--text-muted);line-height:1.55;}
+
+/* ════ SUBMIT BAR ════ */
+.submit-bar{display:flex;gap:10px;flex-wrap:wrap;margin-top:8px;}
+.btn-submit{
+  flex:1;min-width:200px;
+  background:linear-gradient(90deg,#0C63B4,#0CB439);
+  color:white;border:none;border-radius:14px;
+  padding:15px 24px;font-family:'Poppins',sans-serif;font-weight:700;font-size:.95rem;
+  cursor:pointer;transition:all .2s;
+  display:flex;align-items:center;justify-content:center;gap:8px;
+  box-shadow:0 4px 14px rgba(12,99,180,.25);
+}
+.btn-submit:hover:not(:disabled){opacity:.92;transform:translateY(-1px);}
+.btn-submit:disabled{opacity:.45;cursor:not-allowed;box-shadow:none;}
+.btn-submit svg{width:16px;height:16px;stroke:white;fill:none;stroke-width:2.5;stroke-linecap:round;stroke-linejoin:round;}
+.btn-cancel{
+  flex:0 0 auto;
+  background:var(--white);color:var(--text-dark);
+  border:1.5px solid var(--input-border);border-radius:14px;
+  padding:15px 24px;font-family:'Poppins',sans-serif;font-weight:600;font-size:.92rem;
+  cursor:pointer;transition:all .2s;
+}
+.btn-cancel:hover{border-color:var(--text-muted);}
+
+/* ════ SUCCESS STATE ════ */
+.success-state{
+  display:none;text-align:center;padding:40px 28px;
+  background:var(--white);border-radius:22px;
+  border:1.5px solid var(--input-border);box-shadow:var(--card-shadow);
+}
+.success-state.show{display:block;animation:fadeUp .35s ease;}
+.success-icon{
+  width:88px;height:88px;border-radius:50%;margin:0 auto 18px;
+  background:linear-gradient(135deg,#0CB439,#0D7810);
+  display:flex;align-items:center;justify-content:center;
+  box-shadow:0 8px 24px rgba(13,120,16,.25);
+  animation:popIn .4s cubic-bezier(.34,1.56,.64,1);
+}
+.success-icon svg{width:44px;height:44px;stroke:white;fill:none;stroke-width:3;stroke-linecap:round;stroke-linejoin:round;}
+@keyframes popIn{from{transform:scale(.5);opacity:0}to{transform:scale(1);opacity:1}}
+.success-state h2{font-family:'Poppins',sans-serif;font-weight:800;font-size:1.4rem;margin-bottom:8px;}
+.success-state p{color:var(--text-muted);font-size:.92rem;line-height:1.55;margin-bottom:20px;max-width:380px;margin-left:auto;margin-right:auto;}
+.success-actions{display:flex;gap:10px;justify-content:center;flex-wrap:wrap;}
+
+/* ════ TOAST ════ */
+.toast{position:fixed;bottom:30px;left:50%;transform:translateX(-50%) translateY(20px);background:var(--brand-green);color:white;padding:11px 20px;border-radius:12px;display:flex;align-items:center;gap:8px;font-weight:600;font-size:.85rem;box-shadow:0 6px 20px rgba(13,120,16,.3);opacity:0;transition:all .3s cubic-bezier(.34,1.56,.64,1);z-index:999;}
+.toast.show{opacity:1;transform:translateX(-50%) translateY(0);}
+
+@keyframes fadeUp{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:translateY(0)}}
+
+/* Responsive */
+@media(max-width:520px){
+  .page-outer{padding:24px 14px 60px;}
+  .review-hero{padding:26px 20px;}
+  .hero-avatar{width:76px;height:76px;font-size:1.5rem;}
+  .hero-name{font-size:1.3rem;}
+  .section-card{padding:22px 18px;}
+  .star-btn svg{width:36px;height:36px;}
+  .btn-cancel{flex:1;}
+}
+</style>
+</head>
+<body>
+
+<!-- Toast -->
+<div class="toast" id="toast"><span id="toastMsg">Review submitted</span></div>
+
+{% include "header.html" %}
+
+<!-- ════ PAGE ════ -->
+<div class="page-outer">
+
+  <a href="javascript:history.back()" class="breadcrumb">
+    <svg viewBox="0 0 24 24"><polyline points="15 18 9 12 15 6"/></svg>
+    Back
+  </a>
+
+  <!-- ════ FORM VIEW ════ -->
+  <div id="formView">
+
+    <!-- Hero -->
+    <div class="review-hero">
+      <div class="review-hero-content">
+        <div class="hero-eyebrow">{{ eyebrow_text }}</div>
+        <div class="hero-avatar" id="revAvatar">{{ reviewee_initials }}</div>
+        <h1 class="hero-name" id="revName">{{ reviewee_name }}</h1>
+        <span class="hero-role-tag" id="revRoleTag">{{ reviewee_role_label }}</span>
+        <div class="hero-trip">
+          <svg viewBox="0 0 24 24"><circle cx="12" cy="10" r="3"/><path d="M12 2a8 8 0 0 0-8 8c0 5.25 8 12 8 12s8-6.75 8-12a8 8 0 0 0-8-8z"/></svg>
+          {{ origin_city }} → {{ dest_city }} · {{ ride_date }}
+        </div>
+      </div>
+    </div>
+
+    <!-- Rating -->
+    <div class="section-card">
+      <h2 class="section-title">
+        <svg viewBox="0 0 24 24"><polygon points="12 2 15 8.5 22 9.27 17 14 18.5 21 12 17.5 5.5 21 7 14 2 9.27 9 8.5 12 2"/></svg>
+        How was your experience?
+      </h2>
+      <p class="section-sub">Your honest rating helps the Komüte community stay safe and friendly.</p>
+
+      <div class="stars-wrap" id="stars">
+        <button class="star-btn" data-value="1" aria-label="1 star">
+          <svg viewBox="0 0 24 24"><path d="M12 2 15 8.5 22 9.27 17 14 18.5 21 12 17.5 5.5 21 7 14 2 9.27 9 8.5 z"/></svg>
+        </button>
+        <button class="star-btn" data-value="2" aria-label="2 stars">
+          <svg viewBox="0 0 24 24"><path d="M12 2 15 8.5 22 9.27 17 14 18.5 21 12 17.5 5.5 21 7 14 2 9.27 9 8.5 z"/></svg>
+        </button>
+        <button class="star-btn" data-value="3" aria-label="3 stars">
+          <svg viewBox="0 0 24 24"><path d="M12 2 15 8.5 22 9.27 17 14 18.5 21 12 17.5 5.5 21 7 14 2 9.27 9 8.5 z"/></svg>
+        </button>
+        <button class="star-btn" data-value="4" aria-label="4 stars">
+          <svg viewBox="0 0 24 24"><path d="M12 2 15 8.5 22 9.27 17 14 18.5 21 12 17.5 5.5 21 7 14 2 9.27 9 8.5 z"/></svg>
+        </button>
+        <button class="star-btn" data-value="5" aria-label="5 stars">
+          <svg viewBox="0 0 24 24"><path d="M12 2 15 8.5 22 9.27 17 14 18.5 21 12 17.5 5.5 21 7 14 2 9.27 9 8.5 z"/></svg>
+        </button>
+      </div>
+      <div class="rating-label" id="ratingLabel">Tap a star to rate</div>
+    </div>
+
+    <!-- Tags -->
+    <div class="section-card">
+      <h2 class="section-title">
+        <svg viewBox="0 0 24 24"><path d="M20.59 13.41 13.42 20.58a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg>
+        Anything stand out?
+      </h2>
+      <p class="section-sub">Pick all that apply — tags are shown publicly on profiles.</p>
+
+      <div class="tags-wrap" id="tags">
+        <button class="tag-chip" data-tag="punctual">⏰ Punctual</button>
+        <button class="tag-chip" data-tag="friendly">😊 Friendly</button>
+        <button class="tag-chip" data-tag="polite">🙏 Polite</button>
+        <button class="tag-chip" data-tag="clean">✨ Clean</button>
+        <button class="tag-chip" data-tag="great-convo">💬 Great conversation</button>
+        <button class="tag-chip" data-tag="quiet">🤫 Respectful quiet</button>
+        <button class="tag-chip" data-tag="easy-pickup">📍 Easy pickup</button>
+        {% if review_type == 'passenger' %}
+        <button class="tag-chip" data-tag="safe-driver">🛡️ Safe driver</button>
+        <button class="tag-chip" data-tag="good-music">🎶 Good music</button>
+        {% endif %}
+        <button class="tag-chip" data-tag="comfortable">🛋️ Comfortable</button>
+        <button class="tag-chip" data-tag="fair-cost">💰 Fair contribution</button>
+      </div>
+    </div>
+
+    <!-- Sub-ratings (collapsible) -->
+    <div class="section-card">
+      <h2 class="section-title">
+        <svg viewBox="0 0 24 24"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+        Rate the details (optional)
+      </h2>
+      <p class="section-sub">Help us understand what made this ride great — or what fell short.</p>
+
+      <button class="subratings-toggle" id="subToggle" onclick="toggleSubratings()">
+        Add detailed sub-ratings
+        <svg class="arrow" width="14" height="14" viewBox="0 0 24 24" fill="none"><polyline points="6 9 12 15 18 9" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </button>
+
+      <div class="subratings-wrap" id="subratingsWrap">
+        <div class="subrating-row">
+          <div class="subrating-label">
+            <svg viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+            Communication
+          </div>
+          <div class="mini-stars" data-cat="communication"></div>
+        </div>
+        <div class="subrating-row">
+          <div class="subrating-label">
+            <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+            Punctuality
+          </div>
+          <div class="mini-stars" data-cat="punctuality"></div>
+        </div>
+        <div class="subrating-row">
+          <div class="subrating-label">
+            <svg viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+            Respectfulness
+          </div>
+          <div class="mini-stars" data-cat="respectfulness"></div>
+        </div>
+        {% if review_type == 'passenger' %}
+        <div class="subrating-row">
+          <div class="subrating-label">
+            <svg viewBox="0 0 24 24"><path d="M3 12l3-9 3 9-3 9-3-9z"/><path d="M14 5h6v4l-3 3 3 3v4h-6"/></svg>
+            Cleanliness
+          </div>
+          <div class="mini-stars" data-cat="cleanliness"></div>
+        </div>
+        {% endif %}
+      </div>
+    </div>
+
+    <!-- Comment -->
+    <div class="section-card">
+      <h2 class="section-title">
+        <svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+        Tell us more (optional)
+      </h2>
+      <p class="section-sub">A short note helps others know what to expect.</p>
+
+      <div class="comment-wrap">
+        <textarea id="comment" class="comment-input" maxlength="500" placeholder="What made the ride memorable? Anything to watch out for?"></textarea>
+        <span class="comment-counter" id="commentCount">0 / 500</span>
+      </div>
+
+      <div class="suggested-prompts">
+        <span style="font-size:.78rem;color:var(--text-muted);margin-right:4px;align-self:center">Suggested:</span>
+        <button class="prompt-chip" onclick="insertPrompt('Great ride — easy pickup and a smooth drive.')">Great ride</button>
+        <button class="prompt-chip" onclick="insertPrompt('On time and very respectful. Would ride again.')">On time</button>
+        <button class="prompt-chip" onclick="insertPrompt('Friendly conversation and a comfortable trip.')">Friendly</button>
+      </div>
+    </div>
+
+    <!-- Privacy -->
+    <div class="section-card" style="padding:18px 22px;">
+      <div class="privacy-row" onclick="togglePrivacy()">
+        <div class="toggle-switch" id="privacyToggle"></div>
+        <div class="privacy-text">
+          <div class="privacy-title">Post anonymously</div>
+          <div class="privacy-desc">Your rating still counts, but your name and photo won't be shown on the public profile.</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Submit -->
+    <div class="submit-bar">
+      <button class="btn-cancel" onclick="history.back()">Cancel</button>
+      <button class="btn-submit" id="submitBtn" onclick="submitReview()" disabled>
+        <svg viewBox="0 0 24 24"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+        Submit Review
+      </button>
+    </div>
+
+  </div>
+
+  <!-- ════ SUCCESS VIEW ════ -->
+  <div class="success-state" id="successView">
+    <div class="success-icon">
+      <svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>
+    </div>
+    <h2>Thanks for your review! 🎉</h2>
+    <p>Your feedback helps the Komüte community stay safe and friendly. <strong>{{ reviewee_first_name }}</strong> will see your rating shortly.</p>
+    <div class="success-actions">
+      <a href="{% url 'ride-summary' ride_id %}" class="btn-submit" style="text-decoration:none;flex:0 0 auto;min-width:0;padding:13px 22px;">
+        Back to Summary
+      </a>
+      <a href="{% url 'my-rides' %}" class="btn-cancel" style="text-decoration:none;flex:0 0 auto;">
+        My Rides
+      </a>
+    </div>
+  </div>
+
+</div>
+
+<script>
+const REVIEW_CONFIG = {
+  bookingId: "{{ booking_id }}",
+  revieweeId: "{{ reviewee_id }}",
+  csrfToken: "{{ csrf_token }}",
+};
+
+/* ══════════════════════════
+   STATE
+══════════════════════════ */
+let rating = 0;
+let selectedTags = new Set();
+let subratings = {};
+let anonymous = false;
+
+const RATING_LABELS = [
+  'Tap a star to rate',
+  '<span class="rating-num">1</span> Poor experience',
+  '<span class="rating-num">2</span> Below average',
+  '<span class="rating-num">3</span> It was okay',
+  '<span class="rating-num">4</span> Great ride!',
+  '<span class="rating-num">5</span> Outstanding! 🌟'
+];
+
+/* ══════════════════════════
+   STAR RATING
+══════════════════════════ */
+const stars = document.querySelectorAll('#stars .star-btn');
+stars.forEach(btn => {
+  const val = parseInt(btn.dataset.value);
+  btn.addEventListener('mouseenter', () => paintStars(val,'hover'));
+  btn.addEventListener('mouseleave', () => paintStars(rating,'active'));
+  btn.addEventListener('click', () => {
+    rating = val;
+    paintStars(val,'active');
+    const lbl = document.getElementById('ratingLabel');
+    lbl.innerHTML = RATING_LABELS[val];
+    lbl.classList.add('has-rating');
+    updateSubmit();
+  });
+});
+function paintStars(value, mode){
+  stars.forEach(btn => {
+    btn.classList.remove('hover','active');
+    if(parseInt(btn.dataset.value) <= value) btn.classList.add(mode);
+  });
+}
+
+/* ══════════════════════════
+   TAGS
+══════════════════════════ */
+document.querySelectorAll('#tags .tag-chip').forEach(chip => {
+  chip.addEventListener('click', () => {
+    const t = chip.dataset.tag;
+    if(selectedTags.has(t)){
+      selectedTags.delete(t);
+      chip.classList.remove('selected');
+    } else {
+      selectedTags.add(t);
+      chip.classList.add('selected');
+    }
+  });
+});
+
+/* ══════════════════════════
+   SUB-RATINGS
+══════════════════════════ */
+function toggleSubratings(){
+  const wrap = document.getElementById('subratingsWrap');
+  const tog = document.getElementById('subToggle');
+  wrap.classList.toggle('open');
+  tog.classList.toggle('open');
+  if(wrap.classList.contains('open') && !wrap.dataset.built){
+    buildMiniStars();
+    wrap.dataset.built = '1';
+  }
+}
+function buildMiniStars(){
+  document.querySelectorAll('.mini-stars').forEach(container => {
+    const cat = container.dataset.cat;
+    for(let i = 1; i <= 5; i++){
+      const btn = document.createElement('button');
+      btn.className = 'mini-star';
+      btn.innerHTML = '<svg viewBox="0 0 24 24"><path d="M12 2 15 8.5 22 9.27 17 14 18.5 21 12 17.5 5.5 21 7 14 2 9.27 9 8.5 z"/></svg>';
+      btn.addEventListener('click', () => {
+        subratings[cat] = i;
+        container.querySelectorAll('.mini-star').forEach((b, idx) => {
+          b.classList.toggle('active', idx < i);
+        });
+      });
+      container.appendChild(btn);
+    }
+  });
+}
+
+/* ══════════════════════════
+   COMMENT COUNTER
+══════════════════════════ */
+const ta = document.getElementById('comment');
+ta.addEventListener('input', () => {
+  const n = ta.value.length;
+  const c = document.getElementById('commentCount');
+  c.textContent = n + ' / 500';
+  c.classList.toggle('warn', n > 400 && n <= 500);
+  c.classList.toggle('over', n > 500);
+});
+function insertPrompt(text){
+  if(ta.value.trim()) ta.value = ta.value.trim() + ' ' + text;
+  else ta.value = text;
+  ta.focus();
+  ta.dispatchEvent(new Event('input'));
+}
+
+/* ══════════════════════════
+   PRIVACY
+══════════════════════════ */
+function togglePrivacy(){
+  anonymous = !anonymous;
+  document.getElementById('privacyToggle').classList.toggle('on', anonymous);
+}
+
+/* ══════════════════════════
+   SUBMIT
+══════════════════════════ */
+function updateSubmit(){
+  document.getElementById('submitBtn').disabled = rating === 0;
+}
+
+function submitReview(){
+  if(rating === 0) return;
+
+  const payload = {
+    booking_id: REVIEW_CONFIG.bookingId,
+    reviewee_id: REVIEW_CONFIG.revieweeId,
+    rating,
+    tags: Array.from(selectedTags),
+    subratings,
+    comment: ta.value.trim(),
+    anonymous,
+  };
+
+  fetch("{% url 'submit-review' %}", {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-CSRFToken': REVIEW_CONFIG.csrfToken,
+    },
+    body: JSON.stringify(payload),
+  })
+  .then(r => r.json())
+  .then(data => {
+    if(data.success){
+      document.getElementById('formView').style.display = 'none';
+      document.getElementById('successView').classList.add('show');
+      window.scrollTo({top:0, behavior:'smooth'});
+    } else {
+      alert(data.error || 'Could not submit review. Please try again.');
+    }
+  })
+  .catch(() => alert('Network error — please try again.'));
+}
+</script>
+</body>
+</html>

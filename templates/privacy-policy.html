@@ -1,0 +1,601 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Komüte – Privacy Policy</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800&family=DM+Sans:wght@400;500;600&family=Montserrat:wght@600;700;800&display=swap" rel="stylesheet">
+
+<style>
+:root {
+  --dark-bg:     #121212;
+  --light-bg:    #E9F7EE;
+  --contrast-lt: #D5FBE5;
+  --brand-green: #0D7810;
+  --grad-blue:   #0C63B4;
+  --grad-green:  #0CB439;
+  --white:       #ffffff;
+  --text-dark:   #121212;
+  --text-muted:  #5a7060;
+  --input-border:#c2dfc8;
+  --card-shadow: 0 4px 24px rgba(13,120,16,0.08);
+}
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  font-family: 'DM Sans', sans-serif;
+  background: var(--light-bg);
+  color: var(--text-dark);
+  min-height: 100vh;
+}
+
+/* ── Hero banner ── */
+.policy-hero {
+  background: linear-gradient(135deg, #0D7810 0%, #0C63B4 100%);
+  padding: 64px 5% 52px;
+  text-align: center;
+  position: relative;
+  overflow: hidden;
+}
+.policy-hero::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(ellipse at 70% 50%, rgba(12,180,57,0.18) 0%, transparent 65%);
+  pointer-events: none;
+}
+.policy-hero-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  background: rgba(255,255,255,0.15);
+  border: 1px solid rgba(255,255,255,0.25);
+  border-radius: 50px;
+  padding: 6px 16px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: rgba(255,255,255,0.9);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  margin-bottom: 18px;
+}
+.policy-hero-badge svg {
+  width: 13px; height: 13px;
+  stroke: rgba(255,255,255,0.85);
+  fill: none;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.policy-hero h1 {
+  font-family: 'Montserrat', sans-serif;
+  font-weight: 800;
+  font-size: clamp(2rem, 5vw, 3rem);
+  color: #fff;
+  margin-bottom: 12px;
+}
+.policy-hero-sub {
+  color: rgba(255,255,255,0.78);
+  font-size: 1rem;
+  max-width: 520px;
+  margin: 0 auto;
+  line-height: 1.6;
+}
+.policy-hero-date {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 20px;
+  background: rgba(255,255,255,0.12);
+  border-radius: 50px;
+  padding: 6px 16px;
+  font-size: 0.82rem;
+  color: rgba(255,255,255,0.8);
+  font-weight: 500;
+}
+.policy-hero-date svg {
+  width: 13px; height: 13px;
+  stroke: rgba(255,255,255,0.7);
+  fill: none;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+/* ── Main content ── */
+.policy-outer {
+  max-width: 820px;
+  margin: 0 auto;
+  padding: 48px 24px 72px;
+}
+
+/* Intro card */
+.policy-intro {
+  background: var(--white);
+  border: 1.5px solid var(--input-border);
+  border-radius: 18px;
+  padding: 28px 32px;
+  margin-bottom: 36px;
+  box-shadow: var(--card-shadow);
+  display: flex;
+  gap: 18px;
+  align-items: flex-start;
+}
+.policy-intro-icon {
+  width: 46px; height: 46px;
+  border-radius: 12px;
+  background: linear-gradient(135deg, var(--grad-blue), var(--grad-green));
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.policy-intro-icon svg {
+  width: 22px; height: 22px;
+  stroke: #fff;
+  fill: none;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.policy-intro p {
+  font-size: 0.97rem;
+  color: var(--text-muted);
+  line-height: 1.7;
+}
+
+/* Sections */
+.policy-section {
+  background: var(--white);
+  border: 1.5px solid var(--input-border);
+  border-radius: 18px;
+  margin-bottom: 18px;
+  overflow: hidden;
+  box-shadow: var(--card-shadow);
+  transition: box-shadow 0.2s;
+}
+.policy-section:hover {
+  box-shadow: 0 8px 32px rgba(13,120,16,0.12);
+}
+.policy-section-head {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 22px 28px;
+  border-bottom: 1.5px solid var(--input-border);
+}
+.policy-num {
+  width: 36px; height: 36px;
+  border-radius: 10px;
+  background: var(--contrast-lt);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: 'Montserrat', sans-serif;
+  font-weight: 800;
+  font-size: 0.85rem;
+  color: var(--brand-green);
+  flex-shrink: 0;
+}
+.policy-section-title {
+  font-family: 'Poppins', sans-serif;
+  font-weight: 700;
+  font-size: 1rem;
+  color: var(--text-dark);
+}
+.policy-section-body {
+  padding: 22px 28px;
+  font-size: 0.95rem;
+  color: #3d5444;
+  line-height: 1.75;
+}
+.policy-section-body p + p { margin-top: 12px; }
+.policy-section-body ul {
+  margin: 10px 0 4px 4px;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.policy-section-body ul li {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+.policy-section-body ul li::before {
+  content: '';
+  width: 7px; height: 7px;
+  border-radius: 50%;
+  background: var(--brand-green);
+  flex-shrink: 0;
+  margin-top: 8px;
+}
+
+/* Copyright bar */
+.policy-footer-note {
+  text-align: center;
+  margin-top: 44px;
+  padding: 22px;
+  border-radius: 14px;
+  background: var(--white);
+  border: 1.5px solid var(--input-border);
+  color: var(--text-muted);
+  font-size: 0.88rem;
+  font-weight: 500;
+}
+.policy-footer-note strong { color: var(--brand-green); }
+
+@media (max-width: 600px) {
+  .policy-outer { padding: 28px 16px 56px; }
+  .policy-section-head, .policy-section-body { padding: 18px 20px; }
+  .policy-intro { padding: 20px; flex-direction: column; gap: 14px; }
+  .policy-hero { padding: 44px 22px 36px; }
+}
+</style>
+</head>
+<body>
+
+{% include 'header.html' %}
+
+<!-- ── Hero ── -->
+<div class="policy-hero">
+  <div class="policy-hero-badge">
+    <svg viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+    Legal
+  </div>
+  <h1>Privacy Policy</h1>
+  <p class="policy-hero-sub">How we collect, use, and protect your personal information.</p>
+  <div class="policy-hero-date">
+    <svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+    Last Updated: July 9, 2026
+  </div>
+</div>
+
+<!-- ── Content ── -->
+<div class="policy-outer">
+
+  <!-- Intro -->
+  <div class="policy-intro">
+    <div class="policy-intro-icon">
+      <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+    </div>
+    <p>At KOMUTE, protecting your privacy and personal information is a priority. This Privacy Policy explains what information we collect, how we use it, how we store it, and with whom we may share it. By using KOMUTE's services, you agree to the practices described here, alongside our <a href="{% url 'terms-condition' %}" style="color:var(--brand-green);font-weight:600">Terms &amp; Conditions</a> and <a href="{% url 'community-guidelines' %}" style="color:var(--brand-green);font-weight:600">Community Guidelines</a>.</p>
+  </div>
+
+  <!-- 1 -->
+  <div class="policy-section">
+    <div class="policy-section-head">
+      <div class="policy-num">1</div>
+      <div class="policy-section-title">Information We Collect</div>
+    </div>
+    <div class="policy-section-body">
+      <p>To create an account and use KOMUTE, you may be asked to provide certain personal information such as your name, email address, phone number, and other details needed to identify you. This information enables us to verify your account, communicate with you, and support your use of our service.</p>
+      <p>Depending on how you use KOMUTE, we may also collect:</p>
+      <ul>
+        <li><strong>Identity verification data (drivers):</strong> images of your government-issued driver's licence, information extracted from that licence (name, address, date of birth, licence number, expiry date), and a selfie used for facial comparison. See Sections 9 and 12 for how this data is protected, retained, and deleted.</li>
+        <li><strong>Location data:</strong> origin and destination coordinates you enter when posting or searching for a trip, and (with your permission) your device's GPS location when you use the "Locate Me" feature.</li>
+        <li><strong>Trip and booking data:</strong> trips posted, seats booked, cancellations, and ride history.</li>
+        <li><strong>Communications:</strong> messages you exchange with other users through the in-app chat, and messages you send to our support team.</li>
+        <li><strong>Ratings and reviews:</strong> feedback you give and receive after trips.</li>
+        <li><strong>Technical data:</strong> IP address, device and browser information, and usage logs (see Section 5).</li>
+      </ul>
+      <p style="margin-top:14px">We collect only the personal information that is reasonably necessary to operate the platform, and we retain it only for as long as needed for the purposes described in this policy (see Section 13, Data Retention).</p>
+    </div>
+  </div>
+
+  <!-- 2 -->
+  <div class="policy-section">
+    <div class="policy-section-head">
+      <div class="policy-num">2</div>
+      <div class="policy-section-title">Use of Cookies and Similar Technologies</div>
+    </div>
+    <div class="policy-section-body">
+      <p>We use cookies and similar tools to improve your experience with KOMUTE. Cookies help you stay logged in, remember preferences, and enable us to analyze usage patterns. You can choose to disable cookies, but doing so may limit some features of our platform.</p>
+    </div>
+  </div>
+
+  <!-- 3 -->
+  <div class="policy-section">
+    <div class="policy-section-head">
+      <div class="policy-num">3</div>
+      <div class="policy-section-title">How We Use Your Information</div>
+    </div>
+    <div class="policy-section-body">
+      <p>Your information helps us:</p>
+      <ul>
+        <li>Verify your account and identity.</li>
+        <li>Provide and improve KOMUTE services.</li>
+        <li>Communicate important updates or service notices.</li>
+        <li>Analyze trends and enhance user experience.</li>
+      </ul>
+      <p style="margin-top:14px">We do not sell or rent your personal information to third parties, except as described in this policy.</p>
+    </div>
+  </div>
+
+  <!-- 4 -->
+  <div class="policy-section">
+    <div class="policy-section-head">
+      <div class="policy-num">4</div>
+      <div class="policy-section-title">Legal and Safety Disclosures</div>
+    </div>
+    <div class="policy-section-body">
+      <p>KOMUTE may disclose your information:</p>
+      <ul>
+        <li>If required by law or legal process.</li>
+        <li>To enforce our Terms of Service.</li>
+        <li>To protect the rights, safety, or property of KOMUTE, our users, or the public.</li>
+        <li>For investigations of fraud, abuse, or security issues.</li>
+      </ul>
+      <p style="margin-top:14px">We will attempt to notify you of legal requests unless prohibited by law, court order, or risk of harm.</p>
+    </div>
+  </div>
+
+  <!-- 5 -->
+  <div class="policy-section">
+    <div class="policy-section-head">
+      <div class="policy-num">5</div>
+      <div class="policy-section-title">Log Files and Analytics</div>
+    </div>
+    <div class="policy-section-body">
+      <p>We automatically collect certain technical data (e.g., IP addresses and device information) to understand usage patterns and improve performance. This information does not directly identify you.</p>
+    </div>
+  </div>
+
+  <!-- 6 -->
+  <div class="policy-section">
+    <div class="policy-section-head">
+      <div class="policy-num">6</div>
+      <div class="policy-section-title">Service Announcements</div>
+    </div>
+    <div class="policy-section-body">
+      <p>We may send you service-related messages and updates about KOMUTE. These are considered part of using KOMUTE and cannot be opted out of.</p>
+    </div>
+  </div>
+
+  <!-- 7 -->
+  <div class="policy-section">
+    <div class="policy-section-head">
+      <div class="policy-num">7</div>
+      <div class="policy-section-title">Marketing Communications</div>
+    </div>
+    <div class="policy-section-body">
+      <p>If you receive marketing or promotional emails from us, you can opt out at any time using the unsubscribe link included in those messages.</p>
+    </div>
+  </div>
+
+  <!-- 8 -->
+  <div class="policy-section">
+    <div class="policy-section-head">
+      <div class="policy-num">8</div>
+      <div class="policy-section-title">Account Cancellation and Data Deletion</div>
+    </div>
+    <div class="policy-section-body">
+      <p>You may close your KOMUTE account at any time through your account settings or by contacting support. After account closure, your account will be deactivated and your personal data will be deleted or anonymized in accordance with the retention schedule in Section 13 and applicable law.</p>
+      <p>When you request deletion of your account or personal data, we will delete or anonymize the personal data associated with your account — including your profile information, ride history, ride search logs, verification records, and chat messages — within <strong>45 days</strong> of a verified request, unless we are legally required or permitted to retain specific records (for example, to comply with a legal obligation, resolve disputes, investigate fraud or safety incidents, or enforce our agreements). Where retention is required, the data is kept only for as long as that specific purpose demands and is then deleted.</p>
+      <p>To submit a deletion request, use your account settings or contact <strong>privacy@komute.net</strong>. We may need to verify your identity before acting on a request in order to protect your data from unauthorized deletion.</p>
+    </div>
+  </div>
+
+  <!-- 9 -->
+  <div class="policy-section">
+    <div class="policy-section-head">
+      <div class="policy-num">9</div>
+      <div class="policy-section-title">Identity Verification</div>
+    </div>
+    <div class="policy-section-body">
+      <p>For safety and compliance, drivers must complete identity verification before posting a trip. Verification involves reading information from your government-issued driver's licence (using optical character recognition) and comparing your licence photo against a selfie. KOMUTE may use trusted third-party services to perform parts of this verification.</p>
+      <ul>
+        <li><strong>Purpose limitation:</strong> verification data is used solely to confirm your identity and eligibility to drive. It is never used for advertising and is never sold, leased, or traded.</li>
+        <li><strong>Data minimization:</strong> once verification is complete, we retain only the verification outcome (approved or rejected) and the minimum details needed (such as name match and licence expiry). The full extracted licence data is deleted after the verification decision is recorded.</li>
+        <li><strong>Security:</strong> licence data is encrypted at rest, and access is restricted to authorized personnel who need it to perform verification and safety functions.</li>
+        <li><strong>Biometric data:</strong> the facial comparison process is subject to the additional protections, consent requirements, and retention limits described in Section 12 (Biometric Information).</li>
+      </ul>
+    </div>
+  </div>
+
+  <!-- 10 -->
+  <div class="policy-section">
+    <div class="policy-section-head">
+      <div class="policy-num">10</div>
+      <div class="policy-section-title">Mobile App Information</div>
+    </div>
+    <div class="policy-section-body">
+      <p>If you use the KOMUTE mobile app, we may collect information permitted by app store policies (such as phone number or device data). We only share your phone number with other users when necessary to coordinate a confirmed trip for safety and communication.</p>
+    </div>
+  </div>
+
+  <!-- 11 -->
+  <div class="policy-section">
+    <div class="policy-section-head">
+      <div class="policy-num">11</div>
+      <div class="policy-section-title">Location Data and Third-Party Geocoding</div>
+    </div>
+    <div class="policy-section-body">
+      <p>KOMUTE uses location information to match drivers and passengers travelling in the same direction. Origin and destination coordinates you enter when posting or searching for trips are associated with your account so the platform can function.</p>
+      <ul>
+        <li><strong>Search logs:</strong> ride search records (including origin and destination coordinates) are automatically deleted no later than 90 days after the search, and are deleted immediately when you delete your account.</li>
+        <li><strong>"Locate Me" feature:</strong> when you tap "Locate Me," your device's GPS coordinates are sent to Komoot's Photon geocoding service (photon.komoot.io), a third-party provider, to convert your position into a readable address. This transmission is transient — KOMUTE does not store the coordinates from this call, and Komoot processes them only to return the address. If you prefer not to share your GPS position with this provider, you can type your address manually instead.</li>
+        <li><strong>No continuous tracking:</strong> KOMUTE does not track your location in the background or outside of the features described above.</li>
+      </ul>
+    </div>
+  </div>
+
+  <!-- 12 -->
+  <div class="policy-section">
+    <div class="policy-section-head">
+      <div class="policy-num">12</div>
+      <div class="policy-section-title">Biometric Information</div>
+    </div>
+    <div class="policy-section-body">
+      <p>As part of driver verification, KOMUTE compares the photo on your driver's licence against a selfie you provide, which generates a facial similarity score. In some jurisdictions (including Illinois, Texas, and Washington in the United States), this score and related data may be considered a biometric identifier or biometric information. This section serves as our written policy on biometric data, made publicly available as required by law.</p>
+      <ul>
+        <li><strong>Consent:</strong> we will collect biometric data only after you have been informed in writing that it is being collected, the specific purpose, and the retention period, and only after you have provided your written (electronic) consent. You may decline; however, declining means you cannot be verified as a driver.</li>
+        <li><strong>Purpose:</strong> biometric data is collected solely to verify that the person creating a driver profile matches their government-issued licence. It is used for no other purpose.</li>
+        <li><strong>Retention and destruction:</strong> facial similarity scores and any biometric data are permanently destroyed within 30 days after the verification decision is made, or when the initial purpose for collection has been satisfied, or within 3 years of your last interaction with KOMUTE — whichever occurs first. After destruction, we retain only a non-biometric pass/fail verification outcome.</li>
+        <li><strong>No sale or profit:</strong> we do not sell, lease, trade, or otherwise profit from biometric data, and we do not disclose it to third parties except as required by law, with your consent, or to the verification service provider acting on our behalf under contractual confidentiality and security obligations.</li>
+        <li><strong>Security:</strong> biometric data is stored and transmitted using a reasonable standard of care at least as protective as the manner in which we protect other confidential and sensitive information.</li>
+      </ul>
+    </div>
+  </div>
+
+  <!-- 13 -->
+  <div class="policy-section">
+    <div class="policy-section-head">
+      <div class="policy-num">13</div>
+      <div class="policy-section-title">Data Retention</div>
+    </div>
+    <div class="policy-section-body">
+      <p>We keep personal data only as long as necessary for the purpose it was collected, after which it is deleted or anonymized. Our standard retention periods are:</p>
+      <ul>
+        <li><strong>Biometric verification data (facial similarity scores):</strong> destroyed within 30 days after the verification decision (see Section 12).</li>
+        <li><strong>Extracted driver's licence data (OCR output):</strong> deleted once the verification decision is recorded; only the outcome and minimum matching details are retained.</li>
+        <li><strong>Verification records (outcome only):</strong> up to 1 year after the verification decision.</li>
+        <li><strong>Ride search logs:</strong> up to 90 days.</li>
+        <li><strong>Completed rides and bookings:</strong> up to 2 years after trip completion.</li>
+        <li><strong>Cancelled rides and bookings:</strong> up to 6 months.</li>
+        <li><strong>In-app chat messages:</strong> up to 1 year after the associated ride is completed or cancelled.</li>
+        <li><strong>Account profile data:</strong> for as long as your account is active, then deleted per Section 8.</li>
+      </ul>
+      <p style="margin-top:14px">We may retain specific records beyond these periods only where required by law, or where reasonably necessary to resolve disputes, investigate safety incidents or fraud, enforce our agreements, or establish, exercise, or defend legal claims — and only for as long as that purpose requires.</p>
+    </div>
+  </div>
+
+  <!-- 14 -->
+  <div class="policy-section">
+    <div class="policy-section-head">
+      <div class="policy-num">14</div>
+      <div class="policy-section-title">Data Security and Breach Notification</div>
+    </div>
+    <div class="policy-section-body">
+      <p>We use administrative, technical, and physical safeguards designed to protect personal data, including encryption of sensitive data at rest and in transit, role-based access controls that restrict sensitive records (such as verification data) to authorized personnel, and scheduled deletion processes that enforce the retention periods above.</p>
+      <p>No method of transmission or storage is completely secure, and we cannot guarantee absolute security. If a breach of security affecting your personal data occurs, we will notify you and the relevant regulators or authorities as required by applicable law (including US state breach notification laws, Canada's PIPEDA, and the GDPR), without undue delay and within the timeframes those laws require.</p>
+    </div>
+  </div>
+
+  <!-- 15 -->
+  <div class="policy-section">
+    <div class="policy-section-head">
+      <div class="policy-num">15</div>
+      <div class="policy-section-title">Your Privacy Rights — United States</div>
+    </div>
+    <div class="policy-section-body">
+      <p>If you are a resident of California or another US state with a comprehensive privacy law (such as Virginia, Colorado, Connecticut, Texas, or Utah), you have the right, subject to certain exceptions, to:</p>
+      <ul>
+        <li><strong>Know / access:</strong> request disclosure of the categories and specific pieces of personal information we have collected about you, including ride and search history.</li>
+        <li><strong>Delete:</strong> request deletion of your personal information (see Section 8).</li>
+        <li><strong>Correct:</strong> request correction of inaccurate personal information.</li>
+        <li><strong>Portability:</strong> receive your personal information in a portable, readily usable format.</li>
+        <li><strong>Opt out of sale or sharing:</strong> KOMUTE does not sell personal information and does not share it for cross-context behavioural advertising. If that ever changes, we will provide the required notice and opt-out mechanisms first.</li>
+        <li><strong>Non-discrimination:</strong> we will not deny you service, charge different prices, or provide a different level of service because you exercised a privacy right.</li>
+      </ul>
+      <p style="margin-top:14px">You may exercise these rights by contacting <strong>privacy@komute.net</strong>. You may designate an authorized agent to submit requests on your behalf. We will verify your identity before responding and will respond within the timeframe required by your state's law (generally 45 days, extendable once where permitted).</p>
+    </div>
+  </div>
+
+  <!-- 16 -->
+  <div class="policy-section">
+    <div class="policy-section-head">
+      <div class="policy-num">16</div>
+      <div class="policy-section-title">Your Privacy Rights — Canada</div>
+    </div>
+    <div class="policy-section-body">
+      <p>If you are in Canada, we handle your personal information in accordance with the Personal Information Protection and Electronic Documents Act (PIPEDA) and applicable provincial privacy laws (including Quebec's Law 25). You have the right to:</p>
+      <ul>
+        <li>Access the personal information we hold about you and be informed of how it is used and disclosed.</li>
+        <li>Challenge the accuracy and completeness of your information and have it corrected.</li>
+        <li>Withdraw consent to the collection, use, or disclosure of your information, subject to legal or contractual restrictions and reasonable notice (withdrawing consent for data essential to the service may mean we can no longer provide it).</li>
+        <li>Request deletion of your personal information as described in Section 8.</li>
+        <li>File a complaint with the Office of the Privacy Commissioner of Canada or your provincial privacy regulator if you believe your rights have been violated.</li>
+      </ul>
+      <p style="margin-top:14px">Requests and complaints can be directed to our Privacy Officer at <strong>privacy@komute.net</strong>.</p>
+    </div>
+  </div>
+
+  <!-- 17 -->
+  <div class="policy-section">
+    <div class="policy-section-head">
+      <div class="policy-num">17</div>
+      <div class="policy-section-title">Your Privacy Rights — Europe (GDPR / UK GDPR)</div>
+    </div>
+    <div class="policy-section-body">
+      <p>If you are in the European Economic Area, Switzerland, or the United Kingdom, we process your personal data on the following legal bases: <strong>performance of a contract</strong> (operating your account, matching trips, in-app messaging), <strong>legitimate interests</strong> (platform safety, fraud prevention, service improvement), <strong>consent</strong> (biometric verification, marketing communications, device location access), and <strong>legal obligation</strong> (responding to lawful requests, breach notification). Biometric data is processed only with your explicit consent under Article 9(2)(a) GDPR.</p>
+      <p>You have the right to:</p>
+      <ul>
+        <li>Access your personal data and receive a copy (Art. 15).</li>
+        <li>Rectify inaccurate or incomplete data (Art. 16).</li>
+        <li>Erasure ("right to be forgotten") (Art. 17).</li>
+        <li>Restrict processing (Art. 18).</li>
+        <li>Data portability (Art. 20).</li>
+        <li>Object to processing based on legitimate interests, including profiling (Art. 21).</li>
+        <li>Withdraw consent at any time, without affecting the lawfulness of processing before withdrawal (Art. 7).</li>
+        <li>Not be subject to a decision based solely on automated processing that produces legal or similarly significant effects; where verification involves automated elements, you may request human review of an adverse decision (Art. 22).</li>
+        <li>Lodge a complaint with your local supervisory authority (or the UK Information Commissioner's Office).</li>
+      </ul>
+      <p style="margin-top:14px">To exercise these rights, contact <strong>privacy@komute.net</strong>. We respond within one month, extendable by two further months for complex requests as the GDPR permits.</p>
+    </div>
+  </div>
+
+  <!-- 18 -->
+  <div class="policy-section">
+    <div class="policy-section-head">
+      <div class="policy-num">18</div>
+      <div class="policy-section-title">International Data Transfers</div>
+    </div>
+    <div class="policy-section-body">
+      <p>KOMUTE is operated by Indus Network LLC and your data may be stored and processed in the United States, Canada, or other countries where we or our service providers operate. Where personal data is transferred out of the EEA, UK, Switzerland, or Canada, we use lawful transfer mechanisms — such as the European Commission's Standard Contractual Clauses, the UK International Data Transfer Addendum, or an adequacy decision — and require recipients to protect the data to standards consistent with this policy and applicable law.</p>
+    </div>
+  </div>
+
+  <!-- 19 -->
+  <div class="policy-section">
+    <div class="policy-section-head">
+      <div class="policy-num">19</div>
+      <div class="policy-section-title">Children's Privacy</div>
+    </div>
+    <div class="policy-section-body">
+      <p>KOMUTE is intended for adults aged 18 and over. We do not knowingly collect personal information from anyone under 18. If we learn that we have collected personal information from a person under 18, we will delete it promptly. If you believe a minor has provided us with personal information, please contact <strong>privacy@komute.net</strong>.</p>
+    </div>
+  </div>
+
+  <!-- 20 -->
+  <div class="policy-section">
+    <div class="policy-section-head">
+      <div class="policy-num">20</div>
+      <div class="policy-section-title">Changes to This Policy</div>
+    </div>
+    <div class="policy-section-body">
+      <p>We may update this policy from time to time. When material changes are made, we will notify you via email or through the app before the changes take effect, so you are aware of what we collect and how it is used. Where a change requires your consent under applicable law (for example, a new use of biometric data), we will obtain that consent before the change applies to you.</p>
+    </div>
+  </div>
+
+  <!-- 21 -->
+  <div class="policy-section">
+    <div class="policy-section-head">
+      <div class="policy-num">21</div>
+      <div class="policy-section-title">Contact Us</div>
+    </div>
+    <div class="policy-section-body">
+      <p>For privacy questions, requests, or complaints, contact our Privacy Officer:</p>
+      <ul>
+        <li>Email: <strong>privacy@komute.net</strong></li>
+        <li>Legal notices: <strong>legal@komute.net</strong></li>
+        <li>Operator: Indus Network LLC, operator of the KOMUTE platform.</li>
+      </ul>
+    </div>
+  </div>
+
+  <!-- Copyright -->
+  <div class="policy-footer-note">
+    <strong>© KOMUTE 2026</strong> &nbsp;·&nbsp; All rights reserved.
+  </div>
+
+</div>
+
+{% include 'footer.html' %}
+
+</body>
+</html>

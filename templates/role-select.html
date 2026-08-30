@@ -1,0 +1,366 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Komüte App – Choose Your Journey</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800&family=DM+Sans:wght@400;500;600&family=Montserrat:wght@600;700;800&display=swap" rel="stylesheet">
+
+<style>
+/* ── KOMÜTE BRAND TOKENS ── */
+:root {
+  --dark-bg:     #121212;
+  --light-bg:    #E9F7EE;
+  --contrast-lt: #D5FBE5;
+  --brand-green: #0D7810;
+  --grad-blue:   #0C63B4;
+  --grad-green:  #0CB439;
+  --white:       #ffffff;
+  --text-dark:   #121212;
+  --text-muted:  #4a6350;
+}
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  font-family: 'DM Sans', sans-serif;
+  min-height: 100vh;
+  background: var(--light-bg);
+  display: flex;
+  flex-direction: column;
+}
+
+.page-content {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 40px 20px;
+}
+
+/* ── TOP BADGE ── */
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--white);
+  border: 1.5px solid #b8dfc4;
+  border-radius: 50px;
+  padding: 9px 22px;
+  font-family: 'DM Sans', sans-serif;
+  font-size: 0.9rem;
+  font-weight: 500;
+  color: var(--brand-green);
+  margin-bottom: 24px;
+}
+.badge svg {
+  width: 16px; height: 16px;
+  stroke: var(--brand-green);
+  fill: none;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+/* ── HEADING ── */
+.page-heading {
+  font-family: 'Poppins', sans-serif;
+  font-size: clamp(1.8rem, 4vw, 2.6rem);
+  font-weight: 800;
+  color: var(--brand-green);
+  text-align: center;
+  margin-bottom: 12px;
+  max-width: 700px;
+}
+
+.page-sub {
+  font-size: 1rem;
+  color: var(--text-muted);
+  text-align: center;
+  margin-bottom: 40px;
+}
+
+/* ── CARDS GRID ── */
+.cards-grid {
+  display: flex;
+  gap: 28px;
+  max-width: 1000px;
+  width: 100%;
+  flex-wrap: wrap;
+  justify-content: center;
+  margin-bottom: 36px;
+}
+
+/* ── ROLE CARD ── */
+.role-card {
+  background: var(--white);
+  border-radius: 18px;
+  padding: 40px 36px 32px;
+  flex: 1;
+  min-width: 300px;
+  max-width: 460px;
+  box-shadow: 0 4px 24px rgba(12, 99, 180, 0.08);
+  border: 2px solid transparent;
+  cursor: pointer;
+  transition: border-color 0.2s, box-shadow 0.2s, transform 0.2s;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  animation: fadeUp 0.5s ease both;
+}
+.role-card:nth-child(1) { animation-delay: 0.1s; }
+.role-card:nth-child(2) { animation-delay: 0.2s; }
+
+@keyframes fadeUp {
+  from { opacity: 0; transform: translateY(22px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.role-card:hover {
+  border-color: var(--brand-green);
+  box-shadow: 0 8px 32px rgba(13, 120, 16, 0.15);
+  transform: translateY(-4px);
+}
+
+.role-card.selected {
+  border-color: var(--brand-green);
+  box-shadow: 0 8px 32px rgba(13, 120, 16, 0.18);
+}
+
+/* ── ICON BOX ── */
+.icon-box {
+  width: 80px; height: 80px;
+  border-radius: 20px;
+  background: var(--brand-green);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 22px;
+}
+.icon-box svg {
+  width: 40px; height: 40px;
+  stroke: white;
+  fill: none;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+/* ── ROLE TITLE / DESC ── */
+.role-title {
+  font-family: 'Poppins', sans-serif;
+  font-size: 1.5rem;
+  font-weight: 800;
+  color: var(--brand-green);
+  margin-bottom: 8px;
+}
+
+.role-desc {
+  font-size: 0.95rem;
+  color: var(--text-muted);
+  margin-bottom: 24px;
+  line-height: 1.55;
+}
+
+/* ── FEATURE LIST ── */
+.feature-list {
+  list-style: none;
+  width: 100%;
+  text-align: left;
+  margin-bottom: 30px;
+}
+
+.feature-list li {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 0.95rem;
+  color: var(--text-dark);
+  padding: 7px 0;
+  border-bottom: 1px solid #f0f7f1;
+}
+.feature-list li:last-child { border-bottom: none; }
+
+.check-icon {
+  width: 26px; height: 26px;
+  border-radius: 50%;
+  background: var(--brand-green);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.check-icon svg {
+  width: 14px; height: 14px;
+  stroke: white;
+  fill: none;
+  stroke-width: 2.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+/* ── CONTINUE BUTTON ── */
+.btn-continue {
+  width: 100%;
+  padding: 14px;
+  background: var(--brand-green);
+  color: var(--white);
+  border: none;
+  border-radius: 10px;
+  font-family: 'Poppins', sans-serif;
+  font-weight: 700;
+  font-size: 1rem;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  transition: opacity 0.2s, transform 0.15s;
+  text-decoration: none;
+  letter-spacing: 0.01em;
+}
+.btn-continue:hover { opacity: 0.88; transform: translateY(-1px); }
+
+/* ── BOTTOM NOTE ── */
+.bottom-note {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--white);
+  border: 1.5px solid #b8dfc4;
+  border-radius: 50px;
+  padding: 10px 24px;
+  font-size: 0.9rem;
+  font-weight: 500;
+  color: var(--text-muted);
+}
+.bottom-note svg {
+  width: 15px; height: 15px;
+  stroke: var(--brand-green);
+  fill: none;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  flex-shrink: 0;
+}
+
+@media (max-width: 680px) {
+  .cards-grid { gap: 18px; }
+  .role-card { padding: 30px 22px 24px; min-width: 260px; }
+}
+</style>
+</head>
+<body>
+{% include 'header.html' %}
+<div class="page-content">
+<!-- Top badge -->
+<div class="badge">
+  <svg viewBox="0 0 24 24"><path d="M11 20A7 7 0 0 1 9.8 6.1C15.5 5 17 4.48 19 2c1 2 2 4.18 2 8 0 5.5-4.78 10-10 10z"/><path d="M2 21c0-3 1.85-5.36 5.08-6C9.5 14.52 12 13 13 12"/></svg>
+  Choose Your Journey
+</div>
+
+<!-- Heading -->
+<h1 class="page-heading">How would you like to use Komute?</h1>
+<p class="page-sub">Select your role to get started with sustainable commuting</p>
+
+<!-- Role Cards -->
+<div class="cards-grid">
+  <form action="{% url 'role-select' %}" method="POST">
+    {% csrf_token %}
+      <!-- Driver -->
+      <div class="role-card" onclick="this.classList.toggle('selected')">
+        <div class="icon-box">
+          <svg viewBox="0 0 24 24">
+            <rect x="1" y="3" width="15" height="13" rx="2"/>
+            <polygon points="16 8 20 8 23 11 23 16 16 16 16 8"/>
+            <circle cx="5.5" cy="18.5" r="2.5"/>
+            <circle cx="18.5" cy="18.5" r="2.5"/>
+          </svg>
+        </div>
+        <div class="role-title">I'm a Driver</div>
+        <div class="role-desc">Share your ride and help reduce emissions</div>
+        <ul class="feature-list">
+          <li>
+            <div class="check-icon"><svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg></div>
+            Post your available rides
+          </li>
+          <li>
+            <div class="check-icon"><svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg></div>
+            Set your own prices
+          </li>
+          <li>
+            <div class="check-icon"><svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg></div>
+            Choose your passengers
+          </li>
+          <li>
+            <div class="check-icon"><svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg></div>
+            Make a positive impact
+          </li>
+          <li>
+            <div class="check-icon"><svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg></div>
+            Earn while commuting
+          </li>
+        </ul>
+        <!-- <a href="#" class="btn-continue">
+          Continue as Driver &nbsp;→
+        </a> -->
+        <button type="submit" class="btn-continue" name="role" value="driver"> Continue as Driver &nbsp;→ </button>
+      </div>
+
+  </form>  
+  <!-- Rider -->
+  <form action="{% url 'role-select' %}" method="POST">
+    {% csrf_token %}
+    <div class="role-card" onclick="this.classList.toggle('selected')">
+      <div class="icon-box">
+        <svg viewBox="0 0 24 24">
+          <circle cx="12" cy="8" r="4"/>
+          <path d="M12 14c-5 0-8 2.5-8 4v1h16v-1c0-1.5-3-4-8-4z"/>
+          <circle cx="12" cy="8" r="2" stroke="none" fill="white"/>
+        </svg>
+      </div>
+      <div class="role-title">I'm a Rider</div>
+      <div class="role-desc">Find eco-friendly rides and travel smart</div>
+      <ul class="feature-list">
+        <li>
+          <div class="check-icon"><svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg></div>
+          Search for available rides
+        </li>
+        <li>
+          <div class="check-icon"><svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg></div>
+          Book instantly
+        </li>
+        <li>
+          <div class="check-icon"><svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg></div>
+          Chat with your driver
+        </li>
+        <li>
+          <div class="check-icon"><svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg></div>
+          Reduce your carbon footprint
+        </li>
+        <li>
+          <div class="check-icon"><svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg></div>
+          Save money on travel
+        </li>
+      </ul>
+      <!-- <a href="#" class="btn-continue">
+        Continue as Rider &nbsp;→
+      </a> -->
+      <button type="submit" class="btn-continue" name="role" value="rider" > Continue as Rider &nbsp;→ </button>
+    </div>
+  </form>
+</div>
+
+<!-- Bottom note -->
+<div class="bottom-note">
+  <svg viewBox="0 0 24 24"><path d="M11 20A7 7 0 0 1 9.8 6.1C15.5 5 17 4.48 19 2c1 2 2 4.18 2 8 0 5.5-4.78 10-10 10z"/><path d="M2 21c0-3 1.85-5.36 5.08-6C9.5 14.52 12 13 13 12"/></svg>
+  You can switch roles anytime from your dashboard
+</div>
+</div><!-- /page-content -->
+{% include 'footer.html' %}
+</body>
+</html>

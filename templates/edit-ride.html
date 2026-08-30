@@ -1,0 +1,607 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<link rel="icon" type="image/png" href="{% static 'images/icon_white.png' %}">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Komüte – Edit Ride</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800&family=DM+Sans:wght@400;500;600&family=Montserrat:wght@600;700;800&display=swap" rel="stylesheet">
+<style>
+:root{
+  --light-bg:#E9F7EE;--contrast-lt:#D5FBE5;--brand-green:#0D7810;
+  --grad-blue:#0C63B4;--grad-green:#0CB439;--white:#fff;
+  --text-dark:#121212;--text-muted:#5a7060;
+  --input-border:#c2dfc8;--input-bg:#f6fbf7;
+  --card-shadow:0 4px 24px rgba(13,120,16,0.08);
+}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
+body{font-family:'DM Sans',sans-serif;background:var(--light-bg);min-height:100vh;color:var(--text-dark);}
+
+.page-outer{max-width:860px;margin:0 auto;padding:32px 24px 80px;}
+
+/* ── BREADCRUMB ── */
+.breadcrumb{display:inline-flex;align-items:center;gap:6px;background:var(--white);border:1.5px solid var(--input-border);border-radius:50px;padding:6px 16px;font-size:.8rem;font-weight:500;color:var(--text-muted);margin-bottom:20px;text-decoration:none;transition:all .2s;}
+.breadcrumb:hover{border-color:var(--brand-green);color:var(--brand-green);}
+.breadcrumb svg{width:13px;height:13px;stroke:var(--brand-green);fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;}
+
+/* ── PAGE HEADER ── */
+.page-header{margin-bottom:26px;}
+.page-title{font-family:'Poppins',sans-serif;font-weight:800;font-size:1.9rem;color:var(--brand-green);margin-bottom:4px;}
+.page-subtitle{font-size:.9rem;color:var(--text-muted);display:flex;align-items:center;gap:6px;}
+.page-subtitle svg{width:14px;height:14px;stroke:var(--brand-green);fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;}
+
+/* ── SECTION CARDS ── */
+.section-card{background:var(--white);border-radius:18px;border:1.5px solid #e2f0e4;box-shadow:var(--card-shadow);margin-bottom:18px;overflow:hidden;}
+.section-header{display:flex;align-items:center;gap:11px;padding:16px 22px;border-bottom:1.5px solid #edf7ee;background:linear-gradient(135deg,#f8fef9,#f0faf1);}
+.section-icon{width:38px;height:38px;border-radius:10px;background:linear-gradient(135deg,#0C63B4,#0CB439);display:flex;align-items:center;justify-content:center;flex-shrink:0;}
+.section-icon svg{width:18px;height:18px;stroke:white;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;}
+.section-header-text h3{font-family:'Poppins',sans-serif;font-size:.95rem;font-weight:700;color:var(--brand-green);}
+.section-header-text p{font-size:.75rem;color:var(--text-muted);}
+.section-body{padding:22px;}
+
+/* ── FORM ELEMENTS ── */
+.form-group{margin-bottom:16px;}
+.form-label{display:block;font-size:.82rem;font-weight:600;color:var(--text-dark);margin-bottom:6px;}
+.required{color:#ef4444;}
+.form-grid-2{display:grid;grid-template-columns:1fr 1fr;gap:16px;}
+.form-grid-3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px;margin-bottom:16px;}
+.input-wrap{position:relative;}
+.input-icon{position:absolute;left:12px;top:50%;transform:translateY(-50%);display:flex;align-items:center;}
+.input-icon svg{width:16px;height:16px;stroke:var(--text-muted);fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;}
+.date-picker-native{position:absolute;left:0;top:0;width:38px;height:100%;opacity:0;border:none;padding:0;margin:0;cursor:pointer;z-index:2;}
+.date-picker-native::-webkit-calendar-picker-indicator{position:absolute;left:0;top:0;width:100%;height:100%;margin:0;cursor:pointer;}
+.form-input{width:100%;padding:11px 12px 11px 38px;border:1.5px solid var(--input-border);border-radius:11px;font-family:'DM Sans',sans-serif;font-size:.9rem;background:var(--input-bg);outline:none;color:var(--text-dark);transition:border-color .2s,background .2s;}
+.form-input:focus{border-color:var(--brand-green);background:white;}
+.form-input::placeholder{color:#b0c8b5;}
+.form-input.no-icon{padding-left:12px;}
+.form-select{width:100%;padding:11px 12px 11px 38px;border:1.5px solid var(--input-border);border-radius:11px;font-family:'DM Sans',sans-serif;font-size:.9rem;background:var(--input-bg);outline:none;color:var(--text-dark);appearance:none;transition:border-color .2s;}
+.form-select:focus{border-color:var(--brand-green);background:white;}
+.form-textarea{width:100%;padding:11px 12px;border:1.5px solid var(--input-border);border-radius:11px;font-family:'DM Sans',sans-serif;font-size:.9rem;background:var(--input-bg);outline:none;color:var(--text-dark);resize:vertical;min-height:90px;transition:border-color .2s;}
+.form-textarea:focus{border-color:var(--brand-green);background:white;}
+.form-error{color:#ef4444;font-size:.78rem;margin-top:3px;display:block;}
+
+/* price prefix */
+.price-wrap .form-input{padding-left:28px;}
+.price-prefix{position:absolute;left:11px;top:50%;transform:translateY(-50%);font-weight:700;color:var(--brand-green);font-size:.95rem;}
+
+/* ── SEAT COUNTER ── */
+.seat-counter{display:flex;align-items:center;gap:0;border:1.5px solid var(--input-border);border-radius:11px;overflow:hidden;background:var(--input-bg);width:fit-content;}
+.seat-btn{width:40px;height:42px;border:none;background:var(--input-bg);font-size:1.1rem;font-weight:700;color:var(--brand-green);cursor:pointer;transition:background .15s;display:flex;align-items:center;justify-content:center;}
+.seat-btn:hover{background:var(--contrast-lt);}
+.seat-display{min-width:52px;height:42px;border-left:1px solid var(--input-border);border-right:1px solid var(--input-border);background:white;display:flex;align-items:center;justify-content:center;font-family:'Montserrat',sans-serif;font-weight:700;font-size:1rem;color:var(--brand-green);}
+
+/* ── PREFERENCES ── */
+.pref-grid{display:flex;flex-wrap:wrap;gap:8px;}
+.pref-chip{display:inline-flex;align-items:center;gap:6px;background:var(--input-bg);border:1.5px solid var(--input-border);border-radius:50px;padding:7px 14px;font-size:.82rem;font-weight:600;color:var(--text-muted);cursor:pointer;transition:all .18s;user-select:none;}
+.pref-chip:hover{border-color:var(--brand-green);color:var(--brand-green);background:var(--contrast-lt);}
+.pref-chip.active{background:var(--contrast-lt);border-color:var(--brand-green);color:var(--brand-green);}
+.pref-chip svg{width:13px;height:13px;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;}
+
+/* ── ROUTE BUILDER ── */
+.route-builder{display:flex;flex-direction:column;margin-bottom:14px;}
+.route-stop{position:relative;}
+.stop-line{display:flex;align-items:flex-start;gap:0;}
+.stop-indicator{display:flex;flex-direction:column;align-items:center;width:36px;flex-shrink:0;padding-top:30px;}
+.stop-dot{width:14px;height:14px;border-radius:50%;flex-shrink:0;position:relative;z-index:2;}
+.origin-dot{background:var(--brand-green);border:3px solid white;box-shadow:0 0 0 2px var(--brand-green);}
+.dest-dot{background:linear-gradient(135deg,#0C63B4,#0CB439);border:3px solid white;box-shadow:0 0 0 2px #0C63B4;}
+.via-dot{background:white;border:2.5px solid var(--brand-green);}
+.stop-track{width:2px;flex:1;min-height:18px;background:repeating-linear-gradient(to bottom,#c2dfc8 0,#c2dfc8 5px,transparent 5px,transparent 10px);margin-top:4px;}
+.stop-content{flex:1;padding-bottom:14px;}
+.stop-badge-row{display:flex;align-items:center;justify-content:space-between;margin-bottom:0;}
+.stop-badge{display:inline-flex;align-items:center;gap:5px;font-size:.75rem;font-weight:700;font-family:'Poppins',sans-serif;text-transform:uppercase;letter-spacing:.06em;padding:3px 10px;border-radius:20px;margin-bottom:6px;}
+.stop-badge.via-badge{background:#dcfce7;color:var(--brand-green);}
+.remove-stop-btn{background:none;border:none;cursor:pointer;color:#fca5a5;padding:2px 4px;border-radius:6px;transition:color .2s,background .2s;display:flex;align-items:center;margin-bottom:4px;}
+.remove-stop-btn:hover{color:#dc2626;background:#fee2e2;}
+.remove-stop-btn svg{width:14px;height:14px;stroke:currentColor;fill:none;stroke-width:2.5;stroke-linecap:round;stroke-linejoin:round;}
+.add-stop-row{display:flex;gap:10px;flex-wrap:wrap;margin-left:36px;margin-bottom:4px;}
+.add-stop-btn{display:inline-flex;align-items:center;gap:6px;padding:7px 16px;border-radius:50px;font-family:'DM Sans',sans-serif;font-size:.8rem;font-weight:600;cursor:pointer;transition:all .2s;border:1.5px dashed;background:#f0fdf4;color:var(--brand-green);border-color:var(--brand-green);}
+.add-stop-btn:hover{background:var(--contrast-lt);}
+.add-stop-btn svg{width:13px;height:13px;stroke:currentColor;fill:none;stroke-width:2.5;stroke-linecap:round;stroke-linejoin:round;}
+
+/* ── AUTOCOMPLETE ── */
+.autocomplete-dropdown{position:absolute;background:var(--white);border:1.5px solid var(--brand-green);border-radius:10px;box-shadow:0 8px 24px rgba(13,120,16,.14);z-index:9999;overflow:hidden;max-height:220px;overflow-y:auto;}
+.autocomplete-item{padding:10px 14px;font-family:'DM Sans',sans-serif;font-size:.85rem;color:var(--text-dark);cursor:pointer;border-bottom:1px solid #edf7ee;transition:background .15s;}
+.autocomplete-item:last-child{border-bottom:none;}
+.autocomplete-item:hover,.autocomplete-item.active{background:var(--contrast-lt);color:var(--brand-green);}
+.autocomplete-item.no-results{color:var(--text-muted);cursor:default;}
+.autocomplete-item.no-results:hover{background:transparent;color:var(--text-muted);}
+
+/* ── SUBMIT ── */
+.btn-submit{width:100%;padding:15px;background:linear-gradient(90deg,#0C63B4,#0CB439);color:white;border:none;border-radius:13px;font-family:'Poppins',sans-serif;font-weight:700;font-size:1rem;cursor:pointer;transition:opacity .2s,transform .15s;display:flex;align-items:center;justify-content:center;gap:8px;box-shadow:0 4px 16px rgba(12,99,180,.28);}
+.btn-submit:hover{opacity:.9;transform:translateY(-1px);}
+.btn-submit svg{width:18px;height:18px;stroke:white;fill:none;stroke-width:2.5;stroke-linecap:round;stroke-linejoin:round;}
+.btn-cancel{width:100%;padding:14px;margin-top:10px;background:white;color:var(--text-muted);border:1.5px solid var(--input-border);border-radius:13px;font-family:'Poppins',sans-serif;font-weight:600;font-size:.95rem;cursor:pointer;transition:all .2s;text-decoration:none;display:flex;align-items:center;justify-content:center;gap:8px;}
+.btn-cancel:hover{border-color:var(--brand-green);color:var(--brand-green);}
+
+/* ── ROUTE SUMMARY STRIP ── */
+.route-summary{display:none;align-items:center;gap:18px;margin:4px 0 14px 36px;padding:10px 16px;background:linear-gradient(135deg,#f0fdf4,#eff6ff);border:1.5px solid #b6dfc0;border-radius:10px;flex-wrap:wrap;}
+.route-summary-item{display:flex;align-items:center;gap:7px;font-family:'Poppins',sans-serif;font-size:.82rem;font-weight:700;color:var(--brand-green);}
+.route-summary-item svg{width:15px;height:15px;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;}
+.route-summary-item.time-item{color:#1d4ed8;}
+.route-summary-item.time-item svg{stroke:#1d4ed8;}
+.route-summary-divider{width:1px;height:18px;background:#c2dfc8;}
+
+@media(max-width:720px){
+  .form-grid-2,.form-grid-3{grid-template-columns:1fr;}
+  .page-outer{padding:24px 14px 60px;}
+}
+</style>
+</head>
+<body>
+
+{% include 'header.html' %}
+
+<div class="page-outer">
+
+  <a href="{% url 'my-rides' %}" class="breadcrumb">
+    <svg viewBox="0 0 24 24"><polyline points="15 18 9 12 15 6"/></svg>
+    Back to My Rides
+  </a>
+
+  <div class="page-header">
+    <h1 class="page-title">Edit Ride</h1>
+    <p class="page-subtitle">
+      <svg viewBox="0 0 24 24"><circle cx="12" cy="10" r="3"/><path d="M12 2a8 8 0 0 0-8 8c0 5.25 8 12 8 12s8-6.75 8-12a8 8 0 0 0-8-8z"/></svg>
+      {{ ride.origin }} → {{ ride.destination }}
+    </p>
+  </div>
+
+  <form id="editRideForm" method="POST" novalidate>
+  {% csrf_token %}
+  <input type="hidden" name="duration_seconds" id="duration_seconds" value="0">
+  <input type="hidden" name="depart_utc" id="depart_utc" value="">
+  <input type="hidden" name="tz" id="tz_input" value="">
+  <input type="hidden" id="depart-ts" value="{{ ride.depart_at|date:'U' }}">
+
+  <!-- ── CARD 1: Route ── -->
+  <div class="section-card">
+    <div class="section-header">
+      <div class="section-icon"><svg viewBox="0 0 24 24"><line x1="3" y1="12" x2="21" y2="12"/><polyline points="15 6 21 12 15 18"/></svg></div>
+      <div class="section-header-text"><h3>Route Details</h3><p>Where are you going and when?</p></div>
+    </div>
+    <div class="section-body">
+
+      <div class="route-builder" id="routeBuilder">
+
+        <!-- Origin -->
+        <div class="route-stop" id="stop-origin">
+          <div class="stop-line">
+            <div class="stop-indicator">
+              <div class="stop-dot origin-dot"></div>
+              <div class="stop-track"></div>
+            </div>
+            <div class="stop-content">
+              <label class="form-label">Starting Point <span class="required">*</span></label>
+              <div class="input-wrap">
+                <span class="input-icon"><svg viewBox="0 0 24 24"><circle cx="12" cy="10" r="3"/><path d="M12 2a8 8 0 0 0-8 8c0 5.25 8 12 8 12s8-6.75 8-12a8 8 0 0 0-8-8z"/></svg></span>
+                <input type="text" name="origin" id="origin_input" class="form-input" value="{{ ride.origin }}" placeholder="e.g. Downtown Toronto, ON" autocomplete="off">
+                <input type="hidden" name="origin_lat" id="origin_lat" value="{{ ride.origin_lat }}">
+                <input type="hidden" name="origin_lng" id="origin_lng" value="{{ ride.origin_lng }}">
+              </div>
+              {% if errors.origin %}<span class="form-error">{{ errors.origin }}</span>{% endif %}
+            </div>
+          </div>
+        </div>
+
+        <!-- Via stops -->
+        <div id="viaStops"></div>
+
+        <!-- Destination -->
+        <div class="route-stop" id="stop-final">
+          <div class="stop-line">
+            <div class="stop-indicator">
+              <div class="stop-dot dest-dot"></div>
+            </div>
+            <div class="stop-content">
+              <label class="form-label">Final Destination <span class="required">*</span></label>
+              <div class="input-wrap">
+                <span class="input-icon"><svg viewBox="0 0 24 24"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg></span>
+                <input type="text" name="destination" id="destination_input" class="form-input" value="{{ ride.destination }}" placeholder="e.g. Mississauga, ON" autocomplete="off">
+                <input type="hidden" name="destination_lat" id="destination_lat" value="{{ ride.dest_lat }}">
+                <input type="hidden" name="destination_lng" id="destination_lng" value="{{ ride.dest_lng }}">
+              </div>
+              {% if errors.destination %}<span class="form-error">{{ errors.destination }}</span>{% endif %}
+            </div>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- Route summary strip -->
+      <div class="route-summary" id="routeSummary"></div>
+
+      <!-- Add stop button -->
+      <div class="add-stop-row">
+        <button type="button" class="add-stop-btn" onclick="addStop()">
+          <svg viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+          Add Stop
+        </button>
+      </div>
+
+      <div class="form-grid-2" style="margin-top:18px">
+        <div class="form-group">
+          <label class="form-label">Date <span class="required">*</span></label>
+          <div class="input-wrap">
+            <span class="input-icon"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg></span>
+            <input type="text" id="depart_date_display" class="form-input" placeholder="MM-DD-YYYY" maxlength="10" inputmode="numeric" autocomplete="off" oninput="autoDateFmt(this,'depart_date')">
+            <input type="hidden" name="date" id="depart_date">
+            <input type="date" class="date-picker-native" id="depart_date_picker" tabindex="-1" min="{% now 'Y-m-d' %}"
+              onchange="pickNativeDate(this,'depart_date_display','depart_date')">
+          </div>
+          {% if errors.date %}<span class="form-error">{{ errors.date }}</span>{% endif %}
+        </div>
+        <div class="form-group">
+          <label class="form-label">Departure Time <span class="required">*</span></label>
+          <div class="input-wrap">
+            <span class="input-icon"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg></span>
+            <input type="time" name="depart_time" id="depart_time" class="form-input">
+          </div>
+          {% if errors.depart_time %}<span class="form-error">{{ errors.depart_time }}</span>{% endif %}
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- ── CARD 2: Ride Settings ── -->
+  <div class="section-card">
+    <div class="section-header">
+      <div class="section-icon"><svg viewBox="0 0 24 24"><rect x="1" y="3" width="15" height="13" rx="2"/><polygon points="16 8 20 8 23 11 23 16 16 16 16 8"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></svg></div>
+      <div class="section-header-text"><h3>Ride Settings</h3><p>Seats, price and preferences</p></div>
+    </div>
+    <div class="section-body">
+
+      <div class="form-group" style="margin-bottom:18px">
+        <label class="form-label">Vehicle</label>
+        <div class="input-wrap">
+          <span class="input-icon"><svg viewBox="0 0 24 24"><rect x="1" y="3" width="15" height="13" rx="2"/><polygon points="16 8 20 8 23 11 23 16 16 16 16 8"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></svg></span>
+          <select name="vehicle" class="form-select">
+            {% for v in vehicles %}
+            <option value="{{ v.id }}" {% if ride.vehicle_id == v.id %}selected{% endif %}>
+              {{ v.year }} {{ v.make }} {{ v.model }} ({{ v.plate }})
+            </option>
+            {% endfor %}
+          </select>
+        </div>
+      </div>
+
+      <div class="form-grid-3">
+        <div class="form-group">
+          <label class="form-label">Available Seats <span class="required">*</span></label>
+          <input type="hidden" name="seats" id="seatInput" value="{{ ride.seats_total }}">
+          <div class="seat-counter">
+            <button type="button" class="seat-btn" onclick="changeSeat(-1)">−</button>
+            <div class="seat-display" id="seatDisplay">{{ ride.seats_total }}</div>
+            <button type="button" class="seat-btn" onclick="changeSeat(1)">+</button>
+          </div>
+          {% if errors.seats %}<span class="form-error">{{ errors.seats }}</span>{% endif %}
+        </div>
+        <div class="form-group">
+          <label class="form-label">Price per Seat (CAD) <span class="required">*</span></label>
+          <div class="input-wrap price-wrap">
+            <span class="price-prefix">$</span>
+            <input type="number" name="price" class="form-input" value="{{ price_display }}" placeholder="0.00" min="0.01" step="0.5">
+          </div>
+          {% if errors.price %}<span class="form-error">{{ errors.price }}</span>{% endif %}
+        </div>
+        <div class="form-group">
+          <label class="form-label">Passenger Preference</label>
+          <div class="input-wrap">
+            <span class="input-icon"><svg viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg></span>
+            <select name="passenger_gender_pref" class="form-select">
+              <option value="any" {% if ride.passenger_gender_pref == 'any' %}selected{% endif %}>Any</option>
+              <option value="women_only" {% if ride.passenger_gender_pref == 'women_only' %}selected{% endif %}>Women Only</option>
+              <option value="men_only" {% if ride.passenger_gender_pref == 'men_only' %}selected{% endif %}>Men Only</option>
+            </select>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- ── CARD 3: Preferences ── -->
+  <div class="section-card">
+    <div class="section-header">
+      <div class="section-icon"><svg viewBox="0 0 24 24"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg></div>
+      <div class="section-header-text"><h3>Ride Preferences</h3><p>What to expect on this ride</p></div>
+    </div>
+    <div class="section-body">
+      <input type="hidden" name="preferences_json" id="preferencesJson" value="">
+      <div class="pref-grid" id="prefGrid">
+        {% for pref in pref_options %}
+        <div class="pref-chip" onclick="togglePref(this)" data-pref="{{ pref }}">
+          <svg viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+          {{ pref }}
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+
+  <!-- ── CARD 4: Notes ── -->
+  <div class="section-card">
+    <div class="section-header">
+      <div class="section-icon"><svg viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></div>
+      <div class="section-header-text"><h3>Trip Notes</h3><p>Any message for passengers</p></div>
+    </div>
+    <div class="section-body">
+      <div class="form-group" style="margin-bottom:0">
+        <textarea name="notes" class="form-textarea" placeholder="e.g. I'll stop for coffee, prefer highway route…">{{ ride.notes|default:'' }}</textarea>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── SUBMIT ── -->
+  <button type="submit" class="btn-submit">
+    <svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>
+    Save Changes
+  </button>
+  <a href="{% url 'my-rides' %}" class="btn-cancel">Cancel</a>
+
+  </form>
+</div>
+
+<!-- Autocomplete dropdown -->
+<div class="autocomplete-dropdown" id="autocompleteDropdown" style="display:none"></div>
+
+{{ stops_data|json_script:"stops-data" }}
+{{ preferences|json_script:"preferences-data" }}
+
+<script>
+/* ── SEAT COUNTER ── */
+let seats = {{ ride.seats_total }};
+function changeSeat(d) {
+  seats = Math.min(8, Math.max(1, seats + d));
+  document.getElementById('seatDisplay').textContent = seats;
+  document.getElementById('seatInput').value = seats;
+}
+
+/* ── PREFERENCES ── */
+const ACTIVE_PREFS = new Set(JSON.parse(document.getElementById('preferences-data').textContent));
+document.querySelectorAll('.pref-chip').forEach(chip => {
+  if (ACTIVE_PREFS.has(chip.dataset.pref)) {
+    chip.classList.add('active');
+    chip.querySelector('svg').innerHTML = '<polyline points="20 6 9 17 4 12"/>';
+  }
+});
+updatePrefsJson();
+
+function togglePref(chip) {
+  const pref = chip.dataset.pref;
+  chip.classList.toggle('active');
+  const isActive = chip.classList.contains('active');
+  chip.querySelector('svg').innerHTML = isActive
+    ? '<polyline points="20 6 9 17 4 12"/>'
+    : '<line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>';
+  if (isActive) ACTIVE_PREFS.add(pref); else ACTIVE_PREFS.delete(pref);
+  updatePrefsJson();
+}
+function updatePrefsJson() {
+  document.getElementById('preferencesJson').value = JSON.stringify([...ACTIVE_PREFS]);
+}
+
+/* ── VIA STOPS ── */
+let stopCount = 0;
+const EXISTING_STOPS = JSON.parse(document.getElementById('stops-data').textContent);
+
+function addStop(location='', lat=0, lng=0) {
+  if (stopCount >= 5) return;
+  stopCount++;
+  const id = 'stop-' + stopCount;
+  const div = document.createElement('div');
+  div.className = 'route-stop';
+  div.id = id;
+  div.innerHTML = `
+    <div class="stop-line">
+      <div class="stop-indicator">
+        <div class="stop-dot via-dot"></div>
+        <div class="stop-track"></div>
+      </div>
+      <div class="stop-content">
+        <div class="stop-badge-row">
+          <span class="stop-badge via-badge">Stop</span>
+          <button type="button" class="remove-stop-btn" onclick="removeStop('${id}')">
+            <svg viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+          </button>
+        </div>
+        <div class="input-wrap">
+          <span class="input-icon"><svg viewBox="0 0 24 24"><circle cx="12" cy="10" r="3"/><path d="M12 2a8 8 0 0 0-8 8c0 5.25 8 12 8 12s8-6.75 8-12a8 8 0 0 0-8-8z"/></svg></span>
+          <input type="text" name="stop_location" class="form-input stop-input" value="${location}" placeholder="e.g. Scarborough, ON" autocomplete="off" oninput="onStopInput(this)">
+          <input type="hidden" name="stop_lat" value="${lat}">
+          <input type="hidden" name="stop_lng" value="${lng}">
+        </div>
+      </div>
+    </div>`;
+  document.getElementById('stop-final').before(div);
+  triggerRouteSummary();
+}
+
+function removeStop(id) {
+  const el = document.getElementById(id);
+  if (el) { el.remove(); stopCount--; triggerRouteSummary(); }
+}
+
+// Load existing stops
+EXISTING_STOPS.forEach(s => addStop(s.location, s.lat, s.lng));
+
+/* ── AUTOCOMPLETE (Photon) ── */
+let acTarget = null, acTimer = null;
+const dropdown = document.getElementById('autocompleteDropdown');
+
+function attachAutocomplete(input) {
+  input.addEventListener('focus', () => { acTarget = input; });
+  input.addEventListener('input', () => {
+    clearTimeout(acTimer);
+    acTarget = input;
+    acTimer = setTimeout(() => fetchSuggestions(input.value.trim(), input), 300);
+  });
+}
+
+['origin_input','destination_input'].forEach(id => {
+  const el = document.getElementById(id);
+  if (el) attachAutocomplete(el);
+});
+
+document.addEventListener('input', e => {
+  if (e.target.classList.contains('stop-input')) attachAutocomplete(e.target);
+});
+
+function fetchSuggestions(q, input) {
+  if (q.length < 3) { dropdown.style.display = 'none'; return; }
+  fetch(`https://photon.komoot.io/api/?q=${encodeURIComponent(q)}&limit=5`)
+    .then(r => r.json())
+    .then(data => showDropdown(data.features || [], input))
+    .catch(() => { dropdown.style.display = 'none'; });
+}
+
+function showDropdown(features, input) {
+  const rect = input.getBoundingClientRect();
+  dropdown.style.left  = (rect.left + window.scrollX) + 'px';
+  dropdown.style.top   = (rect.bottom + window.scrollY + 4) + 'px';
+  dropdown.style.width = rect.width + 'px';
+  if (!features.length) {
+    dropdown.innerHTML = '<div class="autocomplete-item no-results">No results found</div>';
+    dropdown.style.display = 'block';
+    return;
+  }
+  dropdown.innerHTML = features.map(f => {
+    const p = f.properties;
+    const label = [p.name, p.city, p.state, p.country].filter(Boolean).join(', ');
+    return `<div class="autocomplete-item" data-lat="${f.geometry.coordinates[1]}" data-lng="${f.geometry.coordinates[0]}" data-label="${label}">${label}</div>`;
+  }).join('');
+  dropdown.style.display = 'block';
+  dropdown.querySelectorAll('.autocomplete-item').forEach(item => {
+    item.addEventListener('click', () => selectItem(item, input));
+  });
+}
+
+function selectItem(item, input) {
+  input.value = item.dataset.label;
+  const lat = parseFloat(item.dataset.lat);
+  const lng = parseFloat(item.dataset.lng);
+  if (input.id === 'origin_input') {
+    document.getElementById('origin_lat').value = lat;
+    document.getElementById('origin_lng').value = lng;
+  } else if (input.id === 'destination_input') {
+    document.getElementById('destination_lat').value = lat;
+    document.getElementById('destination_lng').value = lng;
+  } else {
+    const wrap = input.closest('.stop-content');
+    wrap.querySelector('[name="stop_lat"]').value = lat;
+    wrap.querySelector('[name="stop_lng"]').value = lng;
+  }
+  dropdown.style.display = 'none';
+  triggerRouteSummary();
+}
+
+document.addEventListener('click', e => {
+  if (!dropdown.contains(e.target) && e.target !== acTarget) dropdown.style.display = 'none';
+});
+
+/* ── ROUTE SUMMARY (OSRM) ── */
+function triggerRouteSummary() {
+  const oLat = parseFloat(document.getElementById('origin_lat').value);
+  const oLng = parseFloat(document.getElementById('origin_lng').value);
+  const dLat = parseFloat(document.getElementById('destination_lat').value);
+  const dLng = parseFloat(document.getElementById('destination_lng').value);
+  if (!oLat || !dLat) return;
+  const summary = document.getElementById('routeSummary');
+  summary.innerHTML = '<span style="font-size:.8rem;color:var(--text-muted);font-style:italic">Calculating route…</span>';
+  summary.style.display = 'flex';
+  const waypoints = `${oLng},${oLat};${dLng},${dLat}`;
+  fetch(`https://router.project-osrm.org/route/v1/driving/${waypoints}?overview=false`)
+    .then(r => r.json())
+    .then(data => {
+      if (data.code !== 'Ok' || !data.routes.length) { summary.style.display = 'none'; return; }
+      const r = data.routes[0];
+      const km = (r.distance / 1000).toFixed(1);
+      const mins = Math.round(r.duration / 60);
+      const hrs = Math.floor(mins / 60), rem = mins % 60;
+      const timeStr = hrs > 0 ? `${hrs}h ${rem}m` : `${mins} min`;
+      document.getElementById('duration_seconds').value = Math.round(r.duration);
+      summary.innerHTML = `
+        <div class="route-summary-item">
+          <svg viewBox="0 0 24 24"><line x1="3" y1="12" x2="21" y2="12"/><polyline points="15 6 21 12 15 18"/></svg>
+          ${km} km
+        </div>
+        <div class="route-summary-divider"></div>
+        <div class="route-summary-item time-item">
+          <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+          ~${timeStr} drive
+        </div>`;
+    })
+    .catch(() => { summary.style.display = 'none'; });
+}
+
+// Trigger on load if coords already present
+window.addEventListener('DOMContentLoaded', triggerRouteSummary);
+
+function onStopInput(el) {
+  clearTimeout(acTimer);
+  acTarget = el;
+  acTimer = setTimeout(() => fetchSuggestions(el.value.trim(), el), 300);
+}
+
+// Always show MM-DD-YYYY regardless of browser locale
+function autoDateFmt(display, hiddenId) {
+  let raw = display.value.replace(/\D/g, '').substring(0, 8);
+  if (raw.length > 4)      display.value = raw.slice(0,2) + '-' + raw.slice(2,4) + '-' + raw.slice(4);
+  else if (raw.length > 2) display.value = raw.slice(0,2) + '-' + raw.slice(2);
+  else                     display.value = raw;
+  const h = document.getElementById(hiddenId);
+  h.value = raw.length === 8
+    ? raw.slice(4,8) + '-' + raw.slice(0,2) + '-' + raw.slice(2,4)
+    : '';
+}
+
+/* ── Open the native calendar picker when the text field itself is clicked ── */
+function openDatePicker(id) {
+  const el = document.getElementById(id);
+  if (el && el.showPicker) {
+    try { el.showPicker(); } catch (e) {}
+  }
+}
+
+/* ── Sync native date-picker selection into the display + hidden inputs ── */
+function pickNativeDate(native, displayId, hiddenId) {
+  if (!native.value) return;
+  const [y, m, d] = native.value.split('-');
+  document.getElementById(displayId).value = `${m}-${d}-${y}`;
+  document.getElementById(hiddenId).value = native.value;
+}
+
+/* ── Pre-fill date/time in local timezone from stored UTC timestamp ── */
+(function () {
+  const ts = parseInt(document.getElementById('depart-ts').value, 10);
+  if (!ts) return;
+  const d = new Date(ts * 1000);
+  const pad = n => String(n).padStart(2, '0');
+  const yyyy = d.getFullYear(), mm = pad(d.getMonth()+1), dd = pad(d.getDate());
+  document.getElementById('depart_date').value = `${yyyy}-${mm}-${dd}`;
+  document.getElementById('depart_date_display').value = `${mm}-${dd}-${yyyy}`;
+  document.getElementById('depart_date_picker').value = `${yyyy}-${mm}-${dd}`;
+  document.getElementById('depart_time').value = `${pad(d.getHours())}:${pad(d.getMinutes())}`;
+})();
+
+// Capture browser timezone
+document.getElementById('tz_input').value =
+  Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
+
+/* ── Build depart_utc on submit ── */
+document.getElementById('editRideForm').addEventListener('submit', function () {
+  const dateVal = document.getElementById('depart_date').value;
+  const timeVal = document.getElementById('depart_time').value;
+  if (dateVal && timeVal) {
+    const [y, m, d] = dateVal.split('-').map(Number);
+    const [h, min]  = timeVal.split(':').map(Number);
+    document.getElementById('depart_utc').value = new Date(y, m - 1, d, h, min).toISOString();
+  }
+});
+</script>
+</body>
+</html>
