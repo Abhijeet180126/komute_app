@@ -1,4 +1,5 @@
 import base64
+import calendar
 import io
 import json
 import logging
@@ -320,6 +321,49 @@ def _send_welcome_email(request, user):
 _PHONE_RE = re.compile(r'^\+?[1-9]\d{6,14}$')
 _PHONE_NUMBER_RE = re.compile(r'^\d{4,14}$')
 
+# Service area gate: rides can only be posted/searched with an origin and
+# destination inside the US or Canada. Two boxes because Hawaii sits well
+# outside the CONUS+Canada+Alaska box and would otherwise be excluded.
+_US_CANADA_BBOX = (-168.0, 24.0, -52.0, 72.0)   # (min_lon, min_lat, max_lon, max_lat)
+_HAWAII_BBOX    = (-161.0, 18.0, -154.0, 23.0)
+
+
+def _in_us_canada(lat, lng):
+    for min_lon, min_lat, max_lon, max_lat in (_US_CANADA_BBOX, _HAWAII_BBOX):
+        if min_lat <= lat <= max_lat and min_lon <= lng <= max_lon:
+            return True
+    return False
+
+
+_MAX_RIDE_LEAD_MONTHS = 4
+
+
+def _max_ride_date():
+    """Today + 4 calendar months (day clamped to the target month's length),
+    the furthest-out a ride can be posted or searched for."""
+    today = date.today()
+    m = today.month - 1 + _MAX_RIDE_LEAD_MONTHS
+    y = today.year + m // 12
+    m = m % 12 + 1
+    day = min(today.day, calendar.monthrange(y, m)[1])
+    return today.replace(year=y, month=m, day=day)
+
+
+def _has_valid_vehicle_row(post):
+    """True if the submitted vehicle rows contain at least one complete
+    (make + plate + year) entry. Used to stop a driver's vehicles from
+    being silently wiped by a form submission that carries no vehicle
+    fields at all (JS failure, a stale page, all rows removed by hand)."""
+    makes  = post.getlist("vehicle_make")
+    years  = post.getlist("vehicle_year")
+    plates = post.getlist("vehicle_plate")
+    for i, make in enumerate(makes):
+        plate = plates[i] if i < len(plates) else ""
+        yr    = years[i] if i < len(years) else ""
+        if make.strip() and plate.strip() and yr.strip():
+            return True
+    return False
+
 _country_codes_cache = None
 
 def _load_country_codes():
@@ -397,7 +441,11 @@ def _resize_image(file_obj, max_dim=1200, quality=85):
     return ContentFile(buf.getvalue(), name='image.jpg')
 
 
+@never_cache
 def signup_view(request):
+    if request.user.is_authenticated:
+        messages.info(request, "You are already logged in.")
+        return redirect("profile")
 
     form_data = {}
     errors = {}
@@ -625,11 +673,13 @@ def profile_view(request):
             except ValueError:
                 errors["dob"] = "Invalid date of birth."
 
-        if dob and role == "driver":
+        if dob and not errors.get("dob"):
             today = date.today()
             age = today.year - dob.year - ((today.month, today.day) < (dob.month, dob.day))
             if age < 18:
-                errors["dob"] = "You must be at least 18 years old to be a driver."
+                errors["dob"] = "You must be at least 18 years old."
+            elif age > 100:
+                errors["dob"] = "Please enter a valid date of birth (age must be 100 or under)."
 
         license_expiry = None
         if license_expiry_str:
@@ -647,6 +697,9 @@ def profile_view(request):
                     if Vehicle.objects.filter(plate=plate).exclude(owner=user).exists():
                         errors["vehicles"] = f"Plate \"{plate}\" is already registered to another vehicle."
                         break
+
+            if not errors.get("vehicles") and not _has_valid_vehicle_row(request.POST):
+                errors["vehicles"] = "You must add at least one vehicle to be a driver."
 
         if not errors:
             user.full_name = full_name
@@ -716,18 +769,19 @@ def profile_view(request):
                 plates      = request.POST.getlist("vehicle_plate")
                 ids         = request.POST.getlist("vehicle_id")
 
-                existing_vehicles = list(user.vehicles.all())
-                verified_by_id = {v.id: v.vehicle_verified for v in existing_vehicles}
-                photo_by_id    = {v.id: v.photo_url      for v in existing_vehicles}
-                # Fallback for rows without a vehicle_id (older cached page, JS disabled, etc).
-                verified_map = {v.plate: v.vehicle_verified for v in existing_vehicles}
-                photo_map    = {v.plate: v.photo_url      for v in existing_vehicles}
-                user.vehicles.all().delete()
+                # Update rows in place (matched by id, falling back to plate
+                # for rows without one) instead of delete-then-recreate, so
+                # a vehicle's primary key -- and anything referencing it,
+                # like a driver's already-posted Rides -- survives a save.
+                existing_by_id    = {v.id: v for v in user.vehicles.all()}
+                existing_by_plate = {v.plate: v for v in existing_by_id.values()}
+                matched_ids = set()
 
                 vehicle_image_files = request.FILES.getlist("vehicle_image_file")
 
                 for i, make in enumerate(makes):
-                    plate = plates[i] if i < len(plates) else ""
+                    make = make.strip()
+                    plate = plates[i].strip() if i < len(plates) else ""
                     if not make or not plate:
                         continue
                     try:
@@ -740,23 +794,22 @@ def profile_view(request):
                     row_id_str = ids[i] if i < len(ids) else ""
                     row_id = int(row_id_str) if row_id_str.isdigit() else None
 
-                    if row_id is not None and row_id in verified_by_id:
-                        row_verified = verified_by_id[row_id]
-                    else:
-                        row_verified = verified_map.get(plate, True)
+                    vehicle = existing_by_id.get(row_id) if row_id is not None else None
+                    if vehicle is None:
+                        vehicle = existing_by_plate.get(plate)
+                    if vehicle is not None and vehicle.id in matched_ids:
+                        vehicle = None  # already claimed by an earlier row this submission
 
-                    vehicle = Vehicle.objects.create(
-                        owner=user,
-                        make=make,
-                        model=models_list[i] if i < len(models_list) else "",
-                        year=yr,
-                        color=colors[i] if i < len(colors) else "",
-                        plate=plate,
-                        is_primary=(i == 0),
-                        vehicle_verified=row_verified,
-                        # enable code here when vehicle verification module is effective
-                        # vehicle_verified=verified_map.get(plate, False),
-                    )
+                    is_new = vehicle is None
+                    if is_new:
+                        vehicle = Vehicle(owner=user, vehicle_verified=True)
+
+                    vehicle.make      = make
+                    vehicle.model     = models_list[i] if i < len(models_list) else ""
+                    vehicle.year      = yr
+                    vehicle.color     = colors[i] if i < len(colors) else ""
+                    vehicle.plate     = plate
+                    vehicle.is_primary = (i == 0)
 
                     img_file = vehicle_image_files[i] if i < len(vehicle_image_files) else None
                     new_photo = None
@@ -766,6 +819,9 @@ def profile_view(request):
                         except ValidationError as e:
                             messages.error(request, f"Vehicle photo ({plate}): {e.messages[0]}")
 
+                    vehicle.save()
+                    matched_ids.add(vehicle.id)
+
                     if new_photo is not None:
                         rel_path = f"vehicles/vehicle_{user.id}_{vehicle.id}.jpg"
                         if default_storage.exists(rel_path):
@@ -773,15 +829,12 @@ def profile_view(request):
                         default_storage.save(rel_path, new_photo)
                         vehicle.photo_url = f"{settings.MEDIA_URL}{rel_path}"
                         vehicle.save(update_fields=["photo_url"])
-                    else:
-                        existing_photo = None
-                        if row_id is not None and row_id in photo_by_id:
-                            existing_photo = photo_by_id[row_id]
-                        else:
-                            existing_photo = photo_map.get(plate)
-                        if existing_photo:
-                            vehicle.photo_url = existing_photo
-                            vehicle.save(update_fields=["photo_url"])
+
+                # Any vehicle that existed before but wasn't in this
+                # submission was explicitly removed by the user in the form.
+                for vid, v in existing_by_id.items():
+                    if vid not in matched_ids:
+                        v.delete()
 
             messages.success(request, "Profile saved successfully.")
             return redirect("profile")
@@ -866,10 +919,22 @@ def post_ride_view(request):
         recurring_end_str   = request.POST.get("recurring_end_date", "").strip()
         recurring_days_str  = request.POST.get("recurring_days", "").strip()
 
+        try:
+            origin_lat = float(request.POST.get("origin_lat") or 0)
+            origin_lng = float(request.POST.get("origin_lng") or 0)
+            dest_lat   = float(request.POST.get("destination_lat") or 0)
+            dest_lng   = float(request.POST.get("destination_lng") or 0)
+        except (ValueError, TypeError):
+            origin_lat = origin_lng = dest_lat = dest_lng = 0.0
+
         if not origin:
             errors["origin"] = "Starting point is required."
+        elif not _in_us_canada(origin_lat, origin_lng):
+            errors["origin"] = "We currently only support pickup locations in the US and Canada."
         if not destination:
             errors["destination"] = "Final destination is required."
+        elif not _in_us_canada(dest_lat, dest_lng):
+            errors["destination"] = "We currently only support drop-off locations in the US and Canada."
         if not date_str:
             errors["date"] = "Date is required."
         if not time_str:
@@ -906,6 +971,8 @@ def post_ride_view(request):
                 depart_at = datetime.fromisoformat(depart_utc_str.replace('Z', '+00:00'))
                 if depart_at < timezone.now() + timedelta(minutes=30):
                     errors["depart_time"] = "Departure must be at least 30 minutes from now."
+                elif depart_at.date() > _max_ride_date():
+                    errors["date"] = "Rides can only be posted up to 4 months in advance."
             except ValueError:
                 errors["depart_time"] = "Invalid departure date or time."
         elif date_str and time_str and "date" not in errors and "depart_time" not in errors:
@@ -913,6 +980,8 @@ def post_ride_view(request):
                 depart_at = timezone.make_aware(datetime.fromisoformat(f"{date_str}T{time_str}"))
                 if depart_at < timezone.now() + timedelta(minutes=30):
                     errors["depart_time"] = "Departure must be at least 30 minutes from now."
+                elif depart_at.date() > _max_ride_date():
+                    errors["date"] = "Rides can only be posted up to 4 months in advance."
             except ValueError:
                 errors["depart_time"] = "Invalid departure date or time."
 
@@ -948,14 +1017,6 @@ def post_ride_view(request):
             stop_types     = request.POST.getlist("stop_type")
             stop_lats      = request.POST.getlist("stop_lat")
             stop_lngs      = request.POST.getlist("stop_lng")
-
-            try:
-                origin_lat = float(request.POST.get("origin_lat") or 0)
-                origin_lng = float(request.POST.get("origin_lng") or 0)
-                dest_lat   = float(request.POST.get("destination_lat") or 0)
-                dest_lng   = float(request.POST.get("destination_lng") or 0)
-            except (ValueError, TypeError):
-                origin_lat = origin_lng = dest_lat = dest_lng = 0.0
 
             try:
                 duration_seconds = int(request.POST.get("duration_seconds") or 0)
@@ -1051,6 +1112,13 @@ def search_rides_view(request):
 
     search_performed = bool(search_from or search_to or search_date)
     rides_data = []
+    errors = {}
+
+    if parsed_search_date:
+        if parsed_search_date < date.today():
+            errors['date'] = 'Search date cannot be in the past.'
+        elif parsed_search_date > _max_ride_date():
+            errors['date'] = 'You can only search up to 4 months ahead.'
 
     _TIME_SLOT_HOURS = {
         'early_morning': (5, 8),
@@ -1068,6 +1136,12 @@ def search_rides_view(request):
         except (ValueError, TypeError):
             s_origin_lat = s_origin_lng = s_dest_lat = s_dest_lng = 0.0
 
+        if search_from and (s_origin_lat or s_origin_lng) and not _in_us_canada(s_origin_lat, s_origin_lng):
+            errors['from'] = 'We currently only support pickup locations in the US and Canada.'
+        if search_to and (s_dest_lat or s_dest_lng) and not _in_us_canada(s_dest_lat, s_dest_lng):
+            errors['to'] = 'We currently only support drop-off locations in the US and Canada.'
+
+    if search_performed and not errors:
         if parsed_search_date:
             try:
                 RideSearch.objects.create(
@@ -1211,6 +1285,7 @@ def search_rides_view(request):
         'search_to':         search_to,
         'search_date':       search_date,
         'search_performed':  search_performed,
+        'errors':            errors,
         'filter_seats':      filter_seats,
         'filter_max_price':  filter_max_price,
         'filter_time_slot':  filter_time_slot,
@@ -1971,8 +2046,20 @@ def edit_ride_view(request, ride_id):
         if passenger_gender_pref not in ('any', 'women_only', 'men_only'):
             passenger_gender_pref = 'any'
 
+        try:
+            origin_lat = float(request.POST.get('origin_lat') or 0)
+            origin_lng = float(request.POST.get('origin_lng') or 0)
+            dest_lat   = float(request.POST.get('destination_lat') or 0)
+            dest_lng   = float(request.POST.get('destination_lng') or 0)
+        except (ValueError, TypeError):
+            origin_lat = origin_lng = dest_lat = dest_lng = 0.0
+
         if not origin:      errors['origin']      = 'Starting point is required.'
+        elif not _in_us_canada(origin_lat, origin_lng):
+            errors['origin'] = 'We currently only support pickup locations in the US and Canada.'
         if not destination: errors['destination'] = 'Final destination is required.'
+        elif not _in_us_canada(dest_lat, dest_lng):
+            errors['destination'] = 'We currently only support drop-off locations in the US and Canada.'
         if not date_str:    errors['date']        = 'Date is required.'
         if not time_str:    errors['depart_time'] = 'Departure time is required.'
 
@@ -2006,6 +2093,8 @@ def edit_ride_view(request, ride_id):
                 depart_at = datetime.fromisoformat(depart_utc_str.replace('Z', '+00:00'))
                 if depart_at < timezone.now() + timedelta(minutes=30):
                     errors['depart_time'] = 'Departure must be at least 30 minutes from now.'
+                elif depart_at.date() > _max_ride_date():
+                    errors['date'] = 'Rides can only be scheduled up to 4 months in advance.'
             except ValueError:
                 errors['depart_time'] = 'Invalid departure date or time.'
         elif date_str and time_str and 'date' not in errors and 'depart_time' not in errors:
@@ -2014,18 +2103,12 @@ def edit_ride_view(request, ride_id):
                 depart_at = timezone.make_aware(datetime.fromisoformat(f'{date_str}T{time_str}')) + timedelta(minutes=tz_offset)
                 if depart_at < timezone.now() + timedelta(minutes=30):
                     errors['depart_time'] = 'Departure must be at least 30 minutes from now.'
+                elif depart_at.date() > _max_ride_date():
+                    errors['date'] = 'Rides can only be scheduled up to 4 months in advance.'
             except ValueError:
                 errors['depart_time'] = 'Invalid departure date or time.'
 
         if not errors:
-            try:
-                origin_lat = float(request.POST.get('origin_lat') or 0)
-                origin_lng = float(request.POST.get('origin_lng') or 0)
-                dest_lat   = float(request.POST.get('destination_lat') or 0)
-                dest_lng   = float(request.POST.get('destination_lng') or 0)
-            except (ValueError, TypeError):
-                origin_lat = origin_lng = dest_lat = dest_lng = 0.0
-
             try:
                 duration_seconds = int(request.POST.get('duration_seconds') or 0)
             except (ValueError, TypeError):

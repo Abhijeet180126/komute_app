@@ -322,7 +322,7 @@ nav {
 .form-select { appearance: auto; cursor: pointer; }
 
 .phone-row { display: flex; gap: 8px; }
-.phone-row .country-code-select { flex: 0 0 100px; width: 100px; min-width: 0; font-size: 0.74rem; }
+.phone-row .country-code-select { flex: 0 0 68px; width: 68px; min-width: 0; font-size: 0.82rem; }
 .phone-row .input-wrap { flex: 1; min-width: 0; }
 
 /* Password toggle */
@@ -682,7 +682,8 @@ nav {
 /* ════════════════════════════
    RESPONSIVE
 ════════════════════════════ */
-.personal-grid { grid-template-columns: 1.2fr 1.3fr 0.9fr; }
+.personal-grid { grid-template-columns: 0.9fr 1.35fr 0.95fr; }
+.gender-select { max-width: 240px; }
 
 @media (max-width: 720px) {
   .form-grid-3 { grid-template-columns: 1fr 1fr; }
@@ -777,6 +778,13 @@ nav {
 }
 .input-wrap input[type="date"] {
   padding-right: 95px;
+}
+.age-pill.age-invalid { background: #fee2e2; color: #991b1b; }
+
+.form-hint {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  margin-top: 6px;
 }
 
 /* ── Self description textarea ── */
@@ -1223,7 +1231,7 @@ body.role-rider .driver-only { display: none; }
 <!-- ════ TOAST ════ -->
 <div class="toast" id="toast">
   <svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>
-  Profile saved successfully!
+  <span id="toast-msg">Profile saved successfully!</span>
 </div>
 <div class="toast toast-error" id="toast-error">
   <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
@@ -1371,14 +1379,14 @@ body.role-rider .driver-only { display: none; }
         <div class="form-group">
           <label class="form-label">Mobile Number <span class="required">*</span></label>
           <div class="phone-row">
-            <select name="country_code" class="form-select no-icon country-code-select" onchange="updateProgress()">
-              <option value="" {% if not country_code %}selected{% endif %}>Country Code</option>
+            <select name="country_code" class="form-select no-icon country-code-select" onchange="updateProgress(); syncCountryCodeTitle(this)">
+              <option value="" {% if not country_code %}selected{% endif %}>Code</option>
               {% for c in priority_countries %}
-                <option value="{{ c.dial_code }}" {% if country_code == c.dial_code %}selected{% endif %}>{{ c.dial_code }} {{ c.name }}</option>
+                <option value="{{ c.dial_code }}" title="{{ c.name }}" {% if country_code == c.dial_code %}selected{% endif %}>{{ c.dial_code }}</option>
               {% endfor %}
-              <option disabled>──────────</option>
+              <option disabled>──────</option>
               {% for c in countries %}
-                <option value="{{ c.dial_code }}" {% if country_code == c.dial_code %}selected{% endif %}>{{ c.dial_code }} {{ c.name }}</option>
+                <option value="{{ c.dial_code }}" title="{{ c.name }}" {% if country_code == c.dial_code %}selected{% endif %}>{{ c.dial_code }}</option>
               {% endfor %}
             </select>
             <div class="input-wrap">
@@ -1395,7 +1403,7 @@ body.role-rider .driver-only { display: none; }
         </div>
       </div>
 
-      <div class="form-grid-3">
+      <div class="form-grid-3 personal-grid">
         <!-- Date of Birth -->
         <div class="form-group">
           <label class="form-label">Date of Birth <span class="required">*</span></label>
@@ -1405,10 +1413,12 @@ body.role-rider .driver-only { display: none; }
               value="{% if dob %}{{ dob|slice:'5:7' }}-{{ dob|slice:'8:10' }}-{{ dob|slice:'0:4' }}{% endif %}"
               oninput="autoDateFmt(this,'dobInput'); updateAge(); updateProgress()">
             <input type="hidden" name="dob" id="dobInput" value="{{ dob }}">
-            <input type="date" class="date-picker-native" id="dobPicker" tabindex="-1" max="{% now 'Y-m-d' %}" value="{{ dob }}"
+            <input type="date" class="date-picker-native" id="dobPicker" tabindex="-1" value="{{ dob }}"
               onchange="pickNativeDate(this,'dobDisplay','dobInput'); updateAge(); updateProgress()">
             <span class="age-pill" id="agePill" style="display:none">— yrs</span>
           </div>
+          <div class="form-hint">You must be between 18 and 100 years old.</div>
+          <p class="verify-hint" id="dobClientError" style="color:#b91c1c;font-weight:600;display:none;"></p>
           {% if errors.dob %}
           <p class="verify-hint" style="color:#b91c1c;font-weight:600;">{{ errors.dob }}</p>
           {% endif %}
@@ -1418,8 +1428,8 @@ body.role-rider .driver-only { display: none; }
           <label class="form-label">Gender</label>
           <div class="input-wrap">
             <span class="input-icon"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><line x1="12" y1="2" x2="12" y2="8"/><line x1="12" y1="16" x2="12" y2="22"/><line x1="2" y1="12" x2="8" y2="12"/><line x1="16" y1="12" x2="22" y2="12"/></svg></span>
-            <select class="form-select" name="gender">
-              <option value="">— Select Gender —</option>
+            <select class="form-select gender-select" name="gender">
+              <option value="">---- Select Gender ----</option>
               <option value="male" {% if gender == "male" %}selected{% endif %}>Male</option>
               <option value="female" {% if gender == "female" %}selected{% endif %}>Female</option>
               <option value="other" {% if gender == "other" %}selected{% endif %}>Other</option>
@@ -2156,6 +2166,39 @@ body.role-rider .driver-only { display: none; }
     document.getElementById('progressPct').textContent = pct + '% Complete';
   }
 
+  /* ── Show the full country name as a tooltip on the code-only select ── */
+  function syncCountryCodeTitle(sel) {
+    const opt = sel.options[sel.selectedIndex];
+    sel.title = (opt && opt.title) ? opt.title : 'Country Code';
+  }
+
+  /* ── DOB age bounds (18–100 years old) ── */
+  function dobBounds() {
+    const today = new Date();
+    const maxDate = new Date(today.getFullYear() - 18, today.getMonth(), today.getDate());
+    const minDate = new Date(today.getFullYear() - 100, today.getMonth(), today.getDate());
+    return { minDate, maxDate };
+  }
+  function isoDate(d) {
+    return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+  }
+  function dobAgeError(date) {
+    const { minDate, maxDate } = dobBounds();
+    if (date > maxDate) return 'You must be at least 18 years old.';
+    if (date < minDate) return 'Please enter a valid date of birth (age must be 100 or under).';
+    return '';
+  }
+  function setDobError(display, msg) {
+    const err = document.getElementById('dobClientError');
+    display.setCustomValidity(msg);
+    if (msg) {
+      err.textContent = msg;
+      err.style.display = '';
+    } else {
+      err.style.display = 'none';
+    }
+  }
+
   /* ── MM-DD-YYYY date input formatter ── */
   function autoDateFmt(display, hiddenId) {
     let raw = display.value.replace(/\D/g, '').substring(0, 8);
@@ -2163,9 +2206,34 @@ body.role-rider .driver-only { display: none; }
     else if (raw.length > 2) display.value = raw.slice(0,2) + '-' + raw.slice(2);
     else                     display.value = raw;
     const h = document.getElementById(hiddenId);
-    h.value = raw.length === 8
-      ? raw.slice(4,8) + '-' + raw.slice(0,2) + '-' + raw.slice(2,4)
-      : '';
+
+    if (raw.length < 8) {
+      h.value = '';
+      setDobError(display, '');
+      return;
+    }
+
+    const mm = raw.slice(0, 2), dd = raw.slice(2, 4), yyyy = raw.slice(4, 8);
+    const parsed = new Date(Number(yyyy), Number(mm) - 1, Number(dd));
+    const isRealCalendarDate = parsed.getFullYear() === Number(yyyy)
+      && parsed.getMonth() === Number(mm) - 1
+      && parsed.getDate() === Number(dd);
+
+    if (!isRealCalendarDate) {
+      h.value = '';
+      setDobError(display, 'Enter a valid date.');
+      return;
+    }
+
+    const ageError = dobAgeError(parsed);
+    if (ageError) {
+      h.value = '';
+      setDobError(display, ageError);
+      return;
+    }
+
+    h.value = `${yyyy}-${mm}-${dd}`;
+    setDobError(display, '');
   }
 
   /* ── Open the native calendar picker when the text field itself is clicked ── */
@@ -2180,9 +2248,18 @@ body.role-rider .driver-only { display: none; }
   function pickNativeDate(native, displayId, hiddenId) {
     if (!native.value) return;
     const [y, m, d] = native.value.split('-');
-    document.getElementById(displayId).value = `${m}-${d}-${y}`;
+    const display = document.getElementById(displayId);
+    display.value = `${m}-${d}-${y}`;
     const hidden = document.getElementById(hiddenId);
-    hidden.value = native.value;
+
+    const ageError = dobAgeError(new Date(Number(y), Number(m) - 1, Number(d)));
+    if (ageError) {
+      hidden.value = '';
+      setDobError(display, ageError);
+    } else {
+      hidden.value = native.value;
+      setDobError(display, '');
+    }
     hidden.dispatchEvent(new Event('change'));
   }
 
@@ -2198,6 +2275,7 @@ body.role-rider .driver-only { display: none; }
     if (m < 0 || (m === 0 && today.getDate() < birth.getDate())) age--;
     if (age < 0) age = 0;
     pill.textContent = age + ' yrs';
+    pill.classList.toggle('age-invalid', age < 18 || age > 100);
     pill.style.display = 'inline-block';
   }
 
@@ -2270,8 +2348,9 @@ body.role-rider .driver-only { display: none; }
       alert('New password and confirm password do not match.');
       return;
     }
-    if (nw.length < 8) {
-      alert('Password must be at least 8 characters long.');
+    const complexityRe = /(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z0-9]).{12,}/;
+    if (!complexityRe.test(nw)) {
+      alert('Password must be at least 12 characters long and include an uppercase letter, a lowercase letter, a number, and a special symbol.');
       return;
     }
 
@@ -2539,6 +2618,14 @@ body.role-rider .driver-only { display: none; }
   updateProgress();
   updateBioCount();
   updateAge();
+  syncCountryCodeTitle(document.querySelector('.country-code-select'));
+
+  (function () {
+    const { minDate, maxDate } = dobBounds();
+    const picker = document.getElementById('dobPicker');
+    picker.min = isoDate(minDate);
+    picker.max = isoDate(maxDate);
+  })();
 
   document.getElementById('vehicleList').addEventListener('change', e => e.target.classList.remove('vehicle-field-error'));
   document.getElementById('vehicleList').addEventListener('input', e => {
@@ -2698,17 +2785,18 @@ body.role-rider .driver-only { display: none; }
 
   {% if messages %}
   (function() {
-    let hasSuccess = false;
+    const successMsgs = [];
     const errMsgs = [];
     {% for message in messages %}
-    {% if 'success' in message.tags %}
-    hasSuccess = true;
+    {% if 'success' in message.tags or 'info' in message.tags %}
+    successMsgs.push("{{ message|escapejs }}");
     {% elif 'error' in message.tags %}
     errMsgs.push("{{ message|escapejs }}");
     {% endif %}
     {% endfor %}
-    if (hasSuccess) {
+    if (successMsgs.length) {
       const _t = document.getElementById('toast');
+      document.getElementById('toast-msg').textContent = successMsgs.join(' ');
       _t.classList.add('show');
       setTimeout(() => _t.classList.remove('show'), 3000);
     }
@@ -2773,7 +2861,7 @@ body.role-rider .driver-only { display: none; }
 <div class="modal-backdrop" id="passwordModal" onclick="if(event.target===this) closePasswordModal()">
   <div class="modal">
     <h3>Change Password</h3>
-    <p class="modal-sub">Choose a new password — at least 8 characters with at least one number and one letter.</p>
+    <p class="modal-sub">Choose a new password — minimum 12 characters, with uppercase, lowercase, a number, and a special symbol.</p>
 
     <div class="form-group">
       <label class="form-label">Current Password</label>
@@ -2787,7 +2875,7 @@ body.role-rider .driver-only { display: none; }
       <label class="form-label">New Password</label>
       <div class="input-wrap">
         <span class="input-icon"><svg viewBox="0 0 24 24"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg></span>
-        <input type="password" class="form-input" id="newPwd" placeholder="New password (min 8 chars)">
+        <input type="password" class="form-input" id="newPwd" placeholder="New password (min 12 chars)">
       </div>
     </div>
 

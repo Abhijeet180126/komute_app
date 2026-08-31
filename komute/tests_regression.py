@@ -71,13 +71,13 @@ class AuthFlowTests(TestCase):
         c = Client()
         resp = c.post(reverse('signup'), {
             'full_name': 'Jane Doe', 'email': 'jane@example.com',
-            'country_code': '+1', 'phone_number': '4155552671', 'password': 'GoodPass1',
-            'confirm_password': 'GoodPass1', 'agreed_to_terms': '1',
+            'country_code': '+1', 'phone_number': '4155552671', 'password': 'GoodPassword1!',
+            'confirm_password': 'GoodPassword1!', 'agreed_to_terms': '1',
         })
         self.assertRedirects(resp, reverse('login'))
         self.assertTrue(CustomUser.objects.filter(email='jane@example.com').exists())
 
-        resp = c.post(reverse('login'), {'email': 'jane@example.com', 'password': 'GoodPass1'})
+        resp = c.post(reverse('login'), {'email': 'jane@example.com', 'password': 'GoodPassword1!'})
         self.assertEqual(resp.status_code, 302)  # first login -> role-select
 
         resp = c.get(reverse('logout'))
@@ -103,19 +103,19 @@ class ProfileAndAccountMgmtTests(TestCase):
     def test_change_password_flow(self):
         resp = self.client.post(reverse('change-password'), {
             'current_password': 'TestPass123',
-            'new_password': 'NewPass456',
-            'confirm_password': 'NewPass456',
+            'new_password': 'NewPassword456!',
+            'confirm_password': 'NewPassword456!',
         })
         self.assertEqual(resp.status_code, 200)
         self.assertTrue(json.loads(resp.content)['ok'])
         self.user.refresh_from_db()
-        self.assertTrue(self.user.check_password('NewPass456'))
+        self.assertTrue(self.user.check_password('NewPassword456!'))
 
     def test_change_password_wrong_current_rejected(self):
         resp = self.client.post(reverse('change-password'), {
             'current_password': 'WRONG',
-            'new_password': 'NewPass456',
-            'confirm_password': 'NewPass456',
+            'new_password': 'NewPassword456!',
+            'confirm_password': 'NewPassword456!',
         })
         self.assertEqual(resp.status_code, 400)
 
@@ -199,18 +199,18 @@ class PasswordResetFlowTests(TestCase):
         self.assertEqual(resp.status_code, 200)
 
         resp = c.post(reverse('reset-password', args=[token]), {
-            'new_password': 'BrandNew123',
-            'confirm_password': 'BrandNew123',
+            'new_password': 'BrandNewPass123!',
+            'confirm_password': 'BrandNewPass123!',
         })
         self.assertRedirects(resp, reverse('login'))
 
         self.user.refresh_from_db()
-        self.assertTrue(self.user.check_password('BrandNew123'))
+        self.assertTrue(self.user.check_password('BrandNewPass123!'))
 
         # Old password no longer works, new one does
         resp = c.post(reverse('login'), {'email': 'reset@example.com', 'password': 'TestPass123'})
         self.assertFalse(resp.wsgi_request.user.is_authenticated)
-        resp = c.post(reverse('login'), {'email': 'reset@example.com', 'password': 'BrandNew123'})
+        resp = c.post(reverse('login'), {'email': 'reset@example.com', 'password': 'BrandNewPass123!'})
         self.assertEqual(resp.status_code, 302)
 
     def test_unknown_email_gives_same_response_no_email_sent(self):
@@ -1083,20 +1083,22 @@ class ProfileVehicleTests(TestCase):
         self.assertRedirects(resp, reverse('profile'))
         self.assertTrue(Vehicle.objects.filter(owner=self.driver, plate='NEWPLT1').exists())
 
-    def test_existing_vehicles_removed_if_not_resubmitted(self):
+    def test_submitting_without_vehicle_fields_does_not_wipe_existing_vehicle(self):
         driver = make_driver_with_vehicle('pv_hasvehicle@example.com')
         self.assertTrue(driver.vehicles.exists())
         c = Client()
         c.login(username='pv_hasvehicle@example.com', password='TestPass123')
         resp = c.post(reverse('profile'), self._base_payload(full_name='Still Driver'))
-        self.assertRedirects(resp, reverse('profile'))
-        self.assertFalse(driver.vehicles.exists())
+        self.assertEqual(resp.status_code, 200)  # re-rendered with an error, not redirected
+        self.assertIn('vehicles', resp.context['errors'])
+        self.assertTrue(driver.vehicles.exists())
 
-    def test_editing_plate_preserves_existing_photo(self):
+    def test_editing_plate_preserves_existing_photo_and_id(self):
         driver = make_driver_with_vehicle('pv_platephoto@example.com')
         vehicle = driver.vehicles.first()
         vehicle.photo_url = '/media/vehicles/existing.jpg'
         vehicle.save(update_fields=['photo_url'])
+        original_id = vehicle.id
 
         c = Client()
         c.login(username='pv_platephoto@example.com', password='TestPass123')
@@ -1109,6 +1111,46 @@ class ProfileVehicleTests(TestCase):
         self.assertRedirects(resp, reverse('profile'))
         updated = driver.vehicles.get(plate='NEWPLATE99')
         self.assertEqual(updated.photo_url, '/media/vehicles/existing.jpg')
+        # Updated in place -- same row, so anything referencing the old id
+        # (e.g. a Rides.vehicle FK) still points at the right vehicle.
+        self.assertEqual(updated.id, original_id)
+
+    def test_ride_vehicle_link_survives_unrelated_profile_resave(self):
+        driver = make_driver_with_vehicle('pv_ridelink@example.com')
+        vehicle = driver.vehicles.first()
+        ride = make_ride(driver)
+
+        c = Client()
+        c.login(username='pv_ridelink@example.com', password='TestPass123')
+        resp = c.post(reverse('profile'), self._base_payload(
+            full_name='Ride Link Driver',
+            vehicle_id=[str(vehicle.id)],
+            vehicle_make=[vehicle.make], vehicle_model=[vehicle.model],
+            vehicle_year=[str(vehicle.year)], vehicle_color=[vehicle.color],
+            vehicle_plate=[vehicle.plate],
+        ))
+        self.assertRedirects(resp, reverse('profile'))
+        ride.refresh_from_db()
+        self.assertEqual(ride.vehicle_id, vehicle.id)
+
+    def test_removing_a_vehicle_row_deletes_only_that_vehicle(self):
+        driver = make_driver_with_vehicle('pv_removeone@example.com')
+        kept = driver.vehicles.first()
+        removed = Vehicle.objects.create(
+            owner=driver, make='Honda', model='Civic', year=2019,
+            color='red', plate='PV-REMOVE1',
+        )
+        c = Client()
+        c.login(username='pv_removeone@example.com', password='TestPass123')
+        resp = c.post(reverse('profile'), self._base_payload(
+            vehicle_id=[str(kept.id)],
+            vehicle_make=[kept.make], vehicle_model=[kept.model],
+            vehicle_year=[str(kept.year)], vehicle_color=[kept.color],
+            vehicle_plate=[kept.plate],
+        ))
+        self.assertRedirects(resp, reverse('profile'))
+        self.assertTrue(Vehicle.objects.filter(id=kept.id).exists())
+        self.assertFalse(Vehicle.objects.filter(id=removed.id).exists())
 
 
 class DriverInboxViewTests(TestCase):

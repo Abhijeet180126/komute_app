@@ -429,6 +429,14 @@ function removeStop(id) {
 // Load existing stops
 EXISTING_STOPS.forEach(s => addStop(s.location, s.lat, s.lng));
 
+/* ── SERVICE AREA: US / CANADA ONLY ── */
+const PHOTON_BBOX = '-168,24,-52,72'; // CONUS + Canada + Alaska (bias only)
+function isInUsCanada(lat, lng) {
+  const inMain   = lat >= 24 && lat <= 72 && lng >= -168 && lng <= -52;
+  const inHawaii = lat >= 18 && lat <= 23 && lng >= -161 && lng <= -154;
+  return inMain || inHawaii;
+}
+
 /* ── AUTOCOMPLETE (Photon) ── */
 let acTarget = null, acTimer = null;
 const dropdown = document.getElementById('autocompleteDropdown');
@@ -453,9 +461,12 @@ document.addEventListener('input', e => {
 
 function fetchSuggestions(q, input) {
   if (q.length < 3) { dropdown.style.display = 'none'; return; }
-  fetch(`https://photon.komoot.io/api/?q=${encodeURIComponent(q)}&limit=5`)
+  fetch(`https://photon.komoot.io/api/?q=${encodeURIComponent(q)}&limit=5&bbox=${PHOTON_BBOX}`)
     .then(r => r.json())
-    .then(data => showDropdown(data.features || [], input))
+    .then(data => {
+      const features = (data.features || []).filter(f => isInUsCanada(f.geometry.coordinates[1], f.geometry.coordinates[0]));
+      showDropdown(features, input);
+    })
     .catch(() => { dropdown.style.display = 'none'; });
 }
 
@@ -465,7 +476,7 @@ function showDropdown(features, input) {
   dropdown.style.top   = (rect.bottom + window.scrollY + 4) + 'px';
   dropdown.style.width = rect.width + 'px';
   if (!features.length) {
-    dropdown.innerHTML = '<div class="autocomplete-item no-results">No results found</div>';
+    dropdown.innerHTML = '<div class="autocomplete-item no-results">No US/Canada results found</div>';
     dropdown.style.display = 'block';
     return;
   }

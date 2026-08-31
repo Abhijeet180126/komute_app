@@ -146,6 +146,40 @@ body {
   box-shadow: 0 0 0 3px rgba(13, 120, 16, 0.1);
 }
 
+/* ── PASSWORD TOGGLE ── */
+.password-wrapper { position: relative; }
+.password-wrapper .form-input { padding-right: 42px; }
+.password-toggle {
+  position: absolute;
+  right: 2px;
+  top: 0;
+  bottom: 0;
+  width: 40px;
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.password-toggle svg {
+  width: 18px; height: 18px;
+  stroke: var(--text-muted);
+  fill: none;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.password-toggle:hover svg { stroke: var(--brand-green); }
+.password-toggle .icon-eye-off { display: none; }
+
+.form-hint {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  margin-top: 6px;
+}
+
 /* ── PHONE ROW (country code + number) ── */
 .phone-row {
   display: flex;
@@ -586,11 +620,22 @@ select.form-input {
         </svg>
         Password
       </label>
-      <input type="password"
-             name="password"
-             class="form-input"
-             placeholder="••••••••••••"
-             required>
+      <div class="password-wrapper">
+        <input type="password"
+               id="password"
+               name="password"
+               class="form-input"
+               placeholder="••••••••••••"
+               minlength="12"
+               pattern="(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z0-9]).{12,}"
+               title="At least 12 characters, with uppercase, lowercase, a number, and a special symbol."
+               required>
+        <button type="button" class="password-toggle" onclick="togglePassword('password', this)" aria-label="Show password">
+          <svg class="icon-eye" viewBox="0 0 24 24"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+          <svg class="icon-eye-off" viewBox="0 0 24 24"><path d="M17.94 17.94A10.94 10.94 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A10.94 10.94 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
+        </button>
+      </div>
+      <div class="form-hint">Minimum 12 characters, with uppercase, lowercase, a number, and a special symbol.</div>
       {% if errors.password %}
         <div class="error-text">{{ errors.password }}</div>
       {% endif %}
@@ -605,11 +650,19 @@ select.form-input {
         </svg>
         Confirm Password
       </label>
-      <input type="password"
-             name="confirm_password"
-             class="form-input"
-             placeholder="••••••••••••"
-             required>
+      <div class="password-wrapper">
+        <input type="password"
+               id="confirm_password"
+               name="confirm_password"
+               class="form-input"
+               placeholder="••••••••••••"
+               minlength="12"
+               required>
+        <button type="button" class="password-toggle" onclick="togglePassword('confirm_password', this)" aria-label="Show password">
+          <svg class="icon-eye" viewBox="0 0 24 24"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+          <svg class="icon-eye-off" viewBox="0 0 24 24"><path d="M17.94 17.94A10.94 10.94 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A10.94 10.94 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
+        </button>
+      </div>
       {% if errors.confirm_password %}
         <div class="error-text">{{ errors.confirm_password }}</div>
       {% endif %}
@@ -1074,6 +1127,17 @@ select.form-input {
     checkbox.checked = true;
     signupBtn.disabled = false;
     closeTncModal();
+  };
+
+  window.togglePassword = function (inputId, btn) {
+    var input = document.getElementById(inputId);
+    var eye = btn.querySelector('.icon-eye');
+    var eyeOff = btn.querySelector('.icon-eye-off');
+    var showing = input.type === 'text';
+    input.type = showing ? 'password' : 'text';
+    eye.style.display = showing ? 'inline' : 'none';
+    eyeOff.style.display = showing ? 'none' : 'inline';
+    btn.setAttribute('aria-label', showing ? 'Show password' : 'Hide password');
   };
 
   body.addEventListener('scroll', checkScroll, { passive: true });
