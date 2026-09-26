@@ -1414,6 +1414,7 @@ body.role-rider .driver-only { display: none; }
               oninput="autoDateFmt(this,'dobInput'); updateAge(); updateProgress()">
             <input type="hidden" name="dob" id="dobInput" value="{{ dob }}">
             <input type="date" class="date-picker-native" id="dobPicker" tabindex="-1" value="{{ dob }}"
+              oninput="pickNativeDate(this,'dobDisplay','dobInput'); updateAge(); updateProgress()"
               onchange="pickNativeDate(this,'dobDisplay','dobInput'); updateAge(); updateProgress()">
             <span class="age-pill" id="agePill" style="display:none">— yrs</span>
           </div>
@@ -1538,6 +1539,7 @@ body.role-rider .driver-only { display: none; }
               oninput="autoDateFmt(this,'licExpInput'); updateProgress()">
             <input type="hidden" name="license_expiry" id="licExpInput" value="{{ license_expiry }}">
             <input type="date" class="date-picker-native" id="licExpPicker" tabindex="-1" min="{% now 'Y-m-d' %}" value="{{ license_expiry }}"
+              oninput="pickNativeDate(this,'licExpDisplay','licExpInput'); updateProgress()"
               onchange="pickNativeDate(this,'licExpDisplay','licExpInput'); updateProgress()">
           </div>
         </div>
@@ -2188,9 +2190,14 @@ body.role-rider .driver-only { display: none; }
     if (date < minDate) return 'Please enter a valid date of birth (age must be 100 or under).';
     return '';
   }
-  function setDobError(display, msg) {
-    const err = document.getElementById('dobClientError');
+  /* Age bounds only apply to DOB; the same helpers also drive License Expiry. */
+  function dateRangeError(hiddenId, date) {
+    return hiddenId === 'dobInput' ? dobAgeError(date) : '';
+  }
+  function setDateError(display, hiddenId, msg) {
     display.setCustomValidity(msg);
+    if (hiddenId !== 'dobInput') return;
+    const err = document.getElementById('dobClientError');
     if (msg) {
       err.textContent = msg;
       err.style.display = '';
@@ -2206,10 +2213,20 @@ body.role-rider .driver-only { display: none; }
     else if (raw.length > 2) display.value = raw.slice(0,2) + '-' + raw.slice(2);
     else                     display.value = raw;
     const h = document.getElementById(hiddenId);
+    const picker = display.parentElement.querySelector('.date-picker-native');
+    // Keep the hidden native picker in step with the typed value; a stale
+    // out-of-range picker value would otherwise block submit with its own
+    // min/max error even though the visible field is valid.
+    const syncPicker = () => {
+      if (!picker) return;
+      picker.value = h.value;
+      if (picker.validity.rangeUnderflow || picker.validity.rangeOverflow) picker.value = '';
+    };
 
     if (raw.length < 8) {
       h.value = '';
-      setDobError(display, '');
+      setDateError(display, hiddenId, '');
+      syncPicker();
       return;
     }
 
@@ -2221,19 +2238,22 @@ body.role-rider .driver-only { display: none; }
 
     if (!isRealCalendarDate) {
       h.value = '';
-      setDobError(display, 'Enter a valid date.');
+      setDateError(display, hiddenId, 'Enter a valid date.');
+      syncPicker();
       return;
     }
 
-    const ageError = dobAgeError(parsed);
-    if (ageError) {
+    const rangeError = dateRangeError(hiddenId, parsed);
+    if (rangeError) {
       h.value = '';
-      setDobError(display, ageError);
+      setDateError(display, hiddenId, rangeError);
+      syncPicker();
       return;
     }
 
     h.value = `${yyyy}-${mm}-${dd}`;
-    setDobError(display, '');
+    setDateError(display, hiddenId, '');
+    syncPicker();
   }
 
   /* ── Open the native calendar picker when the text field itself is clicked ── */
@@ -2252,13 +2272,13 @@ body.role-rider .driver-only { display: none; }
     display.value = `${m}-${d}-${y}`;
     const hidden = document.getElementById(hiddenId);
 
-    const ageError = dobAgeError(new Date(Number(y), Number(m) - 1, Number(d)));
-    if (ageError) {
+    const rangeError = dateRangeError(hiddenId, new Date(Number(y), Number(m) - 1, Number(d)));
+    if (rangeError) {
       hidden.value = '';
-      setDobError(display, ageError);
+      setDateError(display, hiddenId, rangeError);
     } else {
       hidden.value = native.value;
-      setDobError(display, '');
+      setDateError(display, hiddenId, '');
     }
     hidden.dispatchEvent(new Event('change'));
   }

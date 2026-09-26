@@ -1034,6 +1034,9 @@ class ProfileVehicleTests(TestCase):
         resp = c.post(reverse('profile'), self._base_payload(
             full_name='New Name', gender='male', bio='Hello there',
             country_code='+1', phone_number='4155552671',
+            # Drivers must submit at least one vehicle for the save to succeed.
+            vehicle_make=['Toyota'], vehicle_model=['Corolla'],
+            vehicle_year=['2020'], vehicle_color=['Blue'], vehicle_plate=['BASIC1'],
         ))
         self.assertRedirects(resp, reverse('profile'))
         self.driver.refresh_from_db()
@@ -1048,6 +1051,58 @@ class ProfileVehicleTests(TestCase):
         resp = c.post(reverse('profile'), self._base_payload(dob=too_young))
         self.assertEqual(resp.status_code, 200)
         self.assertIn('dob', resp.context['errors'])
+
+    def test_adult_driver_with_future_license_expiry_saves(self):
+        # Regression: the profile page's shared date helpers applied the DOB
+        # 18+ age check to License Expiry too, so a (valid) future expiry
+        # blocked Save with "You must be at least 18 years old."
+        future_expiry = (date.today() + timedelta(days=365 * 3)).isoformat()
+        c = Client()
+        c.login(username='pv_driver@example.com', password='TestPass123')
+        resp = c.post(reverse('profile'), self._base_payload(
+            license_expiry=future_expiry,
+            vehicle_make=['Toyota'], vehicle_model=['Corolla'],
+            vehicle_year=['2020'], vehicle_color=['Blue'], vehicle_plate=['EXPOK1'],
+        ))
+        self.assertRedirects(resp, reverse('profile'))
+        self.driver.refresh_from_db()
+        self.assertEqual(self.driver.dob, date(1990, 1, 1))
+        self.assertEqual(self.driver.license_expiry.isoformat(), future_expiry)
+
+    def test_driver_turning_18_today_accepted(self):
+        today = date.today()
+        try:
+            eighteenth_birthday = today.replace(year=today.year - 18)
+        except ValueError:  # today is Feb 29
+            eighteenth_birthday = today.replace(year=today.year - 18, day=28)
+        c = Client()
+        c.login(username='pv_driver@example.com', password='TestPass123')
+        resp = c.post(reverse('profile'), self._base_payload(
+            dob=eighteenth_birthday.isoformat(),
+            vehicle_make=['Toyota'], vehicle_model=['Corolla'],
+            vehicle_year=['2020'], vehicle_color=['Blue'], vehicle_plate=['BDAY18'],
+        ))
+        self.assertRedirects(resp, reverse('profile'))
+        self.driver.refresh_from_db()
+        self.assertEqual(self.driver.dob, eighteenth_birthday)
+
+    def test_profile_page_limits_age_check_to_dob_field(self):
+        # Client-side guard for the same regression: the age check must be
+        # scoped to the DOB field, and the hidden native pickers must react
+        # on input (not only change) so the age pill never shows a stale value.
+        c = Client()
+        c.login(username='pv_driver@example.com', password='TestPass123')
+        html = c.get(reverse('profile')).content.decode()
+        self.assertIn("return hiddenId === 'dobInput' ? dobAgeError(date) : '';", html)
+        self.assertNotIn('setDobError(', html)
+        self.assertIn(
+            "oninput=\"pickNativeDate(this,'dobDisplay','dobInput'); updateAge(); updateProgress()\"",
+            html,
+        )
+        self.assertIn(
+            "oninput=\"pickNativeDate(this,'licExpDisplay','licExpInput'); updateProgress()\"",
+            html,
+        )
 
     def test_duplicate_plate_in_submission_rejected(self):
         c = Client()
