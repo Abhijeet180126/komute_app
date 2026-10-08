@@ -15,6 +15,7 @@ from .views import (
     send_invite_view, invite_detail_view, accept_invite_view, decline_invite_view,
     request_deactivate_account_view, confirm_deactivate_account_view,
     forgot_password_view, reset_password_view,
+    private_media_view, upload_too_large_view,
 )
 
 urlpatterns = [
@@ -54,6 +55,8 @@ urlpatterns = [
     path('driver-inbox/', driver_inbox_view, name='driver-inbox'),
     path('rider-inbox/', rider_inbox_view, name='rider-inbox'),
     path('profile/verify-driver/', verify_driver_view, name='verify-driver'),
+    path('private-media/<path:path>', private_media_view, name='private-media'),
+    path('upload-too-large/', upload_too_large_view, name='upload-too-large'),
     path('bookings/<str:booking_id>/cancel/', cancel_booking_view, name='cancel-booking'),
     path('bookings/<str:booking_id>/accept/', accept_booking_view, name='accept-booking'),
     path('bookings/<str:booking_id>/reject/', reject_booking_view, name='reject-booking'),

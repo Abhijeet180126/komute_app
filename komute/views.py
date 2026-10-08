@@ -15,8 +15,7 @@ from email.utils import formataddr
 from django.conf import settings
 from django.core.cache import cache
 from django.core.files.base import ContentFile
-from django.core.files.storage import default_storage
-from django.http import JsonResponse, HttpResponse
+from django.http import FileResponse, JsonResponse, HttpResponse
 from django.shortcuts import get_object_or_404, render, redirect
 from django.http import Http404
 from django.contrib import messages
@@ -45,6 +44,8 @@ from django.contrib.auth import logout as auth_logout
 
 from .models import Rides, RideStop, Vehicle, RideBooking, PriceOffer, Message, RideSearch, VerificationLog, Review, RideInvite
 from .hashid_utils import encode_id, decode_id
+from . import private_media
+from .private_media import delete_stored_file, open_stored_file, save_private_image
 
 User = get_user_model()
 logger = logging.getLogger(__name__)
@@ -413,31 +414,43 @@ def _haversine_km(lat1, lng1, lat2, lng2):
     return R * 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
 
 
-_MAX_IMAGE_UPLOAD_BYTES = 8 * 1024 * 1024  # 8 MB
+upload_logger = logging.getLogger("komute.uploads")
 
 
-def _resize_image(file_obj, max_dim=1200, quality=85):
+def _resize_image(file_obj, max_dim=1200, quality=85, label="image"):
     """Validate that file_obj is a decodable image under the size cap, and
     return a ContentFile with it resized to max_dim on its longest side.
     Raises django.core.exceptions.ValidationError if the upload is too large
     or isn't a valid image (including Pillow's decompression-bomb guard
     tripping) — callers must reject the upload, never fall back to storing
-    the unverified raw bytes."""
-    if file_obj.size > _MAX_IMAGE_UPLOAD_BYTES:
-        raise ValidationError(f"File is too large (max {_MAX_IMAGE_UPLOAD_BYTES // (1024 * 1024)} MB).")
+    the unverified raw bytes. Every upload is logged under `label`
+    (ISSUES.md H2)."""
+    max_bytes = settings.IMAGE_UPLOAD_MAX_MB * 1024 * 1024
+    desc = (f"{label} name={getattr(file_obj, 'name', '')!r} size={file_obj.size} "
+            f"type={getattr(file_obj, 'content_type', '')!r}")
+    if file_obj.size > max_bytes:
+        upload_logger.warning("upload rejected (too large): %s", desc)
+        raise ValidationError(f"File is too large (max {settings.IMAGE_UPLOAD_MAX_MB} MB).")
 
     from PIL import Image, ImageOps
     try:
         file_obj.seek(0)
         img = Image.open(file_obj)
+        original_dims = img.size
+        # JPEGs decode at a reduced scale (no smaller than max_dim), which
+        # keeps memory down for high-resolution phone photos.
+        img.draft('RGB', (max_dim, max_dim))
         img = ImageOps.exif_transpose(img)  # fix camera rotation
         if img.mode not in ('RGB', 'L'):
             img = img.convert('RGB')
         img.thumbnail((max_dim, max_dim), Image.LANCZOS)
         buf = io.BytesIO()
         img.save(buf, format='JPEG', quality=quality, optimize=True)
-    except Exception:
+    except Exception as e:
+        upload_logger.warning("upload rejected (not a readable image: %s): %s", type(e).__name__, desc)
         raise ValidationError("That file isn't a valid image.")
+    upload_logger.info("upload accepted: %s dims=%dx%d -> %dx%d, %d bytes",
+                       desc, *original_dims, *img.size, buf.tell())
     return ContentFile(buf.getvalue(), name='image.jpg')
 
 
@@ -687,6 +700,12 @@ def profile_view(request):
                 license_expiry = date.fromisoformat(license_expiry_str)
             except ValueError:
                 errors["license_expiry"] = "Invalid license expiry date."
+            else:
+                # The date picker already blocks past dates; this enforces it
+                # server-side. DL-Verification cross-checks this value against
+                # the license, so it must be a real, current expiry.
+                if role == "driver" and license_expiry < timezone.localdate():
+                    errors["license_expiry"] = "Your license has expired. Please enter the expiry date of a valid license."
 
         if role == "driver":
             submitted_plates = [p.strip() for p in request.POST.getlist("vehicle_plate") if p.strip()]
@@ -702,6 +721,17 @@ def profile_view(request):
                 errors["vehicles"] = "You must add at least one vehicle to be a driver."
 
         if not errors:
+            # Details DL-Verification compared against the license. Changing
+            # any of them means the driver is no longer verified as entered
+            # (C3). Comparison mirrors the service: case and hyphens ignored.
+            identity_changed = role == "driver" and user.driver_verified and (
+                _norm_name(full_name) != _norm_name(user.full_name)
+                or dob != user.dob
+                or _norm_code(license_number) != _norm_code(user.license_number)
+                or license_province.casefold() != (user.license_province or "").casefold()
+                or license_expiry != user.license_expiry
+            )
+
             user.full_name = full_name
             user.phone     = phone or None
             user.dob       = dob
@@ -710,6 +740,10 @@ def profile_view(request):
             user.bio       = bio or None
 
             update_fields = ["full_name", "phone", "dob", "gender", "role", "bio"]
+            # Replaced image files, deleted only once the new URLs are saved.
+            stale_urls = []
+            # A rejected photo must not end in "Profile saved successfully".
+            image_rejected = False
 
             if role == "driver":
                 user.license_number   = license_number or None
@@ -720,46 +754,46 @@ def profile_view(request):
                 license_file = request.FILES.get("license_file")
                 if license_file:
                     try:
-                        resized = _resize_image(license_file)
+                        resized = _resize_image(license_file, label=f"user={user.id} license")
                     except ValidationError as e:
+                        image_rejected = True
                         messages.error(request, f"License photo: {e.messages[0]}")
                     else:
-                        rel_path = f"licenses/license_{user.id}.jpg"
-                        if default_storage.exists(rel_path):
-                            default_storage.delete(rel_path)
-                        default_storage.save(rel_path, resized)
-                        user.license_front_url = f"{settings.MEDIA_URL}{rel_path}"
+                        stale_urls.append(user.license_front_url)
+                        user.license_front_url = save_private_image(private_media.KIND_LICENSE, user.id, resized)
                         update_fields.append("license_front_url")
                         if user.driver_verified:
                             user.driver_verified  = False
                             user.face_match_score = None
                             update_fields += ["driver_verified", "face_match_score"]
-                            errors["reverify"] = "license"
+                            messages.warning(request, "Your driving license photo was updated. Please verify your identity again before posting rides.")
+
+                if identity_changed and user.driver_verified:
+                    user.driver_verified  = False
+                    user.face_match_score = None
+                    update_fields += ["driver_verified", "face_match_score"]
+                    messages.warning(request, "Your name, date of birth or license details changed. Please verify your identity again before posting rides.")
 
             # selfie / profile picture upload — all roles
             selfie_file = request.FILES.get("selfie_file")
             if selfie_file and selfie_file.size > 0:
                 try:
-                    resized = _resize_image(selfie_file)
+                    resized = _resize_image(selfie_file, label=f"user={user.id} profile-photo")
                 except ValidationError as e:
+                    image_rejected = True
                     messages.error(request, f"Profile photo: {e.messages[0]}")
                 else:
-                    rel_path = f"selfies/selfie_{user.id}.jpg"
-                    if default_storage.exists(rel_path):
-                        default_storage.delete(rel_path)
-                    default_storage.save(rel_path, resized)
-                    url = f"{settings.MEDIA_URL}{rel_path}"
+                    stale_urls += [user.selfie_url, user.avatar_url]
+                    url = save_private_image(private_media.KIND_SELFIE, user.id, resized)
                     user.selfie_url = url
                     user.avatar_url = url
                     update_fields += ["selfie_url", "avatar_url"]
-                    if role == "driver" and user.driver_verified:
-                        user.driver_verified  = False
-                        user.face_match_score = None
-                        if "driver_verified" not in update_fields:
-                            update_fields += ["driver_verified", "face_match_score"]
-                        errors["reverify"] = errors.get("reverify", "selfie")
+                    # No re-verification needed: the profile photo (face or
+                    # vehicle) is never compared with the license.
 
             user.save(update_fields=update_fields)
+            for old_url in set(stale_urls):
+                delete_stored_file(old_url)
 
             if role == "driver":
                 makes       = request.POST.getlist("vehicle_make")
@@ -776,8 +810,6 @@ def profile_view(request):
                 existing_by_id    = {v.id: v for v in user.vehicles.all()}
                 existing_by_plate = {v.plate: v for v in existing_by_id.values()}
                 matched_ids = set()
-
-                vehicle_image_files = request.FILES.getlist("vehicle_image_file")
 
                 for i, make in enumerate(makes):
                     make = make.strip()
@@ -802,44 +834,73 @@ def profile_view(request):
 
                     is_new = vehicle is None
                     if is_new:
-                        vehicle = Vehicle(owner=user, vehicle_verified=True)
+                        # Verified only by a DL-Verification pass (C3).
+                        vehicle = Vehicle(owner=user, vehicle_verified=False)
+
+                    model = models_list[i] if i < len(models_list) else ""
+                    color = colors[i] if i < len(colors) else ""
+                    # DL-Verification checked make, model, year, colour and
+                    # plate against the photo; any real change voids that.
+                    details_changed = not is_new and (
+                        make.casefold() != (vehicle.make or "").casefold()
+                        or model.strip().casefold() != (vehicle.model or "").strip().casefold()
+                        or yr != vehicle.year
+                        or color.strip().casefold() != (vehicle.color or "").strip().casefold()
+                        or _norm_code(plate) != _norm_code(vehicle.plate)
+                    )
 
                     vehicle.make      = make
-                    vehicle.model     = models_list[i] if i < len(models_list) else ""
+                    vehicle.model     = model
                     vehicle.year      = yr
-                    vehicle.color     = colors[i] if i < len(colors) else ""
+                    vehicle.color     = color
                     vehicle.plate     = plate
                     vehicle.is_primary = (i == 0)
 
-                    img_file = vehicle_image_files[i] if i < len(vehicle_image_files) else None
+                    # One field per row (named by the page on submit): the
+                    # browser leaves out empty file inputs, so a shared
+                    # field name would hand row 2's photo to row 1.
+                    img_file = request.FILES.get(f"vehicle_image_file_{i}")
                     new_photo = None
                     if img_file and img_file.size > 0:
                         try:
-                            new_photo = _resize_image(img_file)
+                            new_photo = _resize_image(img_file, label=f"user={user.id} vehicle={plate!r}")
                         except ValidationError as e:
+                            image_rejected = True
                             messages.error(request, f"Vehicle photo ({plate}): {e.messages[0]}")
+
+                    was_verified = vehicle.vehicle_verified
+                    if was_verified and (details_changed or new_photo is not None):
+                        vehicle.vehicle_verified = False
+                    if (is_new and user.driver_verified) or (was_verified and not vehicle.vehicle_verified):
+                        # Verification checks the first vehicle in the list.
+                        messages.warning(request, f"Vehicle {plate} needs to be verified before you can use it for rides. Put it first in your vehicle list and click Verify Identity.")
 
                     vehicle.save()
                     matched_ids.add(vehicle.id)
 
                     if new_photo is not None:
-                        rel_path = f"vehicles/vehicle_{user.id}_{vehicle.id}.jpg"
-                        if default_storage.exists(rel_path):
-                            default_storage.delete(rel_path)
-                        default_storage.save(rel_path, new_photo)
-                        vehicle.photo_url = f"{settings.MEDIA_URL}{rel_path}"
+                        old_url = vehicle.photo_url
+                        vehicle.photo_url = save_private_image(private_media.KIND_VEHICLE, user.id, new_photo)
                         vehicle.save(update_fields=["photo_url"])
+                        delete_stored_file(old_url)
 
                 # Any vehicle that existed before but wasn't in this
                 # submission was explicitly removed by the user in the form.
                 for vid, v in existing_by_id.items():
                     if vid not in matched_ids:
+                        photo_url = v.photo_url
                         v.delete()
+                        delete_stored_file(photo_url)
 
-            messages.success(request, "Profile saved successfully.")
+            if image_rejected:
+                messages.warning(request, "Your other changes were saved.")
+            else:
+                messages.success(request, "Profile saved successfully.")
             return redirect("profile")
 
     priority_countries, countries = _dropdown_countries()
+    reverify_due_at = user.driver_reverify_due_at
+    verification_current = user.driver_verification_current
     context = {
         "user": user,
         "full_name": full_name,
@@ -861,8 +922,28 @@ def profile_view(request):
         "avatar_url": user.avatar_url or "",
         "vehicles": vehicles,
         "errors": errors,
-        "driver_verified": user.driver_verified,
+        "driver_verified": verification_current,
         "face_match_score": user.face_match_score,
+        "reverify_due_at": reverify_due_at,
+        # Verified against a license that has since expired.
+        "license_expired": user.driver_verified and user.license_expired,
+        # Verified driver with a vehicle that still needs a verification run.
+        "has_unverified_vehicle": verification_current and any(
+            not v["vehicle_verified"] for v in vehicles
+        ),
+        # Verified, but inside the reminder window before it lapses.
+        "reverify_soon": verification_current and reverify_due_at is not None and (
+            reverify_due_at - timezone.now() <= timedelta(days=settings.DRIVER_REVERIFY_REMINDER_DAYS)
+        ),
+        # Uploading a file as the verification selfie is a development
+        # convenience only; in production the selfie must come from the
+        # live camera.
+        "allow_verify_selfie_upload": settings.DEBUG,
+        "image_upload_max_mb": settings.IMAGE_UPLOAD_MAX_MB,
+        "upload_request_max_mb": settings.UPLOAD_REQUEST_MAX_MB,
+        # Was verified, and that verification has run out.
+        "reverify_expired": not verification_current and reverify_due_at is not None
+                            and timezone.now() >= reverify_due_at,
     }
     return render(request, "profile.html", context)
 
@@ -886,8 +967,11 @@ def post_ride_view(request):
         messages.error(request, "Please add your date of birth in your profile before posting a ride.")
         return redirect("profile")
 
-    if not user.driver_verified:
-        messages.error(request, "You must be verified to post a ride.")
+    if not user.driver_verification_current:
+        if user.driver_verified:
+            messages.error(request, "Your identity verification has expired. Please re-verify to post a ride.")
+        else:
+            messages.error(request, "You must be verified to post a ride.")
         return redirect("profile")
 
     if not user.vehicles.filter(vehicle_verified=True).exists():
@@ -896,6 +980,8 @@ def post_ride_view(request):
 
     vehicles = user.vehicles.all()
     errors = {}
+    form = {}
+    form_js = None
 
     if request.method == "POST":
         origin      = request.POST.get("origin", "").strip()
@@ -927,12 +1013,52 @@ def post_ride_view(request):
         except (ValueError, TypeError):
             origin_lat = origin_lng = dest_lat = dest_lng = 0.0
 
+        # The form's single-line value attributes need the raw submitted
+        # strings, so a server-side error doesn't hand the driver back an
+        # empty form; stops and other JS-managed fields go in form_js.
+        form = {
+            "origin": origin,
+            "origin_lat": request.POST.get("origin_lat", "").strip(),
+            "origin_lng": request.POST.get("origin_lng", "").strip(),
+            "destination": destination,
+            "destination_lat": request.POST.get("destination_lat", "").strip(),
+            "destination_lng": request.POST.get("destination_lng", "").strip(),
+            "depart_time": time_str,
+            "vehicle": vehicle_id,
+            "price": price_str,
+            "notes": notes,
+            "passenger_gender_pref": passenger_gender_pref,
+        }
+        form_js = {
+            "date": date_str,
+            "seats": seats_str,
+            "prefs": [p for p in preferences_json if isinstance(p, str)] if isinstance(preferences_json, list) else [],
+            "is_recurring": is_recurring,
+            "recurring_end_date": recurring_end_str,
+            "recurring_days": [d for d in recurring_days_str.split(",") if d.strip().isdigit()],
+            "stops": [
+                {"location": loc, "type": stype, "lat": slat, "lng": slng}
+                for loc, stype, slat, slng in zip(
+                    request.POST.getlist("stop_location"), request.POST.getlist("stop_type"),
+                    request.POST.getlist("stop_lat"), request.POST.getlist("stop_lng"),
+                )
+                if loc.strip() and stype in ("pickup", "destination")
+            ],
+        }
+
+        # 0,0 means the hidden lat/lng were never filled, i.e. the driver typed
+        # a place but didn't pick one of the suggestions -- telling them it's
+        # outside the US/Canada would send them looking for the wrong problem.
         if not origin:
             errors["origin"] = "Starting point is required."
+        elif origin_lat == 0 and origin_lng == 0:
+            errors["origin"] = "Please pick a location from the suggestions."
         elif not _in_us_canada(origin_lat, origin_lng):
             errors["origin"] = "We currently only support pickup locations in the US and Canada."
         if not destination:
             errors["destination"] = "Final destination is required."
+        elif dest_lat == 0 and dest_lng == 0:
+            errors["destination"] = "Please pick a location from the suggestions."
         elif not _in_us_canada(dest_lat, dest_lng):
             errors["destination"] = "We currently only support drop-off locations in the US and Canada."
         if not date_str:
@@ -990,6 +1116,9 @@ def post_ride_view(request):
             vehicle = Vehicle.objects.filter(id=vehicle_id, owner=user).first()
             if not vehicle:
                 errors["vehicle"] = "Invalid vehicle selected."
+            elif not vehicle.vehicle_verified:
+                errors["vehicle"] = "This vehicle isn't verified yet. Choose a verified vehicle."
+                vehicle = None
 
         recurring_end = None
         recurring_days = []
@@ -1082,6 +1211,8 @@ def post_ride_view(request):
         "full_name": user.full_name,
         "vehicles": vehicles,
         "errors": errors,
+        "form": form,
+        "form_js": form_js,
         "show_form": bool(errors),
         "stop_detour_max_km":  settings.STOP_DETOUR_MAX_KM,
         "stop_detour_max_pct": settings.STOP_DETOUR_MAX_PCT,
@@ -1531,6 +1662,9 @@ def accept_booking_view(request, booking_id):
 
     if booking.status != RideBooking.STATUS_REQUESTED:
         return JsonResponse({'error': f'Cannot accept a booking that is already {booking.status}.'}, status=400)
+
+    if not booking.ride.driver.driver_verification_current:
+        return JsonResponse({'error': 'Please verify your identity on your profile page before accepting bookings.'}, status=403)
 
     booking.status = RideBooking.STATUS_CONFIRMED
     booking.confirmed_at = timezone.now()
@@ -2873,6 +3007,12 @@ def custom_403_view(request, exception=None):
 def custom_500_view(request):
     return render(request, 'error.html', status=500)
 
+def upload_too_large_view(request):
+    """Nginx's `error_page 413` target: the request body was over
+    client_max_body_size, so it never reached Django (ISSUES.md H2)."""
+    return render(request, 'upload-too-large.html',
+                  {"upload_request_max_mb": settings.UPLOAD_REQUEST_MAX_MB}, status=413)
+
 
 @login_required
 def change_password_view(request):
@@ -3614,6 +3754,68 @@ def ride_receipt_pdf_view(request, ride_id):
     return response
 
 
+@login_required
+def private_media_view(request, path):
+    """GET /private-media/<path> - serves a license/selfie/vehicle image to
+    its owner or staff only (ISSUES.md C1). Anyone else gets a 404, so the
+    response doesn't reveal whether the file exists."""
+    rel_path = private_media.clean_rel_path(path)
+    if rel_path is None or not private_media.user_can_access(request.user, rel_path):
+        raise Http404
+
+    storage = private_media.private_storage()
+    if not storage.exists(rel_path):
+        raise Http404
+
+    content_type = private_media.content_type_for(rel_path)
+    if settings.PRIVATE_MEDIA_USE_ACCEL:
+        # Nginx streams the file from its `internal` location.
+        response = HttpResponse(content_type=content_type)
+        response["X-Accel-Redirect"] = f"{settings.PRIVATE_MEDIA_ACCEL_PREFIX}{rel_path}"
+    else:
+        response = FileResponse(storage.open(rel_path, "rb"), content_type=content_type)
+    response["Cache-Control"] = "private, no-store"
+    response["X-Content-Type-Options"] = "nosniff"
+    return response
+
+
+def _norm_name(value):
+    """A name as DL-Verification compares it: case, hyphens and extra
+    spaces ignored."""
+    return " ".join((value or "").replace("-", " ").split()).casefold()
+
+
+def _norm_code(value):
+    """A license or plate number with case, spaces and hyphens ignored."""
+    return re.sub(r"[\s\-]", "", value or "").upper()
+
+
+# Keyword -> category for DL-Verification's free-text rejection_reasons. The
+# service can't send codes, and its text may quote licence values, which the
+# privacy policy (s.9/s.13) doesn't let us keep -- so only the category is
+# stored. First match wins: image quality before the field checks, and vehicle
+# before licence number so "licence plate number" isn't read as the DL number.
+_REASON_PATTERNS = [
+    (VerificationLog.REASON_IMAGE_QUALITY, re.compile(r"blur|unreadable|illegible|quality|glare|too dark|retry", re.I)),
+    (VerificationLog.REASON_FACE_MISMATCH, re.compile(r"face|facial|biometric|selfie", re.I)),
+    (VerificationLog.REASON_VEHICLE_MISMATCH, re.compile(r"vehicle|plate|colou?r|alpr", re.I)),
+    (VerificationLog.REASON_EXPIRY_MISMATCH, re.compile(r"expir", re.I)),
+    (VerificationLog.REASON_DOB_MISMATCH, re.compile(r"birth|\bdob\b", re.I)),
+    (VerificationLog.REASON_LICENSE_NUMBER_MISMATCH, re.compile(r"licen[cs]e\s*(number|no\b|#)|\bdl\s*(number|no\b)", re.I)),
+    (VerificationLog.REASON_NAME_MISMATCH, re.compile(r"\bname\b", re.I)),
+]
+
+
+def _reason_codes(reasons):
+    """Categories for the service's rejection reasons, deduplicated in order."""
+    codes = []
+    for reason in reasons:
+        code = next((c for c, pat in _REASON_PATTERNS if pat.search(reason)), VerificationLog.REASON_OTHER)
+        if code not in codes:
+            codes.append(code)
+    return codes
+
+
 def verify_driver_view(request):
     """POST /profile/verify-driver/ - calls DL-Verification Node API and updates driver_verified."""
     try:
@@ -3640,35 +3842,24 @@ def verify_driver_view(request):
     if not user.license_front_url:
         return JsonResponse({"error": "Please upload your driving license image first and save your profile."}, status=400)
 
-    # Strip leading slash and MEDIA_URL prefix to get storage-relative path
-    def _storage_path(url):
-        p = url.lstrip("/")
-        media_prefix = settings.MEDIA_URL.lstrip("/")
-        if p.startswith(media_prefix):
-            p = p[len(media_prefix):]
-        return p
-
     try:
-        with default_storage.open(_storage_path(user.license_front_url), "rb") as f:
+        with open_stored_file(user.license_front_url) as f:
             license_bytes = f.read()
     except Exception:
         logger.exception("verify_driver_view: could not read license image for user %s", user.id)
         return JsonResponse({"error": "Could not read license image. Please try again later."}, status=500)
 
-    # Prefer the live verification selfie captured in the browser.
-    # Fall back to the saved profile selfie only if nothing was sent.
+    # Only the selfie captured for this attempt counts. The profile photo is
+    # never used: it may legitimately show the driver's vehicle instead of
+    # their face, and it isn't proof that the person is present now.
     selfie_file = request.FILES.get("selfie")
-    if selfie_file:
-        selfie_bytes = selfie_file.read()
-    elif user.selfie_url:
-        try:
-            with default_storage.open(_storage_path(user.selfie_url), "rb") as f:
-                selfie_bytes = f.read()
-        except Exception:
-            logger.exception("verify_driver_view: could not read saved selfie for user %s", user.id)
-            return JsonResponse({"error": "Could not read saved selfie. Please try again later."}, status=500)
-    else:
+    if not selfie_file:
         return JsonResponse({"error": "Please take a selfie using the camera when prompted."}, status=400)
+    # Same size as the stored photos, not the full-resolution original.
+    try:
+        selfie_bytes = _resize_image(selfie_file, label=f"user={user.id} verify-selfie").read()
+    except ValidationError as e:
+        return JsonResponse({"error": f"Selfie: {e.messages[0]} Please take the selfie again."}, status=400)
 
     # The verification pipeline scores DL OCR, face biometrics, and vehicle
     # ALPR as one composite decision -- a missing vehicle photo makes the
@@ -3679,7 +3870,7 @@ def verify_driver_view(request):
         return JsonResponse({"error": "Please add a vehicle with a photo to your profile before verifying."}, status=400)
 
     try:
-        with default_storage.open(_storage_path(user_vehicle.photo_url), "rb") as f:
+        with open_stored_file(user_vehicle.photo_url) as f:
             vehicle_bytes = f.read()
     except Exception:
         logger.exception("verify_driver_view: could not read vehicle image for user %s", user.id)
@@ -3711,6 +3902,7 @@ def verify_driver_view(request):
         },
     }
 
+    resp = None
     try:
         resp = http_client.post(
             settings.DL_VERIFICATION_API_URL,
@@ -3724,11 +3916,12 @@ def verify_driver_view(request):
         return JsonResponse({"error": "Verification service is offline. Make sure DL-Verification is running."}, status=503)
     except Exception:
         logger.exception("verify_driver_view: verification service call failed for user %s", user.id)
+        upload_logger.warning("verification failed: user=%s service error (HTTP %s)",
+                              user.id, getattr(resp, "status_code", "-"))
         return JsonResponse({"error": "Verification service error. Please try again later."}, status=503)
 
     verified = result.get("decision") == "APPROVED"
     stages = result.get("stages", {})
-    stage1 = stages.get("license_ocr", {})
     stage2 = stages.get("face_biometrics", {})
     stage3 = stages.get("vehicle_verification", {})
     try:
@@ -3738,23 +3931,51 @@ def verify_driver_view(request):
 
     user.driver_verified  = verified
     user.face_match_score = similarity
-    user.save(update_fields=["driver_verified", "face_match_score"])
+    update_fields = ["driver_verified", "face_match_score"]
+    if verified:
+        # Starts a new DRIVER_REVERIFY_DAYS period.
+        user.driver_verified_at        = timezone.now()
+        user.reverify_reminder_sent_at = None
+        update_fields += ["driver_verified_at", "reverify_reminder_sent_at"]
+    user.save(update_fields=update_fields)
 
-    if stage3.get("passed", False):
+    # The service approves on one combined score (license OCR + face +
+    # vehicle, > 85%), so an approval covers the vehicle that was sent even
+    # if its own stage scored low.
+    if verified or stage3.get("passed", False):
         user_vehicle.vehicle_verified = True
         user_vehicle.save(update_fields=["vehicle_verified"])
 
     log_result = VerificationLog.RESULT_APPROVED if verified else VerificationLog.RESULT_REJECTED
 
+    rejection_reasons = result.get("rejection_reasons") or []
+    if not isinstance(rejection_reasons, list):
+        rejection_reasons = [str(rejection_reasons)]
+    rejection_reasons = [str(r) for r in rejection_reasons]
+
+    # Privacy policy s.9/s.13: keep the outcome and minimum details only. The
+    # OCR output and the reason text (which can quote licence values) are not
+    # stored; the driver sees the reasons in this response.
+    stage_results = {
+        name: bool((stages.get(name) or {}).get("passed", False))
+        for name in ("license_ocr", "face_biometrics", "vehicle_verification")
+    }
+    reason_codes = _reason_codes(rejection_reasons)
     VerificationLog.objects.create(
         user=user,
-        ocr_extracted_json=json.dumps(stage1),
+        stage_results=stage_results,
+        reason_codes=reason_codes or None,
         face_score=similarity,
         result=log_result,
     )
+    # Reason codes only, never the reason text (see above).
+    upload_logger.info(
+        "verification result: user=%s decision=%s stages=%s reasons=%s image_bytes=selfie:%d,license:%d,vehicle:%d",
+        user.id, result.get("decision"), stage_results, reason_codes,
+        len(selfie_bytes), len(license_bytes), len(vehicle_bytes),
+    )
 
-    rejection_reasons = result.get("rejection_reasons", [])
-    details = "; ".join(rejection_reasons) if rejection_reasons else ""
+    details = "; ".join(rejection_reasons)
 
     return JsonResponse({
         "verified":   verified,
@@ -4066,6 +4287,10 @@ def send_invite_view(request):
 
     driver = request.user
     ride   = get_object_or_404(Rides, id=ride_id, driver=driver, status__in=['posted', 'full'])
+
+    if not driver.driver_verification_current:
+        return JsonResponse({'error': 'Please verify your identity on your profile page before inviting riders.'}, status=403)
+
     rider  = User.objects.filter(id=rider_id).first()
 
     if rider and rider == driver:
@@ -4176,6 +4401,14 @@ def accept_invite_view(request, token):
         return render(request, 'invite-detail.html', {
             'invite': invite, 'token': token,
             'error':  'This ride is no longer available.',
+        })
+
+    # Accepting an invite confirms a booking, so the driver's verification
+    # must be current (same rule as accept_booking_view).
+    if not ride.driver.driver_verification_current:
+        return render(request, 'invite-detail.html', {
+            'invite': invite, 'token': token,
+            'error':  "This invite can't be accepted right now because the driver needs to re-verify their identity. Please try again later.",
         })
 
     # Atomically claim the invite first so a replayed/concurrent accept

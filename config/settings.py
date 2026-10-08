@@ -276,7 +276,15 @@ CANCELLED_RIDE_RETENTION_DAYS = config('CANCELLED_RIDE_RETENTION_DAYS', default=
 STOP_DETOUR_MAX_KM  = config('STOP_DETOUR_MAX_KM',  default=30,  cast=int)
 STOP_DETOUR_MAX_PCT = config('STOP_DETOUR_MAX_PCT',  default=35,  cast=int)
 ACCOUNT_DELETION_GRACE_DAYS = config('ACCOUNT_DELETION_GRACE_DAYS', default=45, cast=int)
+# Periodic identity re-verification (see komute/management/commands/expire_driver_verification.py)
+DRIVER_REVERIFY_DAYS          = config('DRIVER_REVERIFY_DAYS',          default=90, cast=int)
+DRIVER_REVERIFY_REMINDER_DAYS = config('DRIVER_REVERIFY_REMINDER_DAYS', default=10, cast=int)
 ADMIN_EMAIL          = config('ADMIN_EMAIL',          default=CONTACT_EMAIL)
+# Photo uploads (ISSUES.md H2). The browser shrinks photos before sending
+# them; these caps cover what it can't shrink (old browsers, HEIC outside
+# Safari). UPLOAD_REQUEST_MAX_MB must equal Nginx's client_max_body_size.
+IMAGE_UPLOAD_MAX_MB   = config('IMAGE_UPLOAD_MAX_MB',   default=15, cast=int)
+UPLOAD_REQUEST_MAX_MB = config('UPLOAD_REQUEST_MAX_MB', default=40, cast=int)
 
 # Request throttling (see komute.views._rate_limited) — each entry is
 # (max requests, window in seconds), overridable per deployment via .env
@@ -332,6 +340,16 @@ AUTH_USER_MODEL = 'komute.CustomUser'
 
 MEDIA_URL = "/media/"
 MEDIA_ROOT = BASE_DIR / "media"
+
+# Identity images (licenses, selfies, vehicle photos) — never served
+# publicly. Only komute.views.private_media_view hands them out, after an
+# owner/staff check (ISSUES.md C1). In production the view replies with an
+# X-Accel-Redirect to PRIVATE_MEDIA_ACCEL_PREFIX, an Nginx `internal`
+# location aliased to PRIVATE_MEDIA_ROOT; in DEBUG it streams the file itself.
+PRIVATE_MEDIA_ROOT = Path(config('PRIVATE_MEDIA_ROOT', default=str(BASE_DIR / "private_media")))
+PRIVATE_MEDIA_URL = "/private-media/"
+PRIVATE_MEDIA_ACCEL_PREFIX = "/protected-media/"
+PRIVATE_MEDIA_USE_ACCEL = config('PRIVATE_MEDIA_USE_ACCEL', default=not DEBUG, cast=bool)
 # (SECURE_CONTENT_TYPE_NOSNIFF, protecting these uploads from MIME-sniffing,
 # is set near the top of the file with the other security hardening.)
 
@@ -368,6 +386,13 @@ LOGGING = {
         'komute': {
             'handlers': ['console'],
             'level': 'ERROR',
+            'propagate': False,
+        },
+        # One line per photo upload and verification attempt (ISSUES.md H2),
+        # so a failed upload can be traced from the server log.
+        'komute.uploads': {
+            'handlers': ['console'],
+            'level': 'INFO',
             'propagate': False,
         },
     },

@@ -1,5 +1,5 @@
 import logging
-from datetime import date
+from datetime import date, timedelta
 
 from django.conf import settings
 from django.contrib.auth.base_user import BaseUserManager
@@ -142,6 +142,20 @@ class CustomUser(AbstractUser):
         default=False
     )
 
+    # When the last verification passed. Verification lapses
+    # DRIVER_REVERIFY_DAYS later (expire_driver_verification command).
+    driver_verified_at = models.DateTimeField(
+        null=True,
+        blank=True
+    )
+
+    # Set when the "re-verify soon" email goes out, cleared on the next pass,
+    # so each verification period gets at most one reminder.
+    reverify_reminder_sent_at = models.DateTimeField(
+        null=True,
+        blank=True
+    )
+
     license_number = models.TextField(
         null=True,
         blank=True
@@ -243,7 +257,34 @@ class CustomUser(AbstractUser):
 
     def __str__(self):
         return self.email
-    
+
+    @property
+    def driver_reverify_due_at(self):
+        """When the current verification lapses, or None if there is no dated one."""
+        if not self.driver_verified_at:
+            return None
+        return self.driver_verified_at + timedelta(days=settings.DRIVER_REVERIFY_DAYS)
+
+    @property
+    def license_expired(self):
+        return self.license_expiry is not None and self.license_expiry < timezone.localdate()
+
+    @property
+    def driver_verification_current(self):
+        """driver_verified, not past its re-verification date, and the
+        license it was checked against hasn't expired since.
+
+        Checked directly where it matters (posting rides, accepting bookings)
+        so a driver is blocked on time even if the daily
+        expire_driver_verification run hasn't cleared driver_verified yet.
+        """
+        due = self.driver_reverify_due_at
+        return (
+            self.driver_verified
+            and (due is None or timezone.now() < due)
+            and not self.license_expired
+        )
+
 
 class Vehicle(models.Model):
     owner = models.ForeignKey(
@@ -566,13 +607,36 @@ class VerificationLog(models.Model):
         (RESULT_REJECTED, "Rejected"),
     ]
 
+    # reason_codes values (see views._reason_codes)
+    REASON_IMAGE_QUALITY = "IMAGE_QUALITY"
+    REASON_FACE_MISMATCH = "FACE_MISMATCH"
+    REASON_VEHICLE_MISMATCH = "VEHICLE_MISMATCH"
+    REASON_EXPIRY_MISMATCH = "EXPIRY_MISMATCH"
+    REASON_DOB_MISMATCH = "DOB_MISMATCH"
+    REASON_LICENSE_NUMBER_MISMATCH = "LICENSE_NUMBER_MISMATCH"
+    REASON_NAME_MISMATCH = "NAME_MISMATCH"
+    REASON_OTHER = "OTHER"
+
     user = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.CASCADE,
         related_name="verification_logs",
     )
 
+    # No longer written (privacy policy s.9/s.13: extracted licence data is
+    # deleted once the decision is recorded). Kept for rows written before
+    # that; scrub_verification_data nulls them.
     ocr_extracted_json = EncryptedTextField(null=True, blank=True)
+
+    # Outcome-only details kept for support (up to
+    # VERIFICATION_RECORD_RETENTION_DAYS). Neither holds licence values:
+    #   stage_results: {"license_ocr": bool, "face_biometrics": bool,
+    #                   "vehicle_verification": bool} from the service.
+    #   reason_codes:  categories Komute derives from the service's
+    #                  rejection_reasons text (REASON_* below); the text
+    #                  itself is shown to the driver and then discarded.
+    stage_results = models.JSONField(null=True, blank=True)
+    reason_codes = models.JSONField(null=True, blank=True)
 
     face_score = EncryptedFloatField(null=True, blank=True)
 

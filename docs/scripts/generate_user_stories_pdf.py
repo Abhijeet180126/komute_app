@@ -1,6 +1,6 @@
 """
 Render docs/user-stories-2026-08-23.md to a styled PDF via headless Chrome.
-Run with: python3 generate_user_stories_pdf.py
+Run with: python3 docs/scripts/generate_user_stories_pdf.py  (from repo root)
 """
 import html
 import re

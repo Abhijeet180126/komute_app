@@ -24,6 +24,11 @@
 # after the user confirms via the emailed link (item 8). Emails ADMIN_EMAIL a
 # summary of any accounts purged in the run.
 45 3 * * * /var/www/komute/venv/bin/python /var/www/komute/manage.py purge_deactivated_accounts >> /var/www/komute/logs/cron.log 2>&1
+
+# Driver identity re-verification (ISSUES.md C2): reminder email
+# DRIVER_REVERIFY_REMINDER_DAYS (10) before, then verification cleared after
+# DRIVER_REVERIFY_DAYS (90). 14:00 UTC = 9-10 am Eastern, so reminders arrive in daytime.
+0 14 * * * /var/www/komute/venv/bin/python /var/www/komute/manage.py expire_driver_verification >> /var/www/komute/logs/cron.log 2>&1
 To install on the droplet:
 
 

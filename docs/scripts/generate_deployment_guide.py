@@ -1,6 +1,6 @@
 """
 Generates Komute_DigitalOcean_Deployment_Guide.pdf
-Run once with: venv\\Scripts\\python.exe generate_deployment_guide.py
+Run once with: venv\\Scripts\\python.exe docs/scripts/generate_deployment_guide.py  (from repo root)
 """
 import re
 from reportlab.lib.pagesizes import A4
@@ -638,7 +638,19 @@ server {
     listen 80;
     server_name komute.example.com www.komute.example.com;
 
-    client_max_body_size 15M;   # selfie/license image uploads
+    # Profile form with license, selfie and vehicle photos. Must equal
+    # UPLOAD_REQUEST_MAX_MB in .env (default 40).
+    client_max_body_size 40M;
+    # Over the limit: show Komute's explanation page instead of Nginx's bare 413.
+    error_page 413 /upload-too-large/;
+
+    location = /upload-too-large/ {
+        proxy_pass http://127.0.0.1:8000;
+        proxy_pass_request_body off;
+        proxy_set_header Content-Length "";
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
 
     location /static/ {
         alias /home/deploy/apps/komute/staticfiles/;
@@ -646,6 +658,14 @@ server {
 
     location /media/ {
         alias /home/deploy/apps/komute/media/;
+    }
+
+    # Licenses/selfies/vehicle photos: reachable ONLY via Django's
+    # X-Accel-Redirect after an owner/staff check, never directly.
+    location /protected-media/ {
+        internal;
+        alias /home/deploy/apps/komute/private_media/;
+        add_header X-Content-Type-Options nosniff always;
     }
 
     location / {
@@ -735,6 +755,13 @@ sudo -u postgres pg_dump komute | gzip > /home/deploy/backups/komute-$(date +%F)
 p("Add this as a nightly cron job, and copy backups off-droplet (DigitalOcean Spaces, or "
   "<font face='Courier'>rclone</font> to another provider). Consider DigitalOcean Managed PostgreSQL "
   "as a lower-maintenance alternative to self-hosting Postgres, with automated backups built in.")
+h2_("Uploaded image backups")
+code(r"""
+tar czf /home/deploy/backups/komute-private-media-$(date +%F).tar.gz -C /home/deploy/apps/komute private_media
+""")
+p("Driver's licenses, selfies and vehicle photos live in <font face='Courier'>private_media/</font>, "
+  "not in the database. Back the folder up alongside the database dump, and keep those backups "
+  "private — they contain identity documents.")
 h2_("Droplet-level backups")
 p("Enable DigitalOcean's weekly Droplet backups (configured at Droplet creation, or afterwards under "
   "the Droplet's Backups tab) as a full-system safety net.")
@@ -838,13 +865,26 @@ code(r"""
 server {
     listen 80;
     server_name komute.example.com www.komute.example.com;
-    client_max_body_size 15M;
+    client_max_body_size 40M;   # = UPLOAD_REQUEST_MAX_MB
+    error_page 413 /upload-too-large/;
 
+    location = /upload-too-large/ {
+        proxy_pass http://127.0.0.1:8000;
+        proxy_pass_request_body off;
+        proxy_set_header Content-Length "";
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
     location /static/ {
         alias /home/deploy/apps/komute/staticfiles/;
     }
     location /media/ {
         alias /home/deploy/apps/komute/media/;
+    }
+    location /protected-media/ {
+        internal;
+        alias /home/deploy/apps/komute/private_media/;
+        add_header X-Content-Type-Options nosniff always;
     }
     location / {
         proxy_pass http://127.0.0.1:8000;
@@ -891,6 +931,10 @@ MESSAGE_RETENTION_DAYS=365
 STOP_DETOUR_MAX_KM=30
 STOP_DETOUR_MAX_PCT=35
 CONTACT_EMAIL=support@example.com
+
+IMAGE_UPLOAD_MAX_MB=15
+# UPLOAD_REQUEST_MAX_MB must equal Nginx client_max_body_size
+UPLOAD_REQUEST_MAX_MB=40
 """)
 
 h2_("A.4 — crontab (deploy user)")

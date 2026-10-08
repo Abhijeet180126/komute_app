@@ -27,7 +27,10 @@ class ChatConsumer(AsyncWebsocketConsumer):
         self.booking_id  = booking_id
         self.ride_id     = booking_info['ride_id']
         self.receiver_id = booking_info['receiver_id']
-        self.room_group  = f'chat_ride_{self.ride_id}'
+        # One group per booking (driver + that passenger only). Keying by ride
+        # put every passenger on the ride in one room, leaking their messages
+        # and price offers to each other.
+        self.room_group  = f'chat_booking_{self.booking_id}'
 
         # Accept before any channel-layer work so the browser sees a proper
         # WebSocket handshake instead of an HTTP 403 that triggers onclose(1006).
@@ -100,6 +103,7 @@ class ChatConsumer(AsyncWebsocketConsumer):
                     'booking_inactive': 'This booking is no longer active — it may have been cancelled or rejected.',
                     'offer_stale':      'That price is no longer available — the other side may have sent a new offer. Check the latest price and try again.',
                     'no_seats':         'Price agreed, but this ride no longer has an open seat to confirm your booking. Please contact the driver.',
+                    'driver_unverified': 'This booking can\'t be confirmed until the driver re-verifies their identity.',
                 }
                 message = messages_by_code.get(result, 'Something went wrong.')
                 await self.send(text_data=json.dumps({'type': 'error', 'code': result, 'message': message}))
@@ -202,7 +206,7 @@ class ChatConsumer(AsyncWebsocketConsumer):
         from django.db import transaction
         from django.db.models import F
 
-        booking = RideBooking.objects.select_related('ride', 'passenger').filter(id=booking_id).first()
+        booking = RideBooking.objects.select_related('ride__driver', 'passenger').filter(id=booking_id).first()
         if booking is None or booking.status not in (RideBooking.STATUS_DRAFT, RideBooking.STATUS_REQUESTED, RideBooking.STATUS_CONFIRMED):
             return 'booking_inactive', None
 
@@ -224,6 +228,10 @@ class ChatConsumer(AsyncWebsocketConsumer):
 
         agreed_price_cents = offer.price_cents * booking.seats + settings.SERVICE_FEE_CENTS
         was_unconfirmed = booking.status in (RideBooking.STATUS_DRAFT, RideBooking.STATUS_REQUESTED)
+        # Agreeing a price confirms the booking, which a driver whose identity
+        # verification has lapsed may not do (same rule as accept_booking_view).
+        if was_unconfirmed and not booking.ride.driver.driver_verification_current:
+            return 'driver_unverified', None
 
         with transaction.atomic():
             if booking.status == RideBooking.STATUS_DRAFT:

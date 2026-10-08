@@ -69,7 +69,9 @@ class VerificationLogAdmin(admin.ModelAdmin):
     # ocr_extracted_json / face_score deliberately left off the list view --
     # they're encrypted at rest (biometric data); the review form still shows
     # them for the actual manual-review workflow, just not in a scrolling list.
-    list_display = ('id', 'user', 'result', 'reviewer', 'created_at')
+    # stage_results / reason_codes hold no licence values (C3), so support
+    # can see why an attempt failed straight from the list.
+    list_display = ('id', 'user', 'result', 'stage_results', 'reason_codes', 'reviewer', 'created_at')
     list_filter = ('result',)
     search_fields = ('user__email',)
 

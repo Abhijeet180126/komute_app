@@ -60,3 +60,12 @@ CACHES = {
 # nothing to do with what these tests exercise, so it's switched off here
 # (test-only) rather than worked around per-test.
 AXES_ENABLED = False
+
+# Keep test uploads out of the project tree, and have private_media_view
+# stream files itself (there's no Nginx in front of the test Client).
+PRIVATE_MEDIA_ROOT = Path(tempfile.gettempdir()) / 'komute_regression_private_media'
+PRIVATE_MEDIA_USE_ACCEL = False
+
+# The per-upload log lines would flood the test output; tests that check
+# them use assertLogs, which lowers the level itself.
+LOGGING['loggers']['komute.uploads']['level'] = 'ERROR'  # noqa: F405

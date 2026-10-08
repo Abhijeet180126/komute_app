@@ -2,7 +2,6 @@ import logging
 from datetime import timedelta
 
 from django.conf import settings
-from django.core.files.storage import default_storage
 from django.core.mail import send_mail
 from django.core.management.base import BaseCommand
 from django.db import transaction
@@ -10,23 +9,9 @@ from django.db.models import Q
 from django.utils import timezone
 
 from komute.models import CustomUser, Message, RideSearch, Vehicle, VerificationLog
+from komute.private_media import delete_stored_file as _delete_stored_file
 
 logger = logging.getLogger(__name__)
-
-
-def _delete_stored_file(url):
-    """Best-effort delete of a file referenced by a MEDIA_URL-prefixed url field."""
-    if not url or not url.startswith(settings.MEDIA_URL):
-        return
-    rel_path = url[len(settings.MEDIA_URL):]
-    try:
-        if default_storage.exists(rel_path):
-            default_storage.delete(rel_path)
-    except Exception:
-        logger.warning(
-            'purge_deactivated_accounts: could not delete stored file %r',
-            rel_path, exc_info=True,
-        )
 
 
 class Command(BaseCommand):

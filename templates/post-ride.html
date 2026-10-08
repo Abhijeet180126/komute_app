@@ -754,9 +754,9 @@ nav {
                 <label class="form-label">Starting Point <span class="required">*</span></label>
                 <div class="input-wrap">
                   <span class="input-icon"><svg viewBox="0 0 24 24"><circle cx="12" cy="10" r="3"/><path d="M12 2a8 8 0 0 0-8 8c0 5.25 8 12 8 12s8-6.75 8-12a8 8 0 0 0-8-8z"/></svg></span>
-                  <input type="text" name="origin" id="origin_input" class="form-input" placeholder="e.g. Downtown Toronto, ON" oninput="updateProgress()" autocomplete="off" style="padding-right:96px">
-                  <input type="hidden" name="origin_lat" id="origin_lat">
-                  <input type="hidden" name="origin_lng" id="origin_lng">
+                  <input type="text" name="origin" id="origin_input" class="form-input" placeholder="e.g. Downtown Toronto, ON" oninput="updateProgress()" autocomplete="off" style="padding-right:96px" value="{{ form.origin }}">
+                  <input type="hidden" name="origin_lat" id="origin_lat" value="{{ form.origin_lat }}">
+                  <input type="hidden" name="origin_lng" id="origin_lng" value="{{ form.origin_lng }}">
                   <button type="button" class="locate-btn" id="locateBtn" onclick="locateMe()">
                     <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/><circle cx="12" cy="12" r="8" stroke-dasharray="none"/></svg>
                     Locate me
@@ -783,9 +783,9 @@ nav {
                 <label class="form-label">Final Destination <span class="required">*</span></label>
                 <div class="input-wrap">
                   <span class="input-icon"><svg viewBox="0 0 24 24"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg></span>
-                  <input type="text" name="destination" id="destination_input" class="form-input" placeholder="e.g. Mississauga, ON" oninput="updateProgress()" autocomplete="off">
-                  <input type="hidden" name="destination_lat" id="destination_lat">
-                  <input type="hidden" name="destination_lng" id="destination_lng">
+                  <input type="text" name="destination" id="destination_input" class="form-input" placeholder="e.g. Mississauga, ON" oninput="updateProgress()" autocomplete="off" value="{{ form.destination }}">
+                  <input type="hidden" name="destination_lat" id="destination_lat" value="{{ form.destination_lat }}">
+                  <input type="hidden" name="destination_lng" id="destination_lng" value="{{ form.destination_lng }}">
                   {% if errors.destination %}<small style="color:#ef4444;font-size:0.78rem;">{{ errors.destination }}</small>{% endif %}
                 </div>
               </div>
@@ -797,6 +797,7 @@ nav {
         <div id="js-config" style="display:none"
              data-detour-max-km="{{ stop_detour_max_km }}"
              data-detour-max-pct="{{ stop_detour_max_pct }}"></div>
+        {{ form_js|json_script:"form-prefill" }}
 
         <!-- Route summary (distance + drive time via OSRM) -->
         <div class="route-summary" id="routeSummary">
@@ -836,7 +837,7 @@ nav {
             <label class="form-label">Departure Time <span class="required">*</span></label>
             <div class="input-wrap">
               <span class="input-icon"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg></span>
-              <input type="time" id="depart_time" name="depart_time" class="form-input" oninput="clearTimeError()">
+              <input type="time" id="depart_time" name="depart_time" class="form-input" oninput="clearTimeError()" value="{{ form.depart_time }}">
             </div>
             {% if errors.depart_time %}
             <small id="time-error" style="color:#ef4444;font-size:0.78rem;">{{ errors.depart_time }}</small>
@@ -870,7 +871,7 @@ nav {
             <select class="form-select" name="vehicle">
               <option value="">— Select Vehicle —</option>
               {% for v in vehicles %}
-              <option value="{{ v.id }}"{% if not v.vehicle_verified %} disabled{% endif %}>
+              <option value="{{ v.id }}"{% if not v.vehicle_verified %} disabled{% elif v.id|stringformat:"s" == form.vehicle %} selected{% endif %}>
                 {{ v.year }} {{ v.make }} {{ v.model }} ({{ v.plate }}) — {% if v.vehicle_verified %}✓ Verified{% else %}✗ Not Verified{% endif %}
               </option>
               {% endfor %}
@@ -895,7 +896,7 @@ nav {
             <label class="form-label">Price per Seat (CAD) <span class="required">*</span></label>
             <div class="input-wrap price-wrap">
               <span class="price-prefix">$</span>
-              <input type="number" name="price" class="form-input" placeholder="0.00" min="0.01" step="0.5" oninput="updateProgress()">
+              <input type="number" name="price" class="form-input" placeholder="0.00" min="0.01" step="0.01" oninput="updateProgress()" value="{{ form.price }}">
             </div>
             {% if errors.price %}<small style="color:#ef4444;font-size:0.78rem;">{{ errors.price }}</small>{% endif %}
           </div>
@@ -906,8 +907,8 @@ nav {
               <span class="input-icon"><svg viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg></span>
               <select name="passenger_gender_pref" class="form-select">
                 <option value="any">Any</option>
-                <option value="women_only">Women Only</option>
-                <option value="men_only">Men Only</option>
+                <option value="women_only"{% if form.passenger_gender_pref == "women_only" %} selected{% endif %}>Women Only</option>
+                <option value="men_only"{% if form.passenger_gender_pref == "men_only" %} selected{% endif %}>Men Only</option>
               </select>
             </div>
           </div>
@@ -970,7 +971,7 @@ nav {
           <label class="form-label">Notes for Passengers</label>
           <div class="input-wrap">
             <span class="input-icon" style="top:14px;transform:none"><svg viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></span>
-            <textarea name="notes" class="form-textarea" placeholder="e.g. I'll pick you up from the main entrance. Music will be on. Please be ready 5 mins early."></textarea>
+            <textarea name="notes" class="form-textarea" placeholder="e.g. I'll pick you up from the main entrance. Music will be on. Please be ready 5 mins early.">{{ form.notes }}</textarea>
           </div>
         </div>
       </div>
@@ -1139,6 +1140,7 @@ nav {
       div.style.transform = 'translateY(0)';
     });
     syncStopButtons();
+    return div;
   }
 
   function removeStop(id, type) {
@@ -1578,8 +1580,11 @@ nav {
     }
   }
 
-  // Pre-fill date to today in both hidden (YYYY-MM-DD) and display (MM-DD-YYYY) inputs
-  const todayYMD = getTodayStr();
+  // Values the driver submitted, when the server sent the form back with errors
+  const prefill = JSON.parse(document.getElementById('form-prefill').textContent);
+
+  // Pre-fill date (submitted value, else today) in both hidden (YYYY-MM-DD) and display (MM-DD-YYYY) inputs
+  const todayYMD = (prefill && /^\d{4}-\d{2}-\d{2}$/.test(prefill.date)) ? prefill.date : getTodayStr();
   dateInput.value = todayYMD;
   document.getElementById('depart_date_display').value =
     todayYMD.slice(5,7) + '-' + todayYMD.slice(8,10) + '-' + todayYMD.slice(0,4);
@@ -1595,6 +1600,40 @@ nav {
   // Capture browser timezone for local-time display in emails
   document.getElementById('tz_input').value =
     Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
+
+  /* ── RESTORE SUBMITTED VALUES AFTER A SERVER-SIDE ERROR ── */
+  if (prefill) {
+    const seats = parseInt(prefill.seats, 10);
+    if (seats >= 1 && seats <= 8) changeSeat(seats - seatCount);
+
+    document.querySelectorAll('.pref-tag').forEach(el => {
+      if (prefill.prefs.includes(el.textContent.trim())) el.classList.add('active');
+    });
+
+    prefill.stops.forEach(s => {
+      const div = addStop(s.type);
+      if (!div) return;
+      div.querySelector('[name="stop_location"]').value = s.location;
+      div.querySelector('[name="stop_lat"]').value = s.lat;
+      div.querySelector('[name="stop_lng"]').value = s.lng;
+    });
+
+    if (prefill.is_recurring) {
+      toggleRecurring();
+      document.querySelectorAll('.day-pill').forEach(el => {
+        if (prefill.recurring_days.includes(el.dataset.day)) el.classList.add('active');
+      });
+      const end = prefill.recurring_end_date;
+      if (/^\d{4}-\d{2}-\d{2}$/.test(end)) {
+        document.getElementById('recurringEndDate').value = end;
+        document.getElementById('recurringEndDate_picker').value = end;
+        document.getElementById('recurringEndDate_display').value =
+          end.slice(5,7) + '-' + end.slice(8,10) + '-' + end.slice(0,4);
+      }
+    }
+
+    fetchRouteInfo();
+  }
 
   function clearTimeError() {
     const err = document.getElementById('time-error');

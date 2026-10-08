@@ -8,16 +8,21 @@ auth, password reset, account deactivation/deletion, the full ride lifecycle
 (post/edit/search/book/accept/reject/cancel/review/invite), route-demand
 matching, price negotiation, profile + vehicle management, driver/rider
 inbox conversation assembly, the verify-driver request-validation gates,
-hashid encode/decode, and all retention/purge management commands.
-Does NOT cover: websocket chat (consumers.py, needs channels' test infra),
-or real outbound email delivery (locmem backend only). The verify-driver
+hashid encode/decode, all retention/purge management commands,
+owner-only serving + migration of private identity images (ISSUES.md C1),
+and per-booking chat isolation (ISSUES.md C4). Does NOT cover: the rest of
+websocket chat, or real outbound email delivery (locmem backend only). The verify-driver
 flow's pre-call validation gates, request payload shape, and response
 parsing are covered with the outbound `requests.post` call to the
 DL-Verification Node mocked out -- no real verification service is hit.
 """
+import io
 import json
+import shutil
+import tempfile
 import time
 from datetime import date, timedelta
+from pathlib import Path
 from unittest.mock import MagicMock, mock_open, patch
 
 from django.conf import settings
@@ -25,10 +30,14 @@ from django.core import mail
 from django.core.cache import cache
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.core.management import call_command
-from django.test import TestCase, Client
+from asgiref.sync import async_to_sync
+from channels.testing import WebsocketCommunicator
+from django.test import TestCase, TransactionTestCase, Client, override_settings
 from django.urls import reverse
 from django.utils import timezone
 
+from komute.chat_tokens import make_chat_token
+from komute.consumers import ChatConsumer
 from komute.hashid_utils import decode_id, encode_id
 from komute.models import (
     CustomUser, Vehicle, Rides, RideStop, RideBooking, Message,
@@ -699,6 +708,70 @@ class PostRideViewTests(TestCase):
         self.assertIn('depart_time', resp.context['errors'])
         self.assertFalse(Rides.objects.filter(driver=self.driver).exists())
 
+    # ── ISSUES.md H1 ──
+
+    def test_price_field_accepts_whole_and_cent_values(self):
+        c = Client()
+        c.login(username='post_driver@example.com', password='TestPass123')
+        resp = c.get(reverse('post-ride'))
+        self.assertContains(resp, 'step="0.01"')
+        self.assertNotContains(resp, 'step="0.5"')
+
+    def test_unpicked_location_gets_pick_from_suggestions_error(self):
+        c = Client()
+        c.login(username='post_driver@example.com', password='TestPass123')
+        payload = self._valid_payload()
+        payload['origin_lat'] = payload['origin_lng'] = ''
+        payload['destination_lat'] = payload['destination_lng'] = ''
+        resp = c.post(reverse('post-ride'), payload)
+        self.assertEqual(resp.context['errors']['origin'], 'Please pick a location from the suggestions.')
+        self.assertEqual(resp.context['errors']['destination'], 'Please pick a location from the suggestions.')
+
+    def test_location_outside_service_area_still_gets_us_canada_error(self):
+        c = Client()
+        c.login(username='post_driver@example.com', password='TestPass123')
+        payload = self._valid_payload()
+        payload['origin_lat'], payload['origin_lng'] = '51.50', '-0.12'  # London, UK
+        resp = c.post(reverse('post-ride'), payload)
+        self.assertIn('US and Canada', resp.context['errors']['origin'])
+
+    def test_error_rerender_keeps_submitted_values(self):
+        c = Client()
+        c.login(username='post_driver@example.com', password='TestPass123')
+        payload = self._valid_payload()
+        payload.update({
+            'price': '12.50',
+            'notes': 'Meet at <the> main gate',
+            'passenger_gender_pref': 'women_only',
+            'preferences_json': '["Music OK", "Pet Friendly"]',
+            'stop_location': ['Kingston, ON'], 'stop_type': ['pickup'],
+            'stop_lat': ['44.23'], 'stop_lng': ['-76.48'],
+        })
+        payload['destination_lat'] = payload['destination_lng'] = ''
+        resp = c.post(reverse('post-ride'), payload)
+        self.assertEqual(resp.status_code, 200)
+        self.assertIn('destination', resp.context['errors'])
+        self.assertContains(resp, 'value="Toronto, ON"')
+        self.assertContains(resp, 'value="Ottawa, ON"')
+        self.assertContains(resp, 'value="43.65"')
+        self.assertContains(resp, 'value="12.50"')
+        self.assertContains(resp, 'value="10:00"')
+        self.assertContains(resp, 'Meet at &lt;the&gt; main gate</textarea>')
+        self.assertContains(resp, f'<option value="{self.vehicle.id}" selected>')
+        self.assertContains(resp, '<option value="women_only" selected>')
+        prefill = resp.context['form_js']
+        self.assertEqual(prefill['date'], payload['date'])
+        self.assertEqual(prefill['seats'], '3')
+        self.assertEqual(prefill['prefs'], ['Music OK', 'Pet Friendly'])
+        self.assertEqual(prefill['stops'], [{'location': 'Kingston, ON', 'type': 'pickup', 'lat': '44.23', 'lng': '-76.48'}])
+        self.assertContains(resp, 'id="form-prefill"')
+
+    def test_get_has_no_prefill(self):
+        c = Client()
+        c.login(username='post_driver@example.com', password='TestPass123')
+        resp = c.get(reverse('post-ride'))
+        self.assertIsNone(resp.context['form_js'])
+
 
 class SearchRidesViewTests(TestCase):
     def setUp(self):
@@ -960,6 +1033,58 @@ class PriceNegotiationTests(TestCase):
             {'price_cents': '0'},
         )
         self.assertEqual(resp.status_code, 400)
+
+
+class ChatIsolationTests(TransactionTestCase):
+    """ISSUES.md C4: a passenger must never see another passenger's chat on the same ride."""
+
+    def setUp(self):
+        self.driver = make_driver_with_vehicle('ci_driver@example.com')
+        self.rider_a = make_user('ci_rider_a@example.com')
+        self.rider_b = make_user('ci_rider_b@example.com')
+        self.ride = make_ride(self.driver)
+        self.booking_a = RideBooking.objects.create(
+            ride=self.ride, passenger=self.rider_a, seats=1,
+            agreed_price_cents=2500, status=RideBooking.STATUS_REQUESTED,
+        )
+        self.booking_b = RideBooking.objects.create(
+            ride=self.ride, passenger=self.rider_b, seats=1,
+            agreed_price_cents=2500, status=RideBooking.STATUS_REQUESTED,
+        )
+
+    @staticmethod
+    def _communicator(user, booking):
+        token = make_chat_token(booking.id)
+        comm = WebsocketCommunicator(ChatConsumer.as_asgi(), f'/ws/chat/{token}/')
+        comm.scope['user'] = user
+        comm.scope['url_route'] = {'kwargs': {'token': token}}
+        return comm
+
+    def test_messages_and_offers_stay_within_booking(self):
+        async def run():
+            driver_a = self._communicator(self.driver, self.booking_a)
+            rider_a = self._communicator(self.rider_a, self.booking_a)
+            rider_b = self._communicator(self.rider_b, self.booking_b)
+            for comm in (driver_a, rider_a, rider_b):
+                connected, _ = await comm.connect()
+                self.assertTrue(connected)
+
+            await rider_a.send_json_to({'type': 'message', 'body': 'private to driver'})
+            msg = await driver_a.receive_json_from(timeout=5)
+            self.assertEqual(msg['body'], 'private to driver')
+            await rider_a.receive_json_from(timeout=5)  # sender's own echo
+
+            await rider_a.send_json_to({'type': 'price_offer', 'price': 18})
+            offer = await driver_a.receive_json_from(timeout=5)
+            self.assertEqual(offer['type'], 'price_offer')
+            await rider_a.receive_json_from(timeout=5)
+
+            self.assertTrue(await rider_b.receive_nothing(timeout=0.5))
+
+            for comm in (driver_a, rider_a, rider_b):
+                await comm.disconnect()
+
+        async_to_sync(run)()
 
 
 class EditRideViewTests(TestCase):
@@ -1316,7 +1441,8 @@ class VerifyDriverViewGateTests(TestCase):
         return Vehicle.objects.create(owner=self.driver, **defaults)
 
     def _selfie_file(self):
-        return {'selfie': SimpleUploadedFile('s.jpg', b'fake-selfie-bytes', content_type='image/jpeg')}
+        # A real image: the view decodes and resizes the selfie (H2).
+        return {'selfie': SimpleUploadedFile('s.jpg', _jpeg_bytes(), content_type='image/jpeg')}
 
     def test_get_method_not_allowed(self):
         c = Client()
@@ -1343,7 +1469,7 @@ class VerifyDriverViewGateTests(TestCase):
         c.login(username='vd_driver@example.com', password='TestPass123')
         # License read is mocked out so the request reaches the selfie check
         # without touching real disk storage.
-        with patch('komute.views.default_storage.open', mock_open(read_data=b'fake-bytes')):
+        with patch('komute.views.open_stored_file', mock_open(read_data=b'fake-bytes')):
             resp = c.post(reverse('verify-driver'))
         self.assertEqual(resp.status_code, 400)
         self.assertIn('selfie', json.loads(resp.content)['error'].lower())
@@ -1353,7 +1479,7 @@ class VerifyDriverViewGateTests(TestCase):
         self.driver.save(update_fields=['license_front_url'])
         c = Client()
         c.login(username='vd_driver@example.com', password='TestPass123')
-        with patch('komute.views.default_storage.open', mock_open(read_data=b'fake-bytes')):
+        with patch('komute.views.open_stored_file', mock_open(read_data=b'fake-bytes')):
             resp = c.post(reverse('verify-driver'), self._selfie_file())
         self.assertEqual(resp.status_code, 400)
         self.assertIn('vehicle', json.loads(resp.content)['error'].lower())
@@ -1367,7 +1493,7 @@ class VerifyDriverViewGateTests(TestCase):
         )
         c = Client()
         c.login(username='vd_driver@example.com', password='TestPass123')
-        with patch('komute.views.default_storage.open', mock_open(read_data=b'fake-bytes')):
+        with patch('komute.views.open_stored_file', mock_open(read_data=b'fake-bytes')):
             resp = c.post(reverse('verify-driver'), self._selfie_file())
         self.assertEqual(resp.status_code, 400)
         self.assertIn('vehicle', json.loads(resp.content)['error'].lower())
@@ -1387,7 +1513,7 @@ class VerifyDriverViewGateTests(TestCase):
         }
         c = Client()
         c.login(username='vd_driver@example.com', password='TestPass123')
-        with patch('komute.views.default_storage.open', mock_open(read_data=b'fake-bytes')), \
+        with patch('komute.views.open_stored_file', mock_open(read_data=b'fake-bytes')), \
              patch('requests.post', return_value=mock_resp) as mock_post:
             resp = c.post(reverse('verify-driver'), self._selfie_file())
 
@@ -1414,6 +1540,25 @@ class VerifyDriverViewGateTests(TestCase):
         self.assertTrue(self.driver.driver_verified)
         self.assertTrue(vehicle.vehicle_verified)
         self.assertAlmostEqual(self.driver.face_match_score, 0.93)
+        # C2: a pass starts a new re-verification period.
+        self.assertIsNotNone(self.driver.driver_verified_at)
+        self.assertLess(timezone.now() - self.driver.driver_verified_at, timedelta(minutes=1))
+        self.assertIsNone(self.driver.reverify_reminder_sent_at)
+
+    def test_saved_profile_photo_never_used_as_verification_selfie(self):
+        # C2: the profile photo may show the vehicle, and isn't live proof,
+        # so a request without a fresh selfie is rejected before any call out.
+        self._make_verifiable()
+        self.driver.selfie_url = '/private-media/selfies/1/profile.jpg'
+        self.driver.save(update_fields=['selfie_url'])
+        c = Client()
+        c.login(username='vd_driver@example.com', password='TestPass123')
+        with patch('komute.views.open_stored_file', mock_open(read_data=b'fake-bytes')), \
+             patch('requests.post') as mock_post:
+            resp = c.post(reverse('verify-driver'))
+        self.assertEqual(resp.status_code, 400)
+        self.assertIn('selfie', json.loads(resp.content)['error'].lower())
+        mock_post.assert_not_called()
 
     def test_rejected_response_does_not_verify_driver_or_vehicle(self):
         vehicle = self._make_verifiable()
@@ -1430,7 +1575,7 @@ class VerifyDriverViewGateTests(TestCase):
         }
         c = Client()
         c.login(username='vd_driver@example.com', password='TestPass123')
-        with patch('komute.views.default_storage.open', mock_open(read_data=b'fake-bytes')), \
+        with patch('komute.views.open_stored_file', mock_open(read_data=b'fake-bytes')), \
              patch('requests.post', return_value=mock_resp):
             resp = c.post(reverse('verify-driver'), self._selfie_file())
 
@@ -1443,3 +1588,680 @@ class VerifyDriverViewGateTests(TestCase):
         vehicle.refresh_from_db()
         self.assertFalse(self.driver.driver_verified)
         self.assertFalse(vehicle.vehicle_verified)
+
+
+def _jpeg_bytes():
+    from PIL import Image
+    buf = io.BytesIO()
+    Image.new('RGB', (20, 20), 'red').save(buf, format='JPEG')
+    return buf.getvalue()
+
+
+class PrivateMediaTests(TestCase):
+    """ISSUES.md C1: identity images live outside the public /media/ tree
+    and are only served to their owner or staff."""
+
+    def setUp(self):
+        self._tmp = tempfile.mkdtemp()
+        self._override = override_settings(
+            PRIVATE_MEDIA_ROOT=Path(self._tmp) / 'private',
+            MEDIA_ROOT=Path(self._tmp) / 'public',
+            PRIVATE_MEDIA_USE_ACCEL=False,
+        )
+        self._override.enable()
+        self.owner = make_user('pm_owner@example.com')
+        self.other = make_user('pm_other@example.com')
+
+    def tearDown(self):
+        self._override.disable()
+        shutil.rmtree(self._tmp, ignore_errors=True)
+
+    def _upload_selfie(self):
+        c = Client()
+        c.login(username='pm_owner@example.com', password='TestPass123')
+        resp = c.post(reverse('profile'), {
+            'full_name': 'PM Owner', 'role': 'rider',
+            'selfie_file': SimpleUploadedFile('me.jpg', _jpeg_bytes(), content_type='image/jpeg'),
+        })
+        self.assertRedirects(resp, reverse('profile'))
+        self.owner.refresh_from_db()
+        return c, self.owner.selfie_url
+
+    def test_upload_goes_to_private_storage_with_random_name(self):
+        _, url = self._upload_selfie()
+        self.assertTrue(url.startswith('/private-media/selfies/'))
+        self.assertNotIn(f'selfie_{self.owner.id}', url)
+        self.assertEqual(self.owner.avatar_url, url)
+        rel = url[len('/private-media/'):]
+        self.assertTrue((Path(self._tmp) / 'private' / rel).exists())
+        self.assertFalse((Path(self._tmp) / 'public' / 'selfies').exists())
+
+    def test_owner_can_fetch(self):
+        c, url = self._upload_selfie()
+        resp = c.get(url)
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(b''.join(resp.streaming_content), (Path(self._tmp) / 'private' / url[len('/private-media/'):]).read_bytes())
+        self.assertEqual(resp['Cache-Control'], 'private, no-store')
+        self.assertEqual(resp['Content-Type'], 'image/jpeg')
+
+    def test_other_user_gets_404(self):
+        _, url = self._upload_selfie()
+        c = Client()
+        c.login(username='pm_other@example.com', password='TestPass123')
+        self.assertEqual(c.get(url).status_code, 404)
+
+    def test_anonymous_redirected_to_login(self):
+        _, url = self._upload_selfie()
+        resp = Client().get(url)
+        self.assertEqual(resp.status_code, 302)
+        self.assertTrue(resp['Location'].startswith(settings.LOGIN_URL))
+
+    def test_staff_can_fetch(self):
+        _, url = self._upload_selfie()
+        make_user('pm_staff@example.com', is_staff=True)
+        c = Client()
+        c.login(username='pm_staff@example.com', password='TestPass123')
+        self.assertEqual(c.get(url).status_code, 200)
+
+    def test_path_traversal_rejected(self):
+        c, _ = self._upload_selfie()
+        for bad in ('/private-media/selfies/../../config/settings.py',
+                    '/private-media/../manage.py',
+                    '/private-media/other/file.jpg'):
+            self.assertEqual(c.get(bad).status_code, 404, bad)
+
+    def test_accel_mode_hands_off_to_nginx(self):
+        c, url = self._upload_selfie()
+        with override_settings(PRIVATE_MEDIA_USE_ACCEL=True):
+            resp = c.get(url)
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp['X-Accel-Redirect'], '/protected-media/' + url[len('/private-media/'):])
+        self.assertEqual(resp.content, b'')
+
+    def test_replacing_selfie_deletes_old_file(self):
+        _, first = self._upload_selfie()
+        _, second = self._upload_selfie()
+        self.assertNotEqual(first, second)
+        self.assertFalse((Path(self._tmp) / 'private' / first[len('/private-media/'):]).exists())
+        self.assertTrue((Path(self._tmp) / 'private' / second[len('/private-media/'):]).exists())
+
+    def test_move_private_media_migrates_legacy_files(self):
+        public = Path(self._tmp) / 'public'
+        (public / 'licenses').mkdir(parents=True)
+        (public / 'selfies').mkdir()
+        (public / 'vehicles').mkdir()
+        (public / 'licenses' / f'license_{self.owner.id}.jpg').write_bytes(b'lic')
+        (public / 'selfies' / f'selfie_{self.owner.id}.jpg').write_bytes(b'self')
+        (public / 'vehicles' / 'vehicle_1_1.jpg').write_bytes(b'veh')
+        (public / 'vehicles' / 'orphan.jpg').write_bytes(b'old')
+        self.owner.license_front_url = f'/media/licenses/license_{self.owner.id}.jpg'
+        self.owner.selfie_url = self.owner.avatar_url = f'/media/selfies/selfie_{self.owner.id}.jpg'
+        self.owner.save()
+        vehicle = Vehicle.objects.create(
+            owner=self.owner, make='Honda', model='Civic', year=2019,
+            color='black', plate='PMMOVE1', photo_url='/media/vehicles/vehicle_1_1.jpg',
+        )
+
+        call_command('move_private_media', '--dry-run')
+        self.owner.refresh_from_db()
+        self.assertTrue(self.owner.license_front_url.startswith('/media/'))
+
+        call_command('move_private_media', '--delete-orphans')
+        self.owner.refresh_from_db()
+        vehicle.refresh_from_db()
+        self.assertTrue(self.owner.license_front_url.startswith('/private-media/licenses/'))
+        self.assertTrue(self.owner.selfie_url.startswith('/private-media/selfies/'))
+        self.assertEqual(self.owner.avatar_url, self.owner.selfie_url)
+        self.assertTrue(vehicle.photo_url.startswith('/private-media/vehicles/'))
+        self.assertEqual(list(public.rglob('*.jpg')), [])
+
+        c = Client()
+        c.login(username='pm_owner@example.com', password='TestPass123')
+        self.assertEqual(b''.join(c.get(self.owner.license_front_url).streaming_content), b'lic')
+        self.assertEqual(c.get(vehicle.photo_url).status_code, 200)
+
+
+class ImageUploadTests(TestCase):
+    """ISSUES.md H2: large photos are resized and logged, a rejected photo
+    is never reported as saved, vehicle photos land on the right vehicle,
+    and an over-limit request gets an explanation page."""
+
+    def setUp(self):
+        cache.clear()  # verify-driver's rate-limit bucket
+        self._tmp = tempfile.mkdtemp()
+        self._override = override_settings(PRIVATE_MEDIA_ROOT=Path(self._tmp), PRIVATE_MEDIA_USE_ACCEL=False)
+        self._override.enable()
+        self.user = make_user('up_user@example.com', role='driver')
+        self.client.login(username='up_user@example.com', password='TestPass123')
+
+    def tearDown(self):
+        self._override.disable()
+        shutil.rmtree(self._tmp, ignore_errors=True)
+
+    @staticmethod
+    def _big_jpeg(size=(3000, 2000)):
+        from PIL import Image
+        buf = io.BytesIO()
+        Image.new('RGB', size, 'blue').save(buf, format='JPEG')
+        return buf.getvalue()
+
+    def _stored_dims(self, url):
+        from PIL import Image
+        with Image.open(Path(self._tmp) / url[len('/private-media/'):]) as img:
+            return img.size
+
+    def _save_profile(self, **extra):
+        payload = {'full_name': 'Up User', 'dob': '1990-01-01', 'role': 'driver',
+                   'vehicle_make': ['Toyota'], 'vehicle_model': ['Corolla'],
+                   'vehicle_year': ['2020'], 'vehicle_color': ['Blue'], 'vehicle_plate': ['UPL1']}
+        payload.update(extra)
+        resp = self.client.post(reverse('profile'), payload)
+        self.assertRedirects(resp, reverse('profile'), fetch_redirect_response=False)
+        from django.contrib.messages import get_messages
+        return [str(m) for m in get_messages(resp.wsgi_request)]
+
+    def test_large_photo_resized_and_logged(self):
+        with self.assertLogs('komute.uploads', 'INFO') as logs:
+            msgs = self._save_profile(selfie_file=SimpleUploadedFile('big.jpg', self._big_jpeg(), content_type='image/jpeg'))
+        self.assertIn('Profile saved successfully.', msgs)
+        self.user.refresh_from_db()
+        self.assertEqual(self._stored_dims(self.user.selfie_url), (1200, 800))
+        line = next(l for l in logs.output if 'profile-photo' in l)
+        self.assertIn(f'user={self.user.id}', line)
+        self.assertIn("name='big.jpg'", line)
+        self.assertIn("type='image/jpeg'", line)
+        self.assertIn('dims=3000x2000 -> 1200x800', line)
+
+    @override_settings(IMAGE_UPLOAD_MAX_MB=1)
+    def test_too_large_photo_not_reported_as_saved(self):
+        too_big = SimpleUploadedFile('huge.jpg', b'x' * (1024 * 1024 + 1), content_type='image/jpeg')
+        with self.assertLogs('komute.uploads', 'WARNING') as logs:
+            msgs = self._save_profile(full_name='Renamed', license_file=too_big)
+        self.assertNotIn('Profile saved successfully.', msgs)
+        self.assertIn('License photo: File is too large (max 1 MB).', msgs)
+        self.assertIn('Your other changes were saved.', msgs)
+        self.assertIn('too large', logs.output[0])
+        self.user.refresh_from_db()
+        self.assertEqual(self.user.full_name, 'Renamed')
+        self.assertFalse(self.user.license_front_url)
+
+    def test_unreadable_photo_not_reported_as_saved(self):
+        msgs = self._save_profile(selfie_file=SimpleUploadedFile('a.heic', b'not an image', content_type='image/heic'))
+        self.assertNotIn('Profile saved successfully.', msgs)
+        self.assertIn("Profile photo: That file isn't a valid image.", msgs)
+
+    def test_vehicle_photo_goes_to_its_own_row(self):
+        # Browsers leave out empty file inputs, so with a shared field name
+        # a photo for the second vehicle used to be saved on the first.
+        v1 = Vehicle.objects.create(owner=self.user, make='Toyota', model='Corolla', year=2020, color='Blue', plate='ROW1')
+        v2 = Vehicle.objects.create(owner=self.user, make='Honda', model='Civic', year=2019, color='Red', plate='ROW2')
+        self._save_profile(
+            vehicle_id=[str(v1.id), str(v2.id)], vehicle_make=['Toyota', 'Honda'],
+            vehicle_model=['Corolla', 'Civic'], vehicle_year=['2020', '2019'],
+            vehicle_color=['Blue', 'Red'], vehicle_plate=['ROW1', 'ROW2'],
+            vehicle_image_file_1=SimpleUploadedFile('car.jpg', _jpeg_bytes(), content_type='image/jpeg'),
+        )
+        v1.refresh_from_db()
+        v2.refresh_from_db()
+        self.assertFalse(v1.photo_url)
+        self.assertTrue(v2.photo_url.startswith('/private-media/vehicles/'))
+
+    def _verifiable(self):
+        self.user.license_front_url = '/media/licenses/license_1.jpg'
+        self.user.save(update_fields=['license_front_url'])
+        Vehicle.objects.create(owner=self.user, make='Honda', model='Civic', year=2019,
+                               color='black', plate='UPV1', photo_url='/media/vehicles/v1.jpg')
+
+    def test_verification_selfie_resized_before_sending(self):
+        from PIL import Image
+        import base64
+        self._verifiable()
+        mock_resp = MagicMock()
+        mock_resp.json.return_value = {
+            "decision": "REJECTED",
+            "stages": {"face_biometrics": {"passed": False, "vlm_confidence": 0.2}},
+            "rejection_reasons": ["Facial biometrics mismatch for JOHN SMITH"],
+        }
+        selfie = SimpleUploadedFile('s.jpg', self._big_jpeg(), content_type='image/jpeg')
+        with patch('komute.views.open_stored_file', mock_open(read_data=b'fake-bytes')), \
+             patch('requests.post', return_value=mock_resp) as mock_post, \
+             self.assertLogs('komute.uploads', 'INFO') as logs:
+            resp = self.client.post(reverse('verify-driver'), {'selfie': selfie})
+        self.assertEqual(resp.status_code, 200)
+        sent = base64.b64decode(mock_post.call_args.kwargs['json']['images']['selfie_base64'])
+        with Image.open(io.BytesIO(sent)) as img:
+            self.assertEqual(img.size, (1200, 800))
+        result_line = next(l for l in logs.output if 'verification result' in l)
+        self.assertIn('decision=REJECTED', result_line)
+        self.assertIn('FACE_MISMATCH', result_line)
+        self.assertNotIn('JOHN SMITH', result_line)  # reason text may quote the license
+
+    def test_unreadable_verification_selfie_rejected_before_call(self):
+        self._verifiable()
+        with patch('komute.views.open_stored_file', mock_open(read_data=b'fake-bytes')), \
+             patch('requests.post') as mock_post:
+            resp = self.client.post(reverse('verify-driver'), {
+                'selfie': SimpleUploadedFile('s.jpg', b'garbage', content_type='image/jpeg')})
+        self.assertEqual(resp.status_code, 400)
+        self.assertIn('Selfie', json.loads(resp.content)['error'])
+        mock_post.assert_not_called()
+
+    @override_settings(UPLOAD_REQUEST_MAX_MB=40)
+    def test_upload_too_large_page(self):
+        resp = Client().get(reverse('upload-too-large'))
+        self.assertEqual(resp.status_code, 413)
+        self.assertContains(resp, 'more than 40 MB', status_code=413)
+
+    @override_settings(IMAGE_UPLOAD_MAX_MB=15, UPLOAD_REQUEST_MAX_MB=40)
+    def test_profile_page_shrinks_photos_before_upload(self):
+        html = self.client.get(reverse('profile')).content.decode()
+        self.assertIn('const UPLOAD_FILE_MAX_BYTES    = 15 * 1024 * 1024;', html)
+        self.assertIn('const UPLOAD_REQUEST_MAX_BYTES = 40 * 1024 * 1024;', html)
+        self.assertIn("'vehicle_image_file_' + i", html)
+        self.assertIn('shrinkImage(_verifySelfieBlob)', html)
+        self.assertIn('r.status === 413', html)
+
+
+@override_settings(DRIVER_REVERIFY_DAYS=90, DRIVER_REVERIFY_REMINDER_DAYS=10)
+class DriverReverificationTests(TestCase):
+    """ISSUES.md C2: drivers re-take the verification selfie every
+    DRIVER_REVERIFY_DAYS, get one reminder DRIVER_REVERIFY_REMINDER_DAYS
+    before, and are blocked from posting rides / confirming bookings after."""
+
+    def setUp(self):
+        self.driver = make_driver_with_vehicle('rv_driver@example.com')
+        self.rider = make_user('rv_rider@example.com')
+
+    def _verified_days_ago(self, days, user=None):
+        user = user or self.driver
+        user.driver_verified = True
+        user.driver_verified_at = timezone.now() - timedelta(days=days)
+        user.save(update_fields=['driver_verified', 'driver_verified_at'])
+
+    def _login(self, email):
+        c = Client()
+        c.login(username=email, password='TestPass123')
+        return c
+
+    # ── expire_driver_verification command ──
+
+    def test_no_reminder_before_window(self):
+        self._verified_days_ago(79)
+        call_command('expire_driver_verification')
+        self.driver.refresh_from_db()
+        self.assertEqual(len(mail.outbox), 0)
+        self.assertIsNone(self.driver.reverify_reminder_sent_at)
+        self.assertTrue(self.driver.driver_verified)
+
+    def test_reminder_sent_once_inside_window(self):
+        self._verified_days_ago(81)
+        call_command('expire_driver_verification')
+        self.assertEqual(len(mail.outbox), 1)
+        self.assertEqual(mail.outbox[0].to, [self.driver.email])
+        self.assertIn('re-verify', mail.outbox[0].subject.lower())
+        self.driver.refresh_from_db()
+        self.assertIsNotNone(self.driver.reverify_reminder_sent_at)
+        self.assertTrue(self.driver.driver_verified)
+
+        call_command('expire_driver_verification')
+        self.assertEqual(len(mail.outbox), 1)
+
+    def test_expired_after_period(self):
+        self._verified_days_ago(91)
+        self.driver.face_match_score = 0.9
+        self.driver.save(update_fields=['face_match_score'])
+        call_command('expire_driver_verification')
+        self.driver.refresh_from_db()
+        self.assertFalse(self.driver.driver_verified)
+        self.assertIsNone(self.driver.face_match_score)
+        self.assertEqual(len(mail.outbox), 0)
+
+    def test_dry_run_changes_nothing(self):
+        self._verified_days_ago(91)
+        call_command('expire_driver_verification', '--dry-run')
+        self.driver.refresh_from_db()
+        self.assertTrue(self.driver.driver_verified)
+        self.assertEqual(len(mail.outbox), 0)
+
+    def test_failed_reminder_retried_next_run(self):
+        self._verified_days_ago(81)
+        with patch('komute.management.commands.expire_driver_verification.EmailMultiAlternatives.send',
+                   side_effect=Exception('smtp down')):
+            call_command('expire_driver_verification')
+        self.driver.refresh_from_db()
+        self.assertIsNone(self.driver.reverify_reminder_sent_at)
+        call_command('expire_driver_verification')
+        self.assertEqual(len(mail.outbox), 1)
+
+    # ── blocking (checked by date, even before the command has run) ──
+
+    def test_post_ride_blocked_when_lapsed(self):
+        self._verified_days_ago(91)
+        resp = self._login('rv_driver@example.com').get(reverse('post-ride'))
+        self.assertRedirects(resp, reverse('profile'), fetch_redirect_response=False)
+
+    def test_post_ride_allowed_when_current(self):
+        self._verified_days_ago(30)
+        resp = self._login('rv_driver@example.com').get(reverse('post-ride'))
+        self.assertEqual(resp.status_code, 200)
+
+    def test_accept_booking_blocked_when_lapsed(self):
+        ride = make_ride(self.driver)
+        booking = RideBooking.objects.create(
+            ride=ride, passenger=self.rider, seats=1,
+            agreed_price_cents=2500, status=RideBooking.STATUS_REQUESTED,
+        )
+        self._verified_days_ago(91)
+        resp = self._login('rv_driver@example.com').post(
+            reverse('accept-booking', args=[encode_id(booking.id)]))
+        self.assertEqual(resp.status_code, 403)
+        booking.refresh_from_db()
+        self.assertEqual(booking.status, RideBooking.STATUS_REQUESTED)
+
+    def test_chat_price_agreement_cannot_confirm_when_lapsed(self):
+        ride = make_ride(self.driver)
+        booking = RideBooking.objects.create(
+            ride=ride, passenger=self.rider, seats=1,
+            agreed_price_cents=2500, status=RideBooking.STATUS_REQUESTED,
+        )
+        offer = PriceOffer.objects.create(booking=booking, proposed_by=self.driver, price_cents=2000)
+        self._verified_days_ago(91)
+        result, _ = async_to_sync(ChatConsumer().accept_price_offer)(booking.id, offer.id, None)
+        self.assertEqual(result, 'driver_unverified')
+        booking.refresh_from_db()
+        offer.refresh_from_db()
+        self.assertEqual(booking.status, RideBooking.STATUS_REQUESTED)
+        self.assertEqual(offer.status, PriceOffer.STATUS_PENDING)
+
+    def test_invite_send_and_accept_blocked_when_lapsed(self):
+        ride = make_ride(self.driver)
+        invite = RideInvite.objects.create(driver=self.driver, passenger=self.rider, ride=ride)
+        self._verified_days_ago(91)
+
+        resp = self._login('rv_driver@example.com').post(
+            reverse('send-invite'),
+            data=json.dumps({'rider_id': self.rider.id, 'ride_id': encode_id(ride.id)}),
+            content_type='application/json',
+        )
+        self.assertEqual(resp.status_code, 403)
+
+        from komute.views import _make_invite_token
+        resp = self._login('rv_rider@example.com').post(
+            reverse('accept-invite', args=[_make_invite_token(invite.id)]))
+        self.assertEqual(resp.status_code, 200)
+        self.assertContains(resp, 're-verify')
+        self.assertFalse(RideBooking.objects.filter(ride=ride, passenger=self.rider).exists())
+
+    # ── profile page ──
+
+    def test_profile_warns_inside_reminder_window(self):
+        self._verified_days_ago(85)
+        resp = self._login('rv_driver@example.com').get(reverse('profile'))
+        self.assertTrue(resp.context['reverify_soon'])
+        self.assertContains(resp, 'reverifySoonHint')
+        self.assertContains(resp, 'Re-verify Identity')
+
+    def test_profile_shows_expired(self):
+        self._verified_days_ago(91)
+        resp = self._login('rv_driver@example.com').get(reverse('profile'))
+        self.assertFalse(resp.context['driver_verified'])
+        self.assertTrue(resp.context['reverify_expired'])
+        self.assertContains(resp, 'Your identity verification expired on')
+
+    def test_verification_selfie_upload_only_in_debug(self):
+        c = self._login('rv_driver@example.com')
+        with override_settings(DEBUG=False):
+            resp = c.get(reverse('profile'))
+        self.assertNotContains(resp, 'id="verifySelfieFileInput"')
+        with override_settings(DEBUG=True):
+            resp = c.get(reverse('profile'))
+        self.assertContains(resp, 'id="verifySelfieFileInput"')
+
+    def test_changing_profile_photo_keeps_verification(self):
+        self._verified_days_ago(10)
+        tmp = tempfile.mkdtemp()
+        try:
+            with override_settings(PRIVATE_MEDIA_ROOT=Path(tmp)):
+                resp = self._login('rv_driver@example.com').post(reverse('profile'), {
+                    # Same verified details as make_user; only the photo changes.
+                    'full_name': self.driver.full_name, 'dob': '1995-01-01', 'role': 'driver',
+                    'vehicle_make': ['Toyota'], 'vehicle_model': ['Corolla'],
+                    'vehicle_year': ['2020'], 'vehicle_color': ['blue'],
+                    'vehicle_plate': [self.driver.vehicles.first().plate],
+                    'selfie_file': SimpleUploadedFile('car.jpg', _jpeg_bytes(), content_type='image/jpeg'),
+                })
+            self.assertRedirects(resp, reverse('profile'), fetch_redirect_response=False)
+        finally:
+            shutil.rmtree(tmp, ignore_errors=True)
+        self.driver.refresh_from_db()
+        self.assertTrue(self.driver.selfie_url)
+        self.assertTrue(self.driver.driver_verified)
+
+    # ── migration backfill ──
+
+    def test_backfill_gives_existing_drivers_full_notice(self):
+        from importlib import import_module
+        from django.apps import apps as django_apps
+        backfill = import_module('komute.migrations.0033_customuser_driver_verified_at').backfill_driver_verified_at
+
+        recent = make_user('rv_recent@example.com', role='driver', driver_verified=True)
+        log = VerificationLog.objects.create(user=recent, result=VerificationLog.RESULT_APPROVED)
+        VerificationLog.objects.filter(id=log.id).update(created_at=timezone.now() - timedelta(days=20))
+        old = make_user('rv_old@example.com', role='driver', driver_verified=True)
+        log = VerificationLog.objects.create(user=old, result=VerificationLog.RESULT_APPROVED)
+        VerificationLog.objects.filter(id=log.id).update(created_at=timezone.now() - timedelta(days=200))
+        no_log = make_user('rv_nolog@example.com', role='driver', driver_verified=True)
+
+        backfill(django_apps, None)
+        now = timezone.now()
+        for u in (recent, old, no_log):
+            u.refresh_from_db()
+        self.assertAlmostEqual((now - recent.driver_verified_at).days, 20, delta=1)
+        # Old verifications are pulled forward to the start of the reminder
+        # window: reminded on the next run, blocked 10 days later.
+        self.assertAlmostEqual((now - old.driver_verified_at).days, 80, delta=1)
+        self.assertTrue(old.driver_verification_current)
+        self.assertLess(now - no_log.driver_verified_at, timedelta(minutes=1))
+
+
+class VerifiedDetailsChangeTests(TestCase):
+    """ISSUES.md C3: verification is tied to the details it was checked
+    against. Changing them (beyond case/hyphens, which DL-Verification
+    ignores) voids it; new or changed vehicles start unverified."""
+
+    def setUp(self):
+        self.driver = make_driver_with_vehicle('vdc_driver@example.com')
+        self.driver.full_name = 'Mary-Jane Smith'
+        self.driver.license_number = 'S1234-56789'
+        self.driver.license_province = 'ON'
+        self.driver.license_expiry = date.today() + timedelta(days=365)
+        self.driver.driver_verified_at = timezone.now()
+        self.driver.face_match_score = 0.9
+        self.driver.save()
+        self.vehicle = self.driver.vehicles.first()
+        self.c = Client()
+        self.c.login(username='vdc_driver@example.com', password='TestPass123')
+
+    def _post(self, vehicles=None, **overrides):
+        v = self.vehicle
+        payload = {
+            'full_name': self.driver.full_name, 'dob': '1995-01-01', 'role': 'driver',
+            'license_number': self.driver.license_number,
+            'license_province': self.driver.license_province,
+            'license_expiry': self.driver.license_expiry.isoformat(),
+            'vehicle_id': [str(v.id)], 'vehicle_make': [v.make], 'vehicle_model': [v.model],
+            'vehicle_year': [str(v.year)], 'vehicle_color': [v.color], 'vehicle_plate': [v.plate],
+        }
+        payload.update(vehicles or {})
+        payload.update(overrides)
+        return self.c.post(reverse('profile'), payload)
+
+    def test_unchanged_save_keeps_verification(self):
+        self._post()
+        self.driver.refresh_from_db()
+        self.vehicle.refresh_from_db()
+        self.assertTrue(self.driver.driver_verified)
+        self.assertTrue(self.vehicle.vehicle_verified)
+
+    def test_case_and_hyphen_only_changes_keep_verification(self):
+        self._post(full_name='MARY JANE  smith', license_number='s123456789', license_province='on')
+        self.driver.refresh_from_db()
+        self.assertTrue(self.driver.driver_verified)
+
+    def test_each_verified_field_change_resets(self):
+        changes = [
+            {'full_name': 'Mary Jones'},
+            {'dob': '1994-01-01'},
+            {'license_number': 'S1234-56780'},
+            {'license_province': 'BC'},
+            {'license_expiry': (date.today() + timedelta(days=400)).isoformat()},
+        ]
+        for change in changes:
+            with self.subTest(change=change):
+                CustomUser.objects.filter(id=self.driver.id).update(
+                    driver_verified=True, full_name='Mary-Jane Smith', dob=date(1995, 1, 1),
+                    license_number='S1234-56789', license_province='ON',
+                    license_expiry=date.today() + timedelta(days=365),
+                )
+                self.driver.refresh_from_db()
+                resp = self._post(**change)
+                self.assertRedirects(resp, reverse('profile'), fetch_redirect_response=False)
+                self.driver.refresh_from_db()
+                self.assertFalse(self.driver.driver_verified)
+                self.assertIsNone(self.driver.face_match_score)
+
+    def test_past_license_expiry_rejected(self):
+        resp = self._post(license_expiry=(date.today() - timedelta(days=1)).isoformat())
+        self.assertEqual(resp.status_code, 200)
+        self.assertIn('license_expiry', resp.context['errors'])
+
+    def test_license_expiring_voids_verification(self):
+        CustomUser.objects.filter(id=self.driver.id).update(license_expiry=date.today() - timedelta(days=1))
+        self.driver.refresh_from_db()
+        self.assertFalse(self.driver.driver_verification_current)
+        resp = self.c.get(reverse('post-ride'))
+        self.assertRedirects(resp, reverse('profile'), fetch_redirect_response=False)
+        call_command('expire_driver_verification')
+        self.driver.refresh_from_db()
+        self.assertFalse(self.driver.driver_verified)
+
+    def test_new_vehicle_starts_unverified(self):
+        v = self.vehicle
+        self._post(vehicles={
+            'vehicle_id': [str(v.id), ''], 'vehicle_make': [v.make, 'Honda'],
+            'vehicle_model': [v.model, 'Civic'], 'vehicle_year': [str(v.year), '2021'],
+            'vehicle_color': [v.color, 'red'], 'vehicle_plate': [v.plate, 'NEW-123'],
+        })
+        new = Vehicle.objects.get(plate='NEW-123')
+        self.assertFalse(new.vehicle_verified)
+        self.vehicle.refresh_from_db()
+        self.assertTrue(self.vehicle.vehicle_verified)
+
+    def test_vehicle_change_resets_its_verification(self):
+        for field, value in [('vehicle_plate', 'CHG-999'), ('vehicle_color', 'green'),
+                             ('vehicle_year', '2018'), ('vehicle_model', 'Camry')]:
+            with self.subTest(field=field):
+                Vehicle.objects.filter(id=self.vehicle.id).update(
+                    vehicle_verified=True, plate='PLT-vdc_', color='blue', year=2020, model='Corolla')
+                self.vehicle.refresh_from_db()
+                self._post(vehicles={field: [value]})
+                self.vehicle.refresh_from_db()
+                self.assertFalse(self.vehicle.vehicle_verified)
+
+    def test_plate_formatting_only_change_keeps_vehicle_verified(self):
+        self._post(vehicles={'vehicle_plate': ['plt vdc_']})
+        self.vehicle.refresh_from_db()
+        self.assertTrue(self.vehicle.vehicle_verified)
+
+    def test_post_ride_rejects_unverified_vehicle(self):
+        unverified = Vehicle.objects.create(
+            owner=self.driver, make='Honda', model='Civic', year=2021,
+            color='red', plate='UNV-1', vehicle_verified=False,
+        )
+        resp = self.c.post(reverse('post-ride'), {
+            'origin': 'Toronto, ON', 'origin_lat': '43.65', 'origin_lng': '-79.38',
+            'destination': 'Ottawa, ON', 'dest_lat': '45.42', 'dest_lng': '-75.69',
+            'date': (date.today() + timedelta(days=2)).isoformat(), 'depart_time': '09:00',
+            'seats': '2', 'vehicle': str(unverified.id), 'price': '20',
+        })
+        self.assertEqual(resp.status_code, 200)
+        self.assertIn('vehicle', resp.context['errors'])
+        self.assertFalse(Rides.objects.filter(vehicle=unverified).exists())
+
+
+class VerificationResultStorageTests(TestCase):
+    """ISSUES.md C3: combined-score approval and stored rejection reasons."""
+
+    setUp = VerifyDriverViewGateTests.setUp
+    _make_verifiable = VerifyDriverViewGateTests._make_verifiable
+    _selfie_file = VerifyDriverViewGateTests._selfie_file
+
+    def _call(self, body):
+        mock_resp = MagicMock()
+        mock_resp.raise_for_status.return_value = None
+        mock_resp.json.return_value = body
+        c = Client()
+        c.login(username='vd_driver@example.com', password='TestPass123')
+        with patch('komute.views.open_stored_file', mock_open(read_data=b'fake-bytes')), \
+             patch('requests.post', return_value=mock_resp):
+            return c.post(reverse('verify-driver'), self._selfie_file())
+
+    def test_combined_approval_verifies_vehicle_even_if_its_stage_failed(self):
+        vehicle = self._make_verifiable()
+        self._call({
+            "decision": "APPROVED",
+            "stages": {"license_ocr": {"passed": True},
+                       "face_biometrics": {"passed": True, "vlm_confidence": 0.95},
+                       "vehicle_verification": {"passed": False}},
+            "rejection_reasons": [],
+        })
+        vehicle.refresh_from_db()
+        self.assertTrue(vehicle.vehicle_verified)
+        log = VerificationLog.objects.get(user=self.driver)
+        self.assertEqual(log.stage_results, {
+            'license_ocr': True, 'face_biometrics': True, 'vehicle_verification': False})
+        self.assertIsNone(log.reason_codes)
+
+    def test_only_outcome_details_stored_not_licence_text(self):
+        # Privacy policy s.9/s.13: the driver sees the full reasons, but only
+        # categories and per-stage pass/fail are kept -- no OCR output, no
+        # reason text (which can quote values read off the licence).
+        self._make_verifiable()
+        reasons = [
+            "License image too blurry. Please retry the verification.",
+            "Name mismatch: entered 'JANE DOE', licence reads 'JOHN DOE'",
+        ]
+        resp = self._call({
+            "decision": "REJECTED",
+            "stages": {"license_ocr": {"passed": False, "extracted": {"name": "JOHN DOE"}},
+                       "face_biometrics": {"passed": True, "vlm_confidence": 0.9}},
+            "rejection_reasons": reasons,
+        })
+        self.assertEqual(json.loads(resp.content)['decision']['details'], '; '.join(reasons))
+        log = VerificationLog.objects.get(user=self.driver)
+        self.assertEqual(log.result, VerificationLog.RESULT_REJECTED)
+        self.assertEqual(log.reason_codes, ['IMAGE_QUALITY', 'NAME_MISMATCH'])
+        self.assertEqual(log.stage_results, {
+            'license_ocr': False, 'face_biometrics': True, 'vehicle_verification': False})
+        self.assertIsNone(log.ocr_extracted_json)
+        stored = json.dumps([log.stage_results, log.reason_codes, log.notes])
+        self.assertNotIn('JOHN', stored)
+        self.assertNotIn('JANE', stored)
+
+    def test_reason_categories(self):
+        from komute.views import _reason_codes
+        cases = {
+            "Image is blurred, please retry": 'IMAGE_QUALITY',
+            "Facial biometrics mismatch: VLM confidence 0.22": 'FACE_MISMATCH',
+            "Licence plate number does not match": 'VEHICLE_MISMATCH',
+            "Vehicle colour mismatch": 'VEHICLE_MISMATCH',
+            "Expiry date does not match": 'EXPIRY_MISMATCH',
+            "Date of birth mismatch": 'DOB_MISMATCH',
+            "License number mismatch": 'LICENSE_NUMBER_MISMATCH',
+            "Name mismatch": 'NAME_MISMATCH',
+            "Something unexpected happened": 'OTHER',
+        }
+        for text, code in cases.items():
+            with self.subTest(text=text):
+                self.assertEqual(_reason_codes([text]), [code])
+        self.assertEqual(_reason_codes(["Name mismatch", "Name mismatch (surname)"]), ['NAME_MISMATCH'])

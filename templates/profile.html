@@ -1321,22 +1321,22 @@ body.role-rider .driver-only { display: none; }
         </div>
 
         <div class="photo-info">
-          <h4>Profile Photo / Selfie <span class="required">*</span></h4>
+          <h4>Profile Photo <span class="required">*</span></h4>
           <p class="photo-help">
-            Upload a clear, well-lit selfie. This will be compared with the photo on your driver's licence to confirm it's really you. Face the camera, no sunglasses or hats.
+            Use a clear photo of your face or your vehicle so others can easily recognise you. Drivers confirm their identity separately with a live selfie when they click "Verify Identity".
           </p>
           <div class="photo-actions">
             <button type="button" class="btn-photo-action" onclick="document.getElementById('selfieFile').click()">
               <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
-              <span id="selfieBtnLabel">Upload Selfie</span>
+              <span id="selfieBtnLabel">Upload Photo</span>
             </button>
             <button type="button" class="btn-photo-action btn-photo-secondary" onclick="openCameraModal()">
               <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
               Use Camera
             </button>
           </div>
-          <input type="file" id="selfieFile" name="selfie_file" accept="image/*" style="position:absolute;width:1px;height:1px;opacity:0;overflow:hidden" onchange="handleSelfieUpload(this)">
-          <input type="file" id="selfieCameraFile" name="selfie_file" accept="image/*" capture="user" style="position:absolute;width:1px;height:1px;opacity:0;overflow:hidden" onchange="handleSelfieUpload(this)">
+          <input type="file" id="selfieFile" name="selfie_file" data-upload-label="Profile photo" accept="image/*" style="position:absolute;width:1px;height:1px;opacity:0;overflow:hidden" onchange="handleSelfieUpload(this)">
+          <input type="file" id="selfieCameraFile" name="selfie_file" data-upload-label="Profile photo" accept="image/*" capture="user" style="position:absolute;width:1px;height:1px;opacity:0;overflow:hidden" onchange="handleSelfieUpload(this)">
         </div>
       </div>
 
@@ -1562,13 +1562,13 @@ body.role-rider .driver-only { display: none; }
             <div class="upload-main-text">
               <strong>Click to upload</strong> or drag & drop
             </div>
-            <div class="upload-hint">PNG, JPG, PDF · Max 5MB</div>
+            <div class="upload-hint">JPG, PNG · Large photos are resized automatically</div>
             <div class="upload-success" id="uploadSuccess">
               <svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>
               <span id="uploadFileName"></span>
             </div>
           </div>
-          <input type="file" id="licenseFile" name="license_file" accept="image/*" style="display:none" onchange="handleUpload(this)">
+          <input type="file" id="licenseFile" name="license_file" data-upload-label="License photo" accept="image/*" style="display:none" onchange="handleUpload(this)">
         </div>
       </div>
 
@@ -1581,22 +1581,30 @@ body.role-rider .driver-only { display: none; }
             Identity Verified
             {% if face_match_score %}&nbsp;·&nbsp;{% widthratio face_match_score 1 100 %}% match{% endif %}
           </span>
+          {% if reverify_soon %}
+          <p class="verify-hint" id="reverifySoonHint" style="color:#b45309;font-weight:600;">⚠️ Your identity verification expires on {{ reverify_due_at|date:"M j, Y" }}. Take a new selfie before then to keep posting rides and accepting bookings.</p>
+          {% endif %}
+          {% if has_unverified_vehicle %}
+          <p class="verify-hint" id="vehicleUnverifiedHint" style="color:#b45309;font-weight:600;">⚠️ One of your vehicles isn't verified. Put it first in your vehicle list, save, then run verification with the button here.</p>
+          {% endif %}
           {% else %}
           <span class="verify-badge verify-badge--pending" id="verifyStatusBadge">
             <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
             Not Verified
           </span>
-          {% if errors.reverify %}
-          <p class="verify-hint" style="color:#b45309;font-weight:600;">⚠️ Your {% if errors.reverify == "license" %}driving license{% else %}selfie{% endif %} was updated — please re-verify your identity to restore your verified badge.</p>
+          {% if license_expired %}
+          <p class="verify-hint" style="color:#b45309;font-weight:600;">⚠️ Your driving license expired on {{ user.license_expiry|date:"M j, Y" }}. Upload your renewed license, update the expiry date, save, then verify again.</p>
+          {% elif reverify_expired %}
+          <p class="verify-hint" style="color:#b45309;font-weight:600;">⚠️ Your identity verification expired on {{ reverify_due_at|date:"M j, Y" }}. Take a new selfie to post rides and accept bookings again.</p>
           {% else %}
           <p class="verify-hint">Upload your driving license image above and save your profile. Then click the button to verify — you'll be asked to take a quick selfie at that point.</p>
           {% endif %}
           {% endif %}
         </div>
-        {% if not driver_verified %}
+        {% if not driver_verified or reverify_soon or has_unverified_vehicle %}
         <button type="button" class="btn-verify-identity" id="verifyIdentityBtn" onclick="runDriverVerification()">
           <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
-          <span id="verifyBtnLabel">Verify Identity</span>
+          <span id="verifyBtnLabel">{% if reverify_soon or reverify_expired or license_expired %}Re-verify Identity{% elif has_unverified_vehicle %}Verify Vehicle{% else %}Verify Identity{% endif %}</span>
         </button>
         {% endif %}
       </div>
@@ -1632,11 +1640,16 @@ body.role-rider .driver-only { display: none; }
           <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right:5px"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
           Open Camera
         </button>
+        {% if allow_verify_selfie_upload %}
         <button type="button" class="btn-modal btn-modal-secondary" onclick="document.getElementById('verifySelfieFileInput').click()">
-          Upload Photo
+          Upload Photo (dev only)
         </button>
+        {% endif %}
       </div>
+      <p id="vsCameraError" class="verify-modal-score" style="display:none;color:#b91c1c;font-size:13px;"></p>
+      {% if allow_verify_selfie_upload %}
       <input type="file" id="verifySelfieFileInput" accept="image/*" capture="user" style="display:none" onchange="handleVerifyFileInput(this)">
+      {% endif %}
 
       <!-- Retake + Verify buttons (shown after photo) -->
       <div id="vsActionBtns" style="display:none;flex-direction:column;align-items:center;gap:10px;">
@@ -1925,7 +1938,7 @@ body.role-rider .driver-only { display: none; }
               <div class="vehicle-img-prompt-cta">
                 <strong>Click to upload</strong> or drag &amp; drop
               </div>
-              <div class="vehicle-img-prompt-hint">JPG, PNG · Max 5 MB</div>
+              <div class="vehicle-img-prompt-hint">JPG, PNG · Large photos are resized automatically</div>
             </div>
             <div class="vehicle-img-preview-wrap">
               <img class="vehicle-img-preview" alt="Vehicle photo">
@@ -1934,7 +1947,7 @@ body.role-rider .driver-only { display: none; }
                 <button type="button" class="vehicle-img-btn" onclick="event.stopPropagation(); removeVehicleImgInRow(this)">${trashSvg} Remove</button>
               </div>
             </div>
-            <input type="file" class="vehicle-img-file" name="vehicle_image_file" accept="image/*" style="display:none" onchange="handleVehicleImgInRow(this)">
+            <input type="file" class="vehicle-img-file" name="vehicle_image_file" data-upload-label="Vehicle photo" accept="image/*" style="display:none" onchange="handleVehicleImgInRow(this)">
           </div>
         </div>
       </div>
@@ -2078,6 +2091,84 @@ body.role-rider .driver-only { display: none; }
       : '<path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/>';
   }
 
+  /* ── SHRINK PHOTOS BEFORE UPLOAD (ISSUES.md H2) ──
+     Phone photos are often 5–20 MB; the server keeps them at 1200px anyway.
+     Resizing here keeps the whole form under Nginx's request limit. */
+  const UPLOAD_MAX_DIM = 1600;
+  const UPLOAD_FILE_MAX_BYTES    = {{ image_upload_max_mb }} * 1024 * 1024;
+  const UPLOAD_REQUEST_MAX_BYTES = {{ upload_request_max_mb }} * 1024 * 1024;
+
+  // Resolves with a JPEG at most UPLOAD_MAX_DIM px on its longest side, or
+  // with the original file when it is already small or the browser can't
+  // decode it (e.g. HEIC outside Safari); the server then checks it.
+  function shrinkImage(file) {
+    return new Promise(resolve => {
+      if (!file || (file.type && !file.type.startsWith('image/'))) return resolve(file);
+      const url = URL.createObjectURL(file);
+      const img = new Image();
+      img.onerror = () => { URL.revokeObjectURL(url); resolve(file); };
+      img.onload = () => {
+        URL.revokeObjectURL(url);
+        // naturalWidth/Height and drawImage already follow the EXIF rotation.
+        const scale = Math.min(1, UPLOAD_MAX_DIM / Math.max(img.naturalWidth, img.naturalHeight));
+        if (scale === 1 && file.type === 'image/jpeg' && file.size <= 1024 * 1024) return resolve(file);
+        const canvas = document.createElement('canvas');
+        canvas.width  = Math.max(1, Math.round(img.naturalWidth * scale));
+        canvas.height = Math.max(1, Math.round(img.naturalHeight * scale));
+        const ctx = canvas.getContext('2d');
+        ctx.fillStyle = '#fff';  // transparent PNG areas would turn black in a JPEG
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+        canvas.toBlob(blob => {
+          if (!blob || blob.size >= file.size) return resolve(file);
+          const base = (file.name || 'photo').replace(/\.[^.]*$/, '');
+          resolve(new File([blob], base + '.jpg', { type: 'image/jpeg' }));
+        }, 'image/jpeg', 0.85);
+      };
+      img.src = url;
+    });
+  }
+
+  // Shrinks every chosen photo in the form, in place. Resolves with an
+  // error message if the upload would still be too large, otherwise null.
+  async function prepareUploads(form) {
+    // One field name per vehicle row: browsers leave out empty file
+    // inputs, so a shared name can't tell the server which row a photo is for.
+    document.querySelectorAll('#vehicleList .vehicle-row').forEach((row, i) => {
+      row.querySelector('.vehicle-img-file').name = 'vehicle_image_file_' + i;
+    });
+    let total = 0;
+    for (const input of form.querySelectorAll('input[type="file"][name]')) {
+      if (!input.files || !input.files[0]) continue;
+      const original = input.files[0];
+      const shrunk = await shrinkImage(original);
+      if (shrunk !== original) {
+        try {
+          const dt = new DataTransfer();
+          dt.items.add(shrunk);
+          input.files = dt.files;
+        } catch (_) {}  // older browsers: the original is sent
+      }
+      const sent = input.files[0];
+      if (sent.size > UPLOAD_FILE_MAX_BYTES) {
+        return `${input.dataset.uploadLabel || 'Photo'} is too large (max {{ image_upload_max_mb }} MB). Please choose a smaller photo.`;
+      }
+      total += sent.size;
+    }
+    // Leave room for the rest of the form.
+    if (total > UPLOAD_REQUEST_MAX_BYTES - 512 * 1024) {
+      return 'These photos are too large to upload together. Save one photo at a time, or choose smaller photos.';
+    }
+    return null;
+  }
+
+  function showErrorToast(msg) {
+    const t = document.getElementById('toast-error');
+    document.getElementById('toast-error-msg').textContent = msg;
+    t.classList.add('show');
+    setTimeout(() => t.classList.remove('show'), 5000);
+  }
+
   /* ── FILE UPLOAD ── */
   function handleUpload(input) {
     if (input.files && input.files[0]) {
@@ -2118,6 +2209,9 @@ body.role-rider .driver-only { display: none; }
   function handleSelfieUpload(input) {
     if (!input.files || !input.files[0]) return;
     const file = input.files[0];
+    // Two inputs share the selfie_file name; keep only the latest pick so
+    // the upload doesn't carry both photos.
+    document.getElementById(input.id === 'selfieFile' ? 'selfieCameraFile' : 'selfieFile').value = '';
     /* createObjectURL: browser displays natively — no JS heap decode, no base64, no canvas */
     const previewImg = document.getElementById('selfiePreview');
     if (previewImg._blobUrl) URL.revokeObjectURL(previewImg._blobUrl);
@@ -2126,7 +2220,7 @@ body.role-rider .driver-only { display: none; }
     previewImg.style.display = 'block';
     document.getElementById('selfiePlaceholder').style.display = 'none';
     document.getElementById('selfiePreviewWrap').classList.add('has-img');
-    document.getElementById('selfieBtnLabel').textContent = 'Change Selfie';
+    document.getElementById('selfieBtnLabel').textContent = 'Change Photo';
     updateProgress();
   }
 
@@ -2451,6 +2545,7 @@ body.role-rider .driver-only { display: none; }
   function runDriverVerification() {
     // Open the selfie-capture step instead of going straight to the API.
     _verifySelfieBlob = null;
+    document.getElementById('vsCameraError').style.display = 'none';
     document.getElementById('vsPreviewWrap').style.display  = 'none';
     document.getElementById('vsCaptureBtns').style.display  = 'flex';
     document.getElementById('vsActionBtns').style.display   = 'none';
@@ -2470,6 +2565,7 @@ body.role-rider .driver-only { display: none; }
   function openCameraForVerify() {
     _camMode = 'verify';
     _verifyModalHiddenForCamera = true;
+    document.getElementById('vsCameraError').style.display = 'none';
     document.getElementById('verifySelfieModal').style.display = 'none';
     openCameraModal();
   }
@@ -2508,15 +2604,21 @@ body.role-rider .driver-only { display: none; }
     vBtn.disabled = true;
     lbl.textContent = 'Verifying…';
 
-    const fd = new FormData();
-    fd.append('selfie', _verifySelfieBlob, 'verify_selfie.jpg');
-
-    fetch('/profile/verify-driver/', {
-      method: 'POST',
-      headers: { 'X-CSRFToken': getCsrfToken() },
-      body: fd,
+    shrinkImage(_verifySelfieBlob)
+    .then(selfie => {
+      const fd = new FormData();
+      fd.append('selfie', selfie, 'verify_selfie.jpg');
+      return fetch('/profile/verify-driver/', {
+        method: 'POST',
+        headers: { 'X-CSRFToken': getCsrfToken() },
+        body: fd,
+      });
     })
-    .then(r => r.json())
+    .then(r => {
+      // A 413 comes from Nginx as an HTML page, not JSON.
+      if (r.status === 413) return { error: 'That photo is too large to upload. Please take the selfie again.' };
+      return r.json().catch(() => ({ error: 'Verification service error. Please try again later.' }));
+    })
     .then(data => {
       closeVerifySelfieModal();
       if (data.error) { showVerifyModal(false, 0, data.error); return; }
@@ -2535,6 +2637,8 @@ body.role-rider .driver-only { display: none; }
         }
         const mainBtn = document.getElementById('verifyIdentityBtn');
         if (mainBtn) mainBtn.style.display = 'none';
+        const soonHint = document.getElementById('reverifySoonHint');
+        if (soonHint) soonHint.remove();
       }
     })
     .catch(() => {
@@ -2550,10 +2654,17 @@ body.role-rider .driver-only { display: none; }
     modal.style.display = 'flex';
 
     if (errorMsg) {
+      // errorMsg can quote text OCR'd from the license, so it is escaped;
+      // the service's reasons arrive joined by "; " and are listed one each.
+      const reasons = String(errorMsg).split('; ').filter(Boolean);
+      const body = reasons.length > 1
+        ? `<ul style="text-align:left;margin:10px 0 0;padding-left:18px;">${reasons.map(r => `<li>${_escapeHtml(r)}</li>`).join('')}</ul>`
+        : `<p class="verify-modal-score" style="margin-top:10px;line-height:1.4;">${_escapeHtml(errorMsg)}</p>`;
       content.innerHTML = `
         <div class="verify-modal-icon">⚠️</div>
         <p class="verify-modal-title" style="color:#b91c1c">Verification Failed</p>
-        <p class="verify-modal-score" style="margin-top:10px;line-height:1.4;">${errorMsg}</p>`;
+        ${body}
+        <p class="verify-modal-score" style="margin-top:10px;font-size:13px;">Check that your license photo is sharp and well lit and that your profile details match your license exactly, then try again.</p>`;
       return;
     }
 
@@ -2566,8 +2677,12 @@ body.role-rider .driver-only { display: none; }
       content.innerHTML = `
         <div class="verify-modal-icon">❌</div>
         <p class="verify-modal-title" style="color:#b91c1c">Verification Failed</p>
-        <p class="verify-modal-score">Score: <strong>${score}%</strong> — face did not match the license photo.</p>`;
+        <p class="verify-modal-score">We couldn't confirm your details. Make sure your license photo is sharp and well lit, then try again.</p>`;
     }
+  }
+
+  function _escapeHtml(s) {
+    return String(s).replace(/[&<>"']/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c]));
   }
 
   function closeVerifyModal() {
@@ -2612,7 +2727,7 @@ body.role-rider .driver-only { display: none; }
 
 
   {% if selfie_url %}
-  document.getElementById('selfieBtnLabel').textContent = 'Change Selfie';
+  document.getElementById('selfieBtnLabel').textContent = 'Change Photo';
   {% endif %}
 
   {% if license_front_url %}
@@ -2653,14 +2768,27 @@ body.role-rider .driver-only { display: none; }
     if (validateVehicles()) document.getElementById('vehicleError').style.display = 'none';
   });
   document.querySelector('form').addEventListener('submit', function(e) {
+    e.preventDefault();
     if (!validateVehicles()) {
-      e.preventDefault();
       const err = document.getElementById('vehicleError');
       err.style.display = 'flex';
       err.scrollIntoView({ behavior: 'smooth', block: 'center' });
       return;
     }
-    _formDirty = false;
+    // Shrink the photos first, then submit (form.submit() skips this handler).
+    const form = this;
+    const saveBtn = form.querySelector('.btn-save');
+    saveBtn.disabled = true;
+    // If shrinking breaks, send the photos as they are; the server checks them.
+    prepareUploads(form).catch(() => null).then(problem => {
+      if (problem) {
+        saveBtn.disabled = false;
+        showErrorToast(problem);
+        return;
+      }
+      _formDirty = false;
+      form.submit();
+    });
   });
 
   /* ── WARN BEFORE LOSING UNSAVED CHANGES ──
@@ -2687,7 +2815,16 @@ body.role-rider .driver-only { display: none; }
 
   function _camFallbackClick() {
     if (_camMode === 'verify') {
-      document.getElementById('verifySelfieFileInput').click();
+      // Production has no file fallback for the verification selfie
+      // (allow_verify_selfie_upload): it must be a live camera capture.
+      const fileInput = document.getElementById('verifySelfieFileInput');
+      if (fileInput) {
+        fileInput.click();
+      } else {
+        const err = document.getElementById('vsCameraError');
+        err.textContent = "We couldn't open your camera. Allow camera access for this site and try again, or use a phone.";
+        err.style.display = 'block';
+      }
     } else {
       document.getElementById('selfieCameraFile').click();
     }
@@ -2791,12 +2928,13 @@ body.role-rider .driver-only { display: none; }
       previewImg.style.display = 'block';
       document.getElementById('selfiePlaceholder').style.display = 'none';
       document.getElementById('selfiePreviewWrap').classList.add('has-img');
-      document.getElementById('selfieBtnLabel').textContent = 'Change Selfie';
+      document.getElementById('selfieBtnLabel').textContent = 'Change Photo';
       try {
         const f = new File([blob], 'selfie.jpg', { type: 'image/jpeg' });
         const dt = new DataTransfer();
         dt.items.add(f);
         document.getElementById('selfieFile').files = dt.files;
+        document.getElementById('selfieCameraFile').value = '';
       } catch (_) {}
       closeCameraModal();
       updateProgress();
@@ -2810,7 +2948,7 @@ body.role-rider .driver-only { display: none; }
     {% for message in messages %}
     {% if 'success' in message.tags or 'info' in message.tags %}
     successMsgs.push("{{ message|escapejs }}");
-    {% elif 'error' in message.tags %}
+    {% elif 'error' in message.tags or 'warning' in message.tags %}
     errMsgs.push("{{ message|escapejs }}");
     {% endif %}
     {% endfor %}

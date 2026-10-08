@@ -636,6 +636,8 @@ if (!CHAT_LOCKED) {
         revertStaleOffer();
       } else if (data.code === 'no_seats') {
         revertNoSeats();
+      } else if (data.code === 'driver_unverified') {
+        revertOptimisticAccept(data.message);
       } else if (data.code === 'booking_inactive' || (data.message && data.message.indexOf('no longer active') !== -1)) {
         revertAgreement();
       }

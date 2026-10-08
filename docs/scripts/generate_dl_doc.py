@@ -1,6 +1,6 @@
 """
 Generate DL Verification documentation as a Word document.
-Run with: venv\Scripts\python.exe generate_dl_doc.py
+Run with: venv\Scripts\python.exe docs/scripts/generate_dl_doc.py  (from repo root)
 """
 
 from docx import Document
