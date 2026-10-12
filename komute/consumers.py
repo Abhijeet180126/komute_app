@@ -4,6 +4,8 @@ from channels.generic.websocket import AsyncWebsocketConsumer
 from channels.db import database_sync_to_async
 from django.utils import timezone
 
+from .notifications import booking_fingerprint, user_group_name
+
 # One line per refused connection and per close (ISSUES.md H4), so a chat
 # that "does nothing" can be traced from the server log.
 logger = logging.getLogger('komute.chat')
@@ -153,6 +155,15 @@ class ChatConsumer(AsyncWebsocketConsumer):
                 # resolved from the accepted offer, never the raw client value.
                 'price': agreed_price,
             })
+            # The booking is now confirmed or repriced; refresh the other
+            # party's inbox / my-rides (ISSUES.md M4).
+            try:
+                await self.channel_layer.group_send(user_group_name(self.receiver_id), {
+                    'type':    'bookings_changed',
+                    'message': 'A price was agreed in chat.',
+                })
+            except Exception:
+                logger.warning('Could not notify user %s of an agreed price', self.receiver_id, exc_info=True)
 
     # ── handlers (called by group_send) ──
 
@@ -331,3 +342,53 @@ class ChatConsumer(AsyncWebsocketConsumer):
             threading.Thread(target=_send_booking_confirmation_emails, args=(booking,), daemon=True).start()
 
         return 'ok', offer.price_cents / 100
+
+
+class NotifyConsumer(AsyncWebsocketConsumer):
+    """Per-user socket for the inboxes and my-rides (ISSUES.md M4). It only
+    pushes; pages answer a notice by offering a refresh."""
+
+    async def connect(self):
+        user = self.scope['user']
+        await self.accept()
+        if not user.is_authenticated:
+            await self.close(code=CLOSE_NOT_SIGNED_IN)
+            return
+        self.group = user_group_name(user.id)
+        try:
+            await self.channel_layer.group_add(self.group, self.channel_name)
+        except Exception:
+            logger.exception('notify user=%s: channel layer unavailable', user.id)
+            del self.group
+            await self.close(code=1011)
+            return
+        # Lets the page spot changes made before this socket was joined.
+        await self.send(text_data=json.dumps({
+            'type':        'state',
+            'fingerprint': await database_sync_to_async(booking_fingerprint)(user),
+        }))
+
+    async def disconnect(self, code):
+        if hasattr(self, 'group'):
+            try:
+                await self.channel_layer.group_discard(self.group, self.channel_name)
+            except Exception:
+                logger.exception('notify %s: group_discard failed', self.group)
+
+    async def receive(self, text_data):
+        # Heartbeat only, as in the chat: keeps the socket under Nginx's
+        # proxy_read_timeout and lets the page spot a dead connection.
+        if not text_data or len(text_data) > 64:
+            return
+        try:
+            data = json.loads(text_data)
+        except ValueError:
+            return
+        if isinstance(data, dict) and data.get('type') == 'ping':
+            await self.send(text_data=json.dumps({'type': 'pong'}))
+
+    async def bookings_changed(self, event):
+        await self.send(text_data=json.dumps({
+            'type':    'bookings_changed',
+            'message': event['message'],
+        }))

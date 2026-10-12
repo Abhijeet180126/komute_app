@@ -27,6 +27,7 @@ from zoneinfo import ZoneInfo
 from unittest.mock import MagicMock, mock_open, patch
 
 from django.conf import settings
+from django.contrib.auth.models import AnonymousUser
 from django.core import mail
 from django.core.cache import cache
 from django.core.files.uploadedfile import SimpleUploadedFile
@@ -38,7 +39,8 @@ from django.urls import reverse
 from django.utils import timezone
 
 from komute.chat_tokens import make_chat_token
-from komute.consumers import ChatConsumer
+from komute.consumers import ChatConsumer, NotifyConsumer
+from komute.notifications import booking_fingerprint
 from komute.hashid_utils import decode_id, encode_id
 from komute.models import (
     CustomUser, Vehicle, Rides, RideStop, RideBooking, Message,
@@ -1412,6 +1414,162 @@ class ChatConnectionTests(TransactionTestCase):
         c.login(username='cc_rider@example.com', password='TestPass123')
         resp = c.get(reverse('chat', args=[make_chat_token(self.booking.id)]))
         self.assertContains(resp, 'id="connBar"')
+
+
+class BookingNotifyTests(TransactionTestCase):
+    """ISSUES.md M4: booking changes reach the other party's open inbox /
+    my-rides page over the per-user socket."""
+
+    def setUp(self):
+        self.driver = make_driver_with_vehicle('bn_driver@example.com')
+        self.rider = make_user('bn_rider@example.com')
+        self.ride = make_ride(self.driver)
+        self.booking = RideBooking.objects.create(
+            ride=self.ride, passenger=self.rider, seats=1,
+            agreed_price_cents=2500 + settings.SERVICE_FEE_CENTS,
+            status=RideBooking.STATUS_REQUESTED,
+        )
+
+    def _client(self, email):
+        c = Client()
+        c.login(username=email, password='TestPass123')
+        return c
+
+    @staticmethod
+    def _communicator(user):
+        comm = WebsocketCommunicator(NotifyConsumer.as_asgi(), '/ws/notify/')
+        comm.scope['user'] = user
+        return comm
+
+    def _notices(self, action):
+        """Open the driver's and rider's notify sockets, run `action` (sync),
+        and return {'driver': event or None, 'rider': event or None}."""
+        async def run():
+            comms = {'driver': self._communicator(self.driver),
+                     'rider': self._communicator(self.rider)}
+            for comm in comms.values():
+                connected, _ = await comm.connect()
+                self.assertTrue(connected)
+                self.assertEqual((await comm.receive_json_from(timeout=5))['type'], 'state')
+            await sync_to_async(action)()
+            out = {}
+            for who, comm in comms.items():
+                out[who] = (None if await comm.receive_nothing(timeout=0.5)
+                            else await comm.receive_json_from(timeout=5))
+                await comm.disconnect()
+            return out
+        return async_to_sync(run)()
+
+    def _post_ok(self, email, name, arg, **data):
+        def action():
+            resp = self._client(email).post(reverse(name, args=[arg]), data)
+            self.assertEqual(resp.status_code, 200, resp.content)
+        return action
+
+    def test_anonymous_refused(self):
+        async def run():
+            comm = self._communicator(AnonymousUser())
+            connected, _ = await comm.connect()
+            self.assertTrue(connected)
+            output = await comm.receive_output(timeout=5)
+            self.assertEqual(output, {'type': 'websocket.close', 'code': 4401})
+        async_to_sync(run)()
+
+    def test_connect_sends_page_fingerprint_and_answers_ping(self):
+        page = self._client('bn_driver@example.com').get(reverse('driver-inbox'))
+        fingerprint = page.context['bookings_fingerprint']
+        self.assertContains(page, f'data-fingerprint="{fingerprint}"')
+        async def run():
+            comm = self._communicator(self.driver)
+            await comm.connect()
+            state = await comm.receive_json_from(timeout=5)
+            await comm.send_to(text_data='{"type":"ping"}')
+            pong = await comm.receive_json_from(timeout=5)
+            await comm.disconnect()
+            return state, pong
+        state, pong = async_to_sync(run)()
+        self.assertEqual(state, {'type': 'state', 'fingerprint': fingerprint})
+        self.assertEqual(pong, {'type': 'pong'})
+
+    def test_fingerprint_tracks_booking_changes(self):
+        before_driver = booking_fingerprint(self.driver)
+        before_rider = booking_fingerprint(self.rider)
+        # A rider's pre-request chat isn't on the driver's pages.
+        other = make_user('bn_other@example.com')
+        RideBooking.objects.create(ride=self.ride, passenger=other, seats=1,
+                                   agreed_price_cents=0, status=RideBooking.STATUS_DRAFT)
+        self.assertEqual(booking_fingerprint(self.driver), before_driver)
+        RideBooking.objects.filter(pk=self.booking.pk).update(status=RideBooking.STATUS_CONFIRMED)
+        self.assertNotEqual(booking_fingerprint(self.driver), before_driver)
+        self.assertNotEqual(booking_fingerprint(self.rider), before_rider)
+
+    def test_booking_request_notifies_driver(self):
+        RideBooking.objects.filter(pk=self.booking.pk).update(status=RideBooking.STATUS_CANCELLED)
+        got = self._notices(self._post_ok('bn_rider@example.com', 'create-ride-booking',
+                                          encode_id(self.ride.id), seats='1'))
+        self.assertEqual(got['driver'], {'type': 'bookings_changed',
+                                         'message': 'You have a new booking request.'})
+        self.assertIsNone(got['rider'])
+
+    def test_accept_and_reject_notify_rider(self):
+        got = self._notices(self._post_ok('bn_driver@example.com', 'accept-booking',
+                                          encode_id(self.booking.id)))
+        self.assertIn('accepted', got['rider']['message'])
+        self.assertIsNone(got['driver'])
+
+        RideBooking.objects.filter(pk=self.booking.pk).update(status=RideBooking.STATUS_REQUESTED)
+        got = self._notices(self._post_ok('bn_driver@example.com', 'reject-booking',
+                                          encode_id(self.booking.id)))
+        self.assertIn('declined', got['rider']['message'])
+        self.assertIsNone(got['driver'])
+
+    def test_rider_cancel_notifies_driver(self):
+        got = self._notices(self._post_ok('bn_rider@example.com', 'cancel-booking',
+                                          encode_id(self.booking.id)))
+        self.assertIn('cancelled', got['driver']['message'])
+        self.assertIsNone(got['rider'])
+
+    def test_ride_cancel_notifies_passengers(self):
+        got = self._notices(self._post_ok('bn_driver@example.com', 'cancel-ride',
+                                          encode_id(self.ride.id)))
+        self.assertIn('cancelled', got['rider']['message'])
+        self.assertIsNone(got['driver'])
+
+    def test_price_agreed_in_chat_notifies_other_party(self):
+        RideBooking.objects.filter(pk=self.booking.pk).update(status=RideBooking.STATUS_CONFIRMED)
+        offer = PriceOffer.objects.create(booking=self.booking, proposed_by=self.driver, price_cents=2000)
+        async def run():
+            chat = ChatIsolationTests._communicator(self.rider, self.booking)
+            notify = self._communicator(self.driver)
+            for comm in (chat, notify):
+                connected, _ = await comm.connect()
+                self.assertTrue(connected)
+            await notify.receive_json_from(timeout=5)   # state
+            await chat.send_json_to({'type': 'price_accepted', 'offer_id': offer.id})
+            notice = await notify.receive_json_from(timeout=5)
+            for comm in (chat, notify):
+                await comm.disconnect()
+            return notice
+        notice = async_to_sync(run)()
+        self.assertEqual(notice['type'], 'bookings_changed')
+        self.assertIn('price was agreed', notice['message'])
+
+    def test_request_survives_channel_layer_failure(self):
+        RideBooking.objects.filter(pk=self.booking.pk).update(status=RideBooking.STATUS_CANCELLED)
+        with patch('channels.layers.InMemoryChannelLayer.group_send', side_effect=OSError('redis down')):
+            resp = self._client('bn_rider@example.com').post(
+                reverse('create-ride-booking', args=[encode_id(self.ride.id)]), {'seats': '1'})
+        self.assertEqual(resp.status_code, 200)
+        self.assertTrue(RideBooking.objects.filter(
+            ride=self.ride, passenger=self.rider, status=RideBooking.STATUS_REQUESTED).exists())
+
+    def test_pages_load_the_notify_script(self):
+        rider = self._client('bn_rider@example.com')
+        driver = self._client('bn_driver@example.com')
+        for client, name in ((rider, 'rider-inbox'), (rider, 'my-rides'),
+                             (driver, 'driver-inbox'), (driver, 'my-rides')):
+            resp = client.get(reverse(name))
+            self.assertContains(resp, 'js/booking-updates.js', msg_prefix=name)
 
 
 class EditRideViewTests(TestCase):

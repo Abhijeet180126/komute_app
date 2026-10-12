@@ -44,6 +44,7 @@ from django.contrib.auth import logout as auth_logout
 
 from .models import Rides, RideStop, Vehicle, RideBooking, PriceOffer, Message, RideSearch, VerificationLog, Review, RideInvite
 from .hashid_utils import encode_id, decode_id
+from .notifications import booking_fingerprint, notify_bookings_changed
 from . import private_media
 from .private_media import delete_stored_file, open_stored_file, save_private_image
 
@@ -1570,6 +1571,7 @@ def create_ride_booking(request, ride_id):
             )
 
         token = make_chat_token(booking.id)
+        notify_bookings_changed([ride.driver_id], 'You have a new booking request.')
         threading.Thread(
             target=_send_booking_request_email,
             args=(booking,),
@@ -1742,6 +1744,7 @@ def cancel_booking_view(request, booking_id):
     )
     Rides.objects.filter(id=ride.id, status='full').update(status='posted')
     _notify_booking_status(booking)
+    notify_bookings_changed([ride.driver_id], 'A passenger cancelled their booking.')
 
     threading.Thread(
         target=_send_booking_cancelled_emails,
@@ -1776,6 +1779,7 @@ def accept_booking_view(request, booking_id):
     booking.confirmed_at = timezone.now()
     booking.save(update_fields=['status', 'confirmed_at'])
     _notify_booking_status(booking)
+    notify_bookings_changed([booking.passenger_id], 'Your booking request was accepted.')
 
     threading.Thread(
         target=_send_booking_confirmation_emails,
@@ -1816,6 +1820,7 @@ def reject_booking_view(request, booking_id):
     )
     Rides.objects.filter(id=ride.id, status='full').update(status='posted')
     _notify_booking_status(booking)
+    notify_bookings_changed([booking.passenger_id], 'Your booking request was declined.')
 
     threading.Thread(
         target=_send_booking_rejected_email,
@@ -1860,9 +1865,14 @@ def cancel_ride_view(request, ride_id):
         booking.ride = ride
         _notify_booking_status(booking)
     # Pre-request chats stay drafts, but their chat closes with the ride.
-    for booking in ride.bookings.filter(status=RideBooking.STATUS_DRAFT):
+    drafts = list(ride.bookings.filter(status=RideBooking.STATUS_DRAFT))
+    for booking in drafts:
         booking.ride = ride
         _notify_booking_status(booking)
+    notify_bookings_changed(
+        [b.passenger_id for b in affected_bookings + drafts],
+        'The driver cancelled a ride you booked or asked about.',
+    )
 
     threading.Thread(
         target=_send_ride_cancelled_emails,
@@ -2046,6 +2056,7 @@ def my_rides_view(request):
     ).count()
 
     return render(request, 'my-rides.html', {
+        'bookings_fingerprint': booking_fingerprint(user),
         # driver
         'rides':             rides_data,
         'total_rides':       total_rides,
@@ -2895,6 +2906,7 @@ def driver_inbox_view(request):
     filter_completed_count   = sum(1 for c in conversations if c['status'] == 'completed')
 
     return render(request, 'driver-inbox.html', {
+        'bookings_fingerprint': booking_fingerprint(user),
         'driver_name':              (user.full_name or user.email).title(),
         'nav_unread_count':         filter_unread_count,
         'total_count':              total_count,
@@ -3071,6 +3083,7 @@ def rider_inbox_view(request):
     filter_completed_count   = sum(1 for c in conversations if c['status'] == 'completed')
 
     return render(request, 'rider-inbox.html', {
+        'bookings_fingerprint': booking_fingerprint(user),
         'rider_name':               (user.full_name or user.email).title(),
         'nav_unread_count':         filter_unread_count,
         'total_count':              total_count,
@@ -4532,6 +4545,7 @@ def accept_invite_view(request, token):
         status=RideBooking.STATUS_CONFIRMED,
         confirmed_at=timezone.now(),
     )
+    notify_bookings_changed([ride.driver_id], 'A passenger accepted your ride invite.')
 
     _send_booking_confirmation_emails(booking)
 
