@@ -567,6 +567,64 @@ class StaticAndSmokePageTests(TestCase):
             self.assertEqual(resp.status_code, 200, f'{name} did not return 200')
 
 
+class NoStoreHeadersTests(TestCase):
+    """ISSUES.md M3: pages for a signed-in user must not be served from the
+    browser cache on back navigation."""
+
+    def setUp(self):
+        self.driver = make_driver_with_vehicle('ns_driver@example.com')
+        self.rider = make_user('ns_rider@example.com')
+        self.ride = make_ride(self.driver)
+        self.booking = RideBooking.objects.create(
+            ride=self.ride, passenger=self.rider, seats=1,
+            agreed_price_cents=2500, status=RideBooking.STATUS_CONFIRMED,
+        )
+
+    def _client(self, email):
+        c = Client()
+        c.login(username=email, password='TestPass123')
+        return c
+
+    def assertNoStore(self, resp, label):
+        self.assertEqual(resp.status_code, 200, f'{label} did not return 200')
+        cc = resp.get('Cache-Control', '')
+        for directive in ('no-store', 'no-cache', 'private', 'max-age=0'):
+            self.assertIn(directive, cc, f'{label}: {directive} missing from {cc!r}')
+
+    def test_rider_pages_not_cached(self):
+        c = self._client('ns_rider@example.com')
+        for name in ['profile', 'my-rides', 'rider-inbox', 'search-rides', 'home']:
+            self.assertNoStore(c.get(reverse(name)), name)
+        self.assertNoStore(
+            c.get(reverse('create-ride-booking', args=[encode_id(self.ride.id)])), 'booking details')
+        self.assertNoStore(
+            c.get(reverse('chat', args=[make_chat_token(self.booking.id)])), 'chat')
+
+    def test_driver_pages_not_cached(self):
+        c = self._client('ns_driver@example.com')
+        for name in ['driver-inbox', 'driver_dashboard', 'post-ride', 'profile']:
+            self.assertNoStore(c.get(reverse(name)), name)
+        unbooked = make_ride(self.driver)
+        self.assertNoStore(
+            c.get(reverse('edit-ride', args=[encode_id(unbooked.id)])), 'edit-ride')
+
+    def test_anonymous_public_page_cacheable(self):
+        resp = Client().get(reverse('about'))
+        self.assertEqual(resp.status_code, 200)
+        self.assertNotIn('no-store', resp.get('Cache-Control', ''))
+
+    def test_existing_cache_control_kept(self):
+        # login is already @never_cache; private media sets its own value.
+        resp = Client().get(reverse('login'))
+        self.assertIn('no-store', resp['Cache-Control'])
+
+    def test_header_reloads_on_bfcache_restore_only_when_signed_in(self):
+        signed_in = self._client('ns_rider@example.com').get(reverse('profile'))
+        self.assertContains(signed_in, 'if (e.persisted) location.reload();')
+        anon = Client().get(reverse('about'))
+        self.assertNotContains(anon, 'if (e.persisted) location.reload();')
+
+
 class RetentionCommandsSmokeTests(TestCase):
     """The other purge_*/scrub_* jobs -- confirm they still run clean against
     fixture data after this session's changes (none of which touched them,

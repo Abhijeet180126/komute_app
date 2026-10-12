@@ -116,6 +116,7 @@ MIDDLEWARE = [
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
     'allauth.account.middleware.AccountMiddleware',
     'axes.middleware.AxesMiddleware',
+    'komute.middleware.NoStoreForSignedInUsersMiddleware',
 ]
 
 ROOT_URLCONF = 'config.urls'

@@ -673,5 +673,13 @@
     document.addEventListener('keydown', function(e) {
       if (e.key === 'Escape') window.khCloseDrawer();
     });
+    {% if request.user.is_authenticated %}
+
+    // Back/forward cache restores skip the server, so a signed-in page
+    // could show stale bookings or buttons. Fetch it fresh (ISSUES.md M3).
+    window.addEventListener('pageshow', function(e) {
+      if (e.persisted) location.reload();
+    });
+    {% endif %}
   })();
 </script>
