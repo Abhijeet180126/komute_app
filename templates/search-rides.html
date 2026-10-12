@@ -854,6 +854,7 @@ nav {
 
 </div><!-- /page-outer -->
 
+<script src="{% static 'js/place-autocomplete.js' %}"></script>
 <script>
   // Always display MM-DD-YYYY in date inputs regardless of browser locale
   function autoDateFmt(display, hiddenId) {
@@ -946,115 +947,11 @@ nav {
   document.querySelectorAll('.vehicle-color-dot[data-color]').forEach(el => el.style.background = el.dataset.color);
 
   /* ── SERVICE AREA: US / CANADA ONLY ── */
-  const PHOTON_BBOX = '-168,24,-52,72'; // CONUS + Canada + Alaska (bias only)
-  function isInUsCanada(lat, lng) {
-    const inMain   = lat >= 24 && lat <= 72 && lng >= -168 && lng <= -52;
-    const inHawaii = lat >= 18 && lat <= 23 && lng >= -161 && lng <= -154;
-    return inMain || inHawaii;
-  }
+  const isInUsCanada = PlaceAutocomplete.isInUsCanada;
 
-  /* ── PHOTON AUTOCOMPLETE ── */
+  /* ── PLACE AUTOCOMPLETE (static/js/place-autocomplete.js) ── */
   function setupAutocomplete(input, latInput, lngInput) {
-    if (!input || !latInput || !lngInput) return;
-    let timer;
-    let dropdown = null;
-    let lastFetched = [];
-
-    function removeDropdown() {
-      if (dropdown) { dropdown.remove(); dropdown = null; }
-    }
-
-    function createDropdown() {
-      removeDropdown();
-      const rect = input.getBoundingClientRect();
-      dropdown = document.createElement('div');
-      dropdown.className = 'autocomplete-dropdown';
-      dropdown.style.top   = (rect.bottom + window.scrollY + 4) + 'px';
-      dropdown.style.left  = (rect.left  + window.scrollX) + 'px';
-      dropdown.style.width = rect.width + 'px';
-      document.body.appendChild(dropdown);
-      return dropdown;
-    }
-
-    input.addEventListener('input', function () {
-      const q = input.value.trim();
-      latInput.value = '0';
-      lngInput.value = '0';
-      input.classList.remove('place-confirmed');
-      if (q.length < 3) { removeDropdown(); lastFetched = []; return; }
-      clearTimeout(timer);
-      const dd = createDropdown();
-      dd.innerHTML = '<div class="autocomplete-loading">Searching…</div>';
-      timer = setTimeout(() => {
-        fetch('https://photon.komoot.io/api/?q=' + encodeURIComponent(q) + '&limit=5&bbox=' + PHOTON_BBOX)
-          .then(r => r.json())
-          .then(data => {
-            removeDropdown();
-            const features = (data.features || []).filter(f => isInUsCanada(f.geometry.coordinates[1], f.geometry.coordinates[0]));
-            if (features.length === 0) {
-              const dd2 = createDropdown();
-              dd2.innerHTML = '<div class="autocomplete-item no-results">No US/Canada results found</div>';
-              return;
-            }
-            lastFetched = features.map(f => {
-              const p = f.properties;
-              const coords = f.geometry.coordinates;
-              return { label: [p.name, p.city, p.state, p.country].filter(Boolean).join(', '), lat: coords[1], lng: coords[0] };
-            });
-            const dd2 = createDropdown();
-            lastFetched.forEach(r => {
-              const item = document.createElement('div');
-              item.className = 'autocomplete-item';
-              item.textContent = r.label;
-              item.addEventListener('mousedown', function (e) {
-                e.preventDefault();
-                input.value = r.label;
-                latInput.value = r.lat;
-                lngInput.value = r.lng;
-                input.classList.add('place-confirmed');
-                removeDropdown();
-              });
-              dd2.appendChild(item);
-            });
-          })
-          .catch(() => removeDropdown());
-      }, 300);
-    });
-
-    input.addEventListener('blur', () => {
-      if (parseFloat(latInput.value) === 0 && input.value.trim().length >= 3 && lastFetched.length > 0) {
-        const first = lastFetched[0];
-        input.value = first.label;
-        latInput.value = first.lat;
-        lngInput.value = first.lng;
-        input.classList.add('place-confirmed');
-      }
-      setTimeout(removeDropdown, 150);
-    });
-
-    input.addEventListener('keydown', function (e) {
-      if (!dropdown) return;
-      const items = [...dropdown.querySelectorAll('.autocomplete-item:not(.no-results)')];
-      const active = dropdown.querySelector('.autocomplete-item.active');
-      let idx = items.indexOf(active);
-      if (e.key === 'ArrowDown') {
-        e.preventDefault();
-        if (active) active.classList.remove('active');
-        items[(idx + 1) % items.length].classList.add('active');
-      } else if (e.key === 'ArrowUp') {
-        e.preventDefault();
-        if (active) active.classList.remove('active');
-        items[(idx - 1 + items.length) % items.length].classList.add('active');
-      } else if (e.key === 'Enter' && active) {
-        e.preventDefault();
-        active.dispatchEvent(new MouseEvent('mousedown'));
-      } else if (e.key === 'Tab' && items.length) {
-        e.preventDefault();
-        (active || items[0]).dispatchEvent(new MouseEvent('mousedown'));
-      } else if (e.key === 'Escape') {
-        removeDropdown();
-      }
-    });
+    PlaceAutocomplete.attach(input, latInput, lngInput);
   }
 
   /* ── SWAP LOCATIONS ── */
@@ -1125,9 +1022,10 @@ nav {
         fetch(`https://photon.komoot.io/reverse?lat=${lat}&lon=${lng}&lang=en`)
         .then(r => r.json())
         .then(data => {
-          const p = (data.features || [])[0]?.properties || {};
-          const label = p.city || p.district || p.name || `${lat.toFixed(4)}, ${lng.toFixed(4)}`;
+          const p = (data.features || [])[0]?.properties;
+          const label = (p && PlaceAutocomplete.placeLabel(p)) || `${lat.toFixed(4)}, ${lng.toFixed(4)}`;
           document.getElementById('searchFrom').value = label;
+          document.getElementById('searchFrom').classList.add('place-confirmed');
           document.getElementById('originLat').value  = lat;
           document.getElementById('originLng').value  = lng;
         })
@@ -1188,53 +1086,25 @@ nav {
     document.getElementById(lngId).value = 0;
   }
 
-  async function geocodeFirst(q) {
-    try {
-      const r    = await fetch('https://photon.komoot.io/api/?q=' + encodeURIComponent(q) + '&limit=1&bbox=' + PHOTON_BBOX);
-      const data = await r.json();
-      if (data.features && data.features.length > 0) {
-        const coords = data.features[0].geometry.coordinates;
-        return { lat: coords[1], lng: coords[0] };
-      }
-    } catch (_) {}
-    return null;
-  }
-
-  async function searchRides() {
+  function searchRides() {
     _clearFieldError('fromError');
     _clearFieldError('toError');
 
     const fromText = document.getElementById('searchFrom').value.trim();
     const toText   = document.getElementById('searchTo').value.trim();
-    let oLat = parseFloat(document.getElementById('originLat').value);
-    let oLng = parseFloat(document.getElementById('originLng').value);
-    let dLat = parseFloat(document.getElementById('destLat').value);
-    let dLng = parseFloat(document.getElementById('destLng').value);
-
-    // Auto-geocode if text is present but coords were never picked from suggestions
-    if (fromText && oLat === 0 && oLng === 0) {
-      const r = await geocodeFirst(fromText);
-      if (r) {
-        document.getElementById('originLat').value = oLat = r.lat;
-        document.getElementById('originLng').value = oLng = r.lng;
-      }
-    }
-    if (toText && dLat === 0 && dLng === 0) {
-      const r = await geocodeFirst(toText);
-      if (r) {
-        document.getElementById('destLat').value = dLat = r.lat;
-        document.getElementById('destLng').value = dLng = r.lng;
-      }
-    }
+    // Typed but not picked: ask for a pick rather than guessing the first
+    // geocoder match, which could be the wrong place (ISSUES.md M2).
+    const fromPicked = PlaceAutocomplete.hasPlace(document.getElementById('originLat'), document.getElementById('originLng'));
+    const toPicked   = PlaceAutocomplete.hasPlace(document.getElementById('destLat'),   document.getElementById('destLng'));
 
     let valid = true;
     let firstInvalidId = null;
-    if (!fromText || (oLat === 0 && oLng === 0)) {
+    if (!fromText || !fromPicked) {
       _showFieldError('fromError', !fromText ? 'Pickup location is required.' : 'Please pick a location from the suggestions list.');
       valid = false;
       firstInvalidId = firstInvalidId || 'searchFrom';
     }
-    if (!toText   || (dLat === 0 && dLng === 0)) {
+    if (!toText   || !toPicked) {
       _showFieldError('toError', !toText ? 'Destination is required.' : 'Please pick a location from the suggestions list.');
       valid = false;
       firstInvalidId = firstInvalidId || 'searchTo';

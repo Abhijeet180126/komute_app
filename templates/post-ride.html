@@ -803,6 +803,7 @@ nav {
         <div class="route-summary" id="routeSummary">
           <span class="route-summary-loading">Calculating route…</span>
         </div>
+        <small id="stopsError" style="color:#ef4444;font-size:0.78rem;{% if not errors.stops %}display:none;{% endif %}">{{ errors.stops|default:'' }}</small>
         <div id="stopDetourWarning" style="display:none;margin-top:8px;padding:10px 14px;background:#fffbeb;border:1.5px solid #fcd34d;border-radius:10px;font-size:0.82rem;color:#92400e;line-height:1.5;"></div>
 
         <!-- Add stop buttons -->
@@ -1058,6 +1059,7 @@ nav {
 
 </div>
 
+<script src="{% static 'js/place-autocomplete.js' %}"></script>
 <script>
   let seatCount = 2;
   const MAX_STOPS = 5;
@@ -1297,12 +1299,7 @@ nav {
   }
 
   /* ── SERVICE AREA: US / CANADA ONLY ── */
-  const PHOTON_BBOX = '-168,24,-52,72'; // CONUS + Canada + Alaska (bias only)
-  function isInUsCanada(lat, lng) {
-    const inMain   = lat >= 24 && lat <= 72 && lng >= -168 && lng <= -52;
-    const inHawaii = lat >= 18 && lat <= 23 && lng >= -161 && lng <= -154;
-    return inMain || inHawaii;
-  }
+  const isInUsCanada = PlaceAutocomplete.isInUsCanada;
 
   /* ── LOCATE ME ── */
   function locateMe() {
@@ -1329,13 +1326,8 @@ nav {
             return;
           }
 
-          const p = (data.features || [])[0]?.properties || {};
-          const label = [
-            p.street || p.name || p.district,
-            p.city || p.county,
-            p.state,
-            p.country
-          ].filter(Boolean).join(', ');
+          const p = (data.features || [])[0]?.properties;
+          const label = (p && PlaceAutocomplete.placeLabel(p)) || `${latitude.toFixed(4)}, ${longitude.toFixed(4)}`;
 
           document.getElementById('origin_input').value = label;
           document.getElementById('origin_lat').value   = latitude;
@@ -1360,95 +1352,10 @@ nav {
     );
   }
 
-  /* ── PHOTON AUTOCOMPLETE ── */
+  /* ── PLACE AUTOCOMPLETE (static/js/place-autocomplete.js) ── */
   function setupAutocomplete(input, latInput, lngInput, onSelect) {
-    if (!input || !latInput || !lngInput) return;
-    let timer;
-    let dropdown = null;
-
-    function removeDropdown() {
-      if (dropdown) { dropdown.remove(); dropdown = null; }
-    }
-
-    function createDropdown() {
-      removeDropdown();
-      const rect = input.getBoundingClientRect();
-      dropdown = document.createElement('div');
-      dropdown.className = 'autocomplete-dropdown';
-      dropdown.style.top   = (rect.bottom + window.scrollY + 4) + 'px';
-      dropdown.style.left  = (rect.left  + window.scrollX) + 'px';
-      dropdown.style.width = rect.width + 'px';
-      document.body.appendChild(dropdown);
-      return dropdown;
-    }
-
-    input.addEventListener('input', function () {
-      const q = input.value.trim();
-      latInput.value = '';
-      lngInput.value = '';
-      if (q.length < 3) { removeDropdown(); return; }
-      clearTimeout(timer);
-      const dd = createDropdown();
-      dd.innerHTML = '<div class="autocomplete-loading">Searching…</div>';
-      timer = setTimeout(() => {
-        fetch('https://photon.komoot.io/api/?q=' + encodeURIComponent(q) + '&limit=5&bbox=' + PHOTON_BBOX)
-          .then(r => r.json())
-          .then(data => {
-            removeDropdown();
-            const features = (data.features || []).filter(f => isInUsCanada(f.geometry.coordinates[1], f.geometry.coordinates[0]));
-            if (features.length === 0) {
-              const dd2 = createDropdown();
-              dd2.innerHTML = '<div class="autocomplete-item no-results">No US/Canada results found</div>';
-              return;
-            }
-            const dd2 = createDropdown();
-            features.forEach(f => {
-              const p = f.properties;
-              const coords = f.geometry.coordinates; // [lng, lat]
-              const label = [p.name, p.city, p.state, p.country].filter(Boolean).join(', ');
-              const item = document.createElement('div');
-              item.className = 'autocomplete-item';
-              item.textContent = label;
-              item.addEventListener('mousedown', function (e) {
-                e.preventDefault();
-                input.value = label;
-                latInput.value = coords[1];
-                lngInput.value = coords[0];
-                removeDropdown();
-                updateProgress();
-                if (onSelect) onSelect();
-              });
-              dd2.appendChild(item);
-            });
-          })
-          .catch(() => removeDropdown());
-      }, 300);
-    });
-
-    input.addEventListener('blur', () => setTimeout(removeDropdown, 150));
-
-    input.addEventListener('keydown', function (e) {
-      if (!dropdown) return;
-      const items = [...dropdown.querySelectorAll('.autocomplete-item:not(.no-results)')];
-      const active = dropdown.querySelector('.autocomplete-item.active');
-      let idx = items.indexOf(active);
-      if (e.key === 'ArrowDown') {
-        e.preventDefault();
-        if (active) active.classList.remove('active');
-        items[(idx + 1) % items.length].classList.add('active');
-      } else if (e.key === 'ArrowUp') {
-        e.preventDefault();
-        if (active) active.classList.remove('active');
-        items[(idx - 1 + items.length) % items.length].classList.add('active');
-      } else if (e.key === 'Enter' && active) {
-        e.preventDefault();
-        active.dispatchEvent(new MouseEvent('mousedown'));
-      } else if (e.key === 'Tab' && items.length) {
-        e.preventDefault();
-        (active || items[0]).dispatchEvent(new MouseEvent('mousedown'));
-      } else if (e.key === 'Escape') {
-        removeDropdown();
-      }
+    PlaceAutocomplete.attach(input, latInput, lngInput, {
+      onSelect: function () { updateProgress(); if (onSelect) onSelect(); },
     });
   }
 
@@ -1651,6 +1558,22 @@ nav {
   }
 
   document.getElementById('postRideForm').addEventListener('submit', function(e) {
+    // A stop typed but not picked from the suggestions has no coordinates
+    // (ISSUES.md M2); the server rejects it too.
+    const stopsError = document.getElementById('stopsError');
+    stopsError.style.display = 'none';
+    for (const wrap of document.querySelectorAll('.route-stop .input-wrap')) {
+      const input = wrap.querySelector('[name="stop_location"]');
+      if (!input || !input.value.trim()) continue;
+      if (!PlaceAutocomplete.hasPlace(wrap.querySelector('[name="stop_lat"]'), wrap.querySelector('[name="stop_lng"]'))) {
+        e.preventDefault();
+        stopsError.textContent = `Pick "${input.value.trim()}" from the suggestions list, or remove that stop.`;
+        stopsError.style.display = 'block';
+        input.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        input.focus();
+        return;
+      }
+    }
     const dateVal = document.getElementById('depart_date').value;
     const timeVal = document.getElementById('depart_time').value;
     if (dateVal && timeVal) {

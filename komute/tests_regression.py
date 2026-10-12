@@ -1412,6 +1412,98 @@ class EditRideViewTests(TestCase):
         self.ride.refresh_from_db()
         self.assertNotEqual(self.ride.origin, 'Kingston, ON')
 
+    # ── ISSUES.md M2 ──
+
+    def _post(self, **overrides):
+        c = Client()
+        c.login(username='edrv_driver@example.com', password='TestPass123')
+        payload = self._payload()
+        payload.update(overrides)
+        return c.post(reverse('edit-ride', args=[encode_id(self.ride.id)]), payload)
+
+    def test_unpicked_origin_asks_for_a_pick(self):
+        resp = self._post(origin_lat='', origin_lng='')
+        self.assertEqual(resp.context['errors']['origin'], 'Please pick a location from the suggestions.')
+
+    def test_unpicked_stop_rejected_and_old_stops_kept(self):
+        RideStop.objects.create(ride=self.ride, stop_order=1, location='Belleville, ON', lat=44.16, lng=-77.38)
+        resp = self._post(stop_location=['Cornwall, ON'], stop_lat=[''], stop_lng=[''])
+        self.assertEqual(resp.status_code, 200)
+        self.assertIn('Cornwall, ON', resp.context['errors']['stops'])
+        self.assertEqual(list(self.ride.stops.values_list('location', flat=True)), ['Belleville, ON'])
+
+    def test_picked_stop_saved_with_coordinates(self):
+        resp = self._post(stop_location=['Cornwall, ON'], stop_lat=['45.02'], stop_lng=['-74.73'])
+        self.assertRedirects(resp, reverse('my-rides'))
+        stop = self.ride.stops.get()
+        self.assertEqual((stop.location, stop.lat, stop.lng), ('Cornwall, ON', 45.02, -74.73))
+
+
+class PlaceAutocompleteTests(TestCase):
+    """ISSUES.md M2: every location field uses the shared autocomplete, and
+    search no longer guesses the first geocoder match."""
+
+    def setUp(self):
+        self.driver = make_driver_with_vehicle('pa_driver@example.com')
+        self.rider = make_user('pa_rider@example.com')
+        self.vehicle = self.driver.vehicles.first()
+
+    def _login(self, email):
+        c = Client()
+        c.login(username=email, password='TestPass123')
+        return c
+
+    def _post_ride(self, **stops):
+        depart_dt = timezone.now() + timedelta(days=1)
+        payload = {
+            'origin': 'Toronto, ON', 'destination': 'Ottawa, ON',
+            'date': depart_dt.date().isoformat(), 'depart_time': '10:00',
+            'depart_utc': depart_dt.isoformat().replace('+00:00', 'Z'),
+            'seats': '3', 'vehicle': str(self.vehicle.id), 'price': '25.00',
+            'origin_lat': '43.65', 'origin_lng': '-79.38',
+            'destination_lat': '45.42', 'destination_lng': '-75.69',
+            'stop_type': ['pickup'],
+        }
+        payload.update(stops)
+        return self._login('pa_driver@example.com').post(reverse('post-ride'), payload)
+
+    def test_pages_load_shared_script(self):
+        ride = make_ride(self.driver)
+        pages = [
+            (self._login('pa_driver@example.com'), reverse('post-ride')),
+            (self._login('pa_driver@example.com'), reverse('edit-ride', args=[encode_id(ride.id)])),
+            (self._login('pa_rider@example.com'), reverse('search-rides')),
+        ]
+        for client, url in pages:
+            resp = client.get(url)
+            self.assertContains(resp, 'js/place-autocomplete.js', msg_prefix=url)
+            self.assertNotContains(resp, 'photon.komoot.io/api', msg_prefix=url)
+            self.assertNotContains(resp, 'limit=1', msg_prefix=url)
+
+    def test_unpicked_stop_rejected(self):
+        resp = self._post_ride(stop_location=['Kingston, ON'], stop_lat=[''], stop_lng=[''])
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.context['errors']['stops'],
+                         'Pick "Kingston, ON" from the suggestions list, or remove that stop.')
+        self.assertContains(resp, 'Pick &quot;Kingston, ON&quot; from the suggestions list')
+        self.assertFalse(Rides.objects.filter(driver=self.driver).exists())
+
+    def test_stop_outside_service_area_rejected(self):
+        resp = self._post_ride(stop_location=['London, UK'], stop_lat=['51.50'], stop_lng=['-0.12'])
+        self.assertIn('outside the US and Canada', resp.context['errors']['stops'])
+
+    def test_picked_stop_saved_with_coordinates(self):
+        resp = self._post_ride(stop_location=['Kingston, ON'], stop_lat=['44.23'], stop_lng=['-76.48'])
+        self.assertEqual(resp.status_code, 302)
+        stop = RideStop.objects.get(ride__driver=self.driver)
+        self.assertEqual((stop.location, stop.lat, stop.lng), ('Kingston, ON', 44.23, -76.48))
+
+    def test_shared_script_has_no_auto_pick(self):
+        js = (Path(settings.BASE_DIR) / 'static' / 'js' / 'place-autocomplete.js').read_text(encoding='utf-8')
+        self.assertNotIn('items[0]', js)
+        self.assertNotIn('limit=1', js)
+        self.assertIn("Couldn't load suggestions", js)
+
 
 class ProfileVehicleTests(TestCase):
     def setUp(self):

@@ -357,6 +357,32 @@ def _in_us_canada(lat, lng):
     return False
 
 
+def _clean_stops(post):
+    """The ride form's named stops, each with the coordinates of the
+    suggestion the driver picked. Returns (stops, error): stops is a list of
+    dicts with the stop's form index, location, lat and lng; error is a
+    message for the first stop that wasn't picked or is out of area. A typed
+    but unpicked stop used to be saved at 0,0 and never matched a search
+    (ISSUES.md M2)."""
+    lats = post.getlist('stop_lat')
+    lngs = post.getlist('stop_lng')
+    stops = []
+    for idx, loc in enumerate(post.getlist('stop_location')):
+        loc = loc.strip()
+        if not loc:
+            continue
+        try:
+            lat, lng = float(lats[idx]), float(lngs[idx])
+        except (IndexError, ValueError, TypeError):
+            lat = lng = 0.0
+        if lat == 0 and lng == 0:
+            return stops, f'Pick "{loc}" from the suggestions list, or remove that stop.'
+        if not _in_us_canada(lat, lng):
+            return stops, f'"{loc}" is outside the US and Canada. We currently only support stops there.'
+        stops.append({'idx': idx, 'location': loc, 'lat': lat, 'lng': lng})
+    return stops, None
+
+
 _MAX_RIDE_LEAD_MONTHS = 4
 
 
@@ -1084,6 +1110,9 @@ def post_ride_view(request):
             errors["destination"] = "Please pick a location from the suggestions."
         elif not _in_us_canada(dest_lat, dest_lng):
             errors["destination"] = "We currently only support drop-off locations in the US and Canada."
+        clean_stops, stops_error = _clean_stops(request.POST)
+        if stops_error:
+            errors["stops"] = stops_error
         if not date_str:
             errors["date"] = "Date is required."
         if not time_str:
@@ -1170,11 +1199,6 @@ def post_ride_view(request):
                 errors["recurring_days"] = "Select at least one day of the week."
 
         if not errors:
-            stop_locations = request.POST.getlist("stop_location")
-            stop_types     = request.POST.getlist("stop_type")
-            stop_lats      = request.POST.getlist("stop_lat")
-            stop_lngs      = request.POST.getlist("stop_lng")
-
             try:
                 duration_seconds = int(request.POST.get("duration_seconds") or 0)
             except (ValueError, TypeError):
@@ -1203,19 +1227,11 @@ def post_ride_view(request):
                     tz=tz_name,
                     expected_duration_seconds=duration_seconds if duration_seconds > 0 else None,
                 )
-                for order, (loc, stype) in enumerate(zip(stop_locations, stop_types), start=1):
-                    loc = loc.strip()
-                    if loc:
-                        idx = order - 1
-                        try:
-                            slat = float(stop_lats[idx]) if idx < len(stop_lats) and stop_lats[idx] else 0.0
-                            slng = float(stop_lngs[idx]) if idx < len(stop_lngs) and stop_lngs[idx] else 0.0
-                        except (ValueError, TypeError):
-                            slat = slng = 0.0
-                        RideStop.objects.create(
-                            ride=ride, stop_order=order,
-                            location=loc, lat=slat, lng=slng,
-                        )
+                for stop in clean_stops:
+                    RideStop.objects.create(
+                        ride=ride, stop_order=stop['idx'] + 1,
+                        location=stop['location'], lat=stop['lat'], lng=stop['lng'],
+                    )
                 return ride
 
             if is_recurring:
@@ -2263,12 +2279,20 @@ def edit_ride_view(request, ride_id):
         except (ValueError, TypeError):
             origin_lat = origin_lng = dest_lat = dest_lng = 0.0
 
+        # 0,0: typed but not picked from the suggestions (same as post_ride_view).
         if not origin:      errors['origin']      = 'Starting point is required.'
+        elif origin_lat == 0 and origin_lng == 0:
+            errors['origin'] = 'Please pick a location from the suggestions.'
         elif not _in_us_canada(origin_lat, origin_lng):
             errors['origin'] = 'We currently only support pickup locations in the US and Canada.'
         if not destination: errors['destination'] = 'Final destination is required.'
+        elif dest_lat == 0 and dest_lng == 0:
+            errors['destination'] = 'Please pick a location from the suggestions.'
         elif not _in_us_canada(dest_lat, dest_lng):
             errors['destination'] = 'We currently only support drop-off locations in the US and Canada.'
+        clean_stops, stops_error = _clean_stops(request.POST)
+        if stops_error:
+            errors['stops'] = stops_error
         if not date_str:    errors['date']        = 'Date is required.'
         if not time_str:    errors['depart_time'] = 'Departure time is required.'
 
@@ -2355,20 +2379,9 @@ def edit_ride_view(request, ride_id):
             ride.save()
 
             ride.stops.all().delete()
-            stop_locations = request.POST.getlist('stop_location')
-            stop_lats      = request.POST.getlist('stop_lat')
-            stop_lngs      = request.POST.getlist('stop_lng')
-            for order, loc in enumerate(stop_locations, start=1):
-                loc = loc.strip()
-                if not loc:
-                    continue
-                idx = order - 1
-                try:
-                    slat = float(stop_lats[idx]) if idx < len(stop_lats) and stop_lats[idx] else 0.0
-                    slng = float(stop_lngs[idx]) if idx < len(stop_lngs) and stop_lngs[idx] else 0.0
-                except (ValueError, TypeError):
-                    slat = slng = 0.0
-                RideStop.objects.create(ride=ride, stop_order=order, location=loc, lat=slat, lng=slng)
+            for stop in clean_stops:
+                RideStop.objects.create(ride=ride, stop_order=stop['idx'] + 1,
+                                        location=stop['location'], lat=stop['lat'], lng=stop['lng'])
 
             messages.success(request, 'Ride updated successfully.')
             return redirect('my-rides')

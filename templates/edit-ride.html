@@ -109,6 +109,7 @@ body{font-family:'DM Sans',sans-serif;background:var(--light-bg);min-height:100v
 .autocomplete-item:hover,.autocomplete-item.active{background:var(--contrast-lt);color:var(--brand-green);}
 .autocomplete-item.no-results{color:var(--text-muted);cursor:default;}
 .autocomplete-item.no-results:hover{background:transparent;color:var(--text-muted);}
+.autocomplete-loading{padding:10px 14px;font-size:.8rem;color:var(--text-muted);font-style:italic;}
 
 /* ── SUBMIT ── */
 .btn-submit{width:100%;padding:15px;background:linear-gradient(90deg,#0C63B4,#0CB439);color:white;border:none;border-radius:13px;font-family:'Poppins',sans-serif;font-weight:700;font-size:1rem;cursor:pointer;transition:opacity .2s,transform .15s;display:flex;align-items:center;justify-content:center;gap:8px;box-shadow:0 4px 16px rgba(12,99,180,.28);}
@@ -210,6 +211,8 @@ body{font-family:'DM Sans',sans-serif;background:var(--light-bg);min-height:100v
         </div>
 
       </div>
+
+      {% if errors.stops %}<span class="form-error">{{ errors.stops }}</span>{% endif %}
 
       <!-- Route summary strip -->
       <div class="route-summary" id="routeSummary"></div>
@@ -346,12 +349,10 @@ body{font-family:'DM Sans',sans-serif;background:var(--light-bg);min-height:100v
   </form>
 </div>
 
-<!-- Autocomplete dropdown -->
-<div class="autocomplete-dropdown" id="autocompleteDropdown" style="display:none"></div>
-
 {{ stops_data|json_script:"stops-data" }}
 {{ preferences|json_script:"preferences-data" }}
 
+<script src="{% static 'js/place-autocomplete.js' %}"></script>
 <script>
 /* ── SEAT COUNTER ── */
 let seats = {{ ride.seats_total }};
@@ -389,7 +390,7 @@ function updatePrefsJson() {
 let stopCount = 0;
 const EXISTING_STOPS = JSON.parse(document.getElementById('stops-data').textContent);
 
-function addStop(location='', lat=0, lng=0) {
+function addStop(location='', lat='', lng='') {
   if (stopCount >= 5) return;
   stopCount++;
   const id = 'stop-' + stopCount;
@@ -411,13 +412,21 @@ function addStop(location='', lat=0, lng=0) {
         </div>
         <div class="input-wrap">
           <span class="input-icon"><svg viewBox="0 0 24 24"><circle cx="12" cy="10" r="3"/><path d="M12 2a8 8 0 0 0-8 8c0 5.25 8 12 8 12s8-6.75 8-12a8 8 0 0 0-8-8z"/></svg></span>
-          <input type="text" name="stop_location" class="form-input stop-input" value="${location}" placeholder="e.g. Scarborough, ON" autocomplete="off" oninput="onStopInput(this)">
-          <input type="hidden" name="stop_lat" value="${lat}">
-          <input type="hidden" name="stop_lng" value="${lng}">
+          <input type="text" name="stop_location" class="form-input stop-input" placeholder="e.g. Scarborough, ON" autocomplete="off">
+          <input type="hidden" name="stop_lat">
+          <input type="hidden" name="stop_lng">
         </div>
       </div>
     </div>`;
+  // Set as properties: a saved stop name must never be parsed as HTML.
+  const input = div.querySelector('[name="stop_location"]');
+  const latInput = div.querySelector('[name="stop_lat"]');
+  const lngInput = div.querySelector('[name="stop_lng"]');
+  input.value = location;
+  latInput.value = lat;
+  lngInput.value = lng;
   document.getElementById('stop-final').before(div);
+  PlaceAutocomplete.attach(input, latInput, lngInput, { onSelect: triggerRouteSummary });
   triggerRouteSummary();
 }
 
@@ -429,90 +438,13 @@ function removeStop(id) {
 // Load existing stops
 EXISTING_STOPS.forEach(s => addStop(s.location, s.lat, s.lng));
 
-/* ── SERVICE AREA: US / CANADA ONLY ── */
-const PHOTON_BBOX = '-168,24,-52,72'; // CONUS + Canada + Alaska (bias only)
-function isInUsCanada(lat, lng) {
-  const inMain   = lat >= 24 && lat <= 72 && lng >= -168 && lng <= -52;
-  const inHawaii = lat >= 18 && lat <= 23 && lng >= -161 && lng <= -154;
-  return inMain || inHawaii;
-}
-
-/* ── AUTOCOMPLETE (Photon) ── */
-let acTarget = null, acTimer = null;
-const dropdown = document.getElementById('autocompleteDropdown');
-
-function attachAutocomplete(input) {
-  input.addEventListener('focus', () => { acTarget = input; });
-  input.addEventListener('input', () => {
-    clearTimeout(acTimer);
-    acTarget = input;
-    acTimer = setTimeout(() => fetchSuggestions(input.value.trim(), input), 300);
-  });
-}
-
-['origin_input','destination_input'].forEach(id => {
-  const el = document.getElementById(id);
-  if (el) attachAutocomplete(el);
-});
-
-document.addEventListener('input', e => {
-  if (e.target.classList.contains('stop-input')) attachAutocomplete(e.target);
-});
-
-function fetchSuggestions(q, input) {
-  if (q.length < 3) { dropdown.style.display = 'none'; return; }
-  fetch(`https://photon.komoot.io/api/?q=${encodeURIComponent(q)}&limit=5&bbox=${PHOTON_BBOX}`)
-    .then(r => r.json())
-    .then(data => {
-      const features = (data.features || []).filter(f => isInUsCanada(f.geometry.coordinates[1], f.geometry.coordinates[0]));
-      showDropdown(features, input);
-    })
-    .catch(() => { dropdown.style.display = 'none'; });
-}
-
-function showDropdown(features, input) {
-  const rect = input.getBoundingClientRect();
-  dropdown.style.left  = (rect.left + window.scrollX) + 'px';
-  dropdown.style.top   = (rect.bottom + window.scrollY + 4) + 'px';
-  dropdown.style.width = rect.width + 'px';
-  if (!features.length) {
-    dropdown.innerHTML = '<div class="autocomplete-item no-results">No US/Canada results found</div>';
-    dropdown.style.display = 'block';
-    return;
-  }
-  dropdown.innerHTML = features.map(f => {
-    const p = f.properties;
-    const label = [p.name, p.city, p.state, p.country].filter(Boolean).join(', ');
-    return `<div class="autocomplete-item" data-lat="${f.geometry.coordinates[1]}" data-lng="${f.geometry.coordinates[0]}" data-label="${label}">${label}</div>`;
-  }).join('');
-  dropdown.style.display = 'block';
-  dropdown.querySelectorAll('.autocomplete-item').forEach(item => {
-    item.addEventListener('click', () => selectItem(item, input));
-  });
-}
-
-function selectItem(item, input) {
-  input.value = item.dataset.label;
-  const lat = parseFloat(item.dataset.lat);
-  const lng = parseFloat(item.dataset.lng);
-  if (input.id === 'origin_input') {
-    document.getElementById('origin_lat').value = lat;
-    document.getElementById('origin_lng').value = lng;
-  } else if (input.id === 'destination_input') {
-    document.getElementById('destination_lat').value = lat;
-    document.getElementById('destination_lng').value = lng;
-  } else {
-    const wrap = input.closest('.stop-content');
-    wrap.querySelector('[name="stop_lat"]').value = lat;
-    wrap.querySelector('[name="stop_lng"]').value = lng;
-  }
-  dropdown.style.display = 'none';
-  triggerRouteSummary();
-}
-
-document.addEventListener('click', e => {
-  if (!dropdown.contains(e.target) && e.target !== acTarget) dropdown.style.display = 'none';
-});
+/* ── PLACE AUTOCOMPLETE (static/js/place-autocomplete.js) ── */
+PlaceAutocomplete.attach(document.getElementById('origin_input'),
+  document.getElementById('origin_lat'), document.getElementById('origin_lng'),
+  { onSelect: triggerRouteSummary });
+PlaceAutocomplete.attach(document.getElementById('destination_input'),
+  document.getElementById('destination_lat'), document.getElementById('destination_lng'),
+  { onSelect: triggerRouteSummary });
 
 /* ── ROUTE SUMMARY (OSRM) ── */
 function triggerRouteSummary() {
@@ -551,12 +483,6 @@ function triggerRouteSummary() {
 
 // Trigger on load if coords already present
 window.addEventListener('DOMContentLoaded', triggerRouteSummary);
-
-function onStopInput(el) {
-  clearTimeout(acTimer);
-  acTarget = el;
-  acTimer = setTimeout(() => fetchSuggestions(el.value.trim(), el), 300);
-}
 
 // Always show MM-DD-YYYY regardless of browser locale
 function autoDateFmt(display, hiddenId) {
