@@ -1572,6 +1572,48 @@ class BookingNotifyTests(TransactionTestCase):
             self.assertContains(resp, 'js/booking-updates.js', msg_prefix=name)
 
 
+class WebSocketOriginTests(TransactionTestCase):
+    """ISSUES.md L1: only pages on our own hosts may open a WebSocket.
+
+    The validator copies ALLOWED_HOSTS when config.asgi is first imported,
+    so these tests use the list it actually holds rather than override it."""
+
+    def setUp(self):
+        from channels.security.websocket import OriginValidator
+        from config.asgi import application
+        self.app = application
+        validator = application.application_mapping['websocket']
+        self.assertIsInstance(validator, OriginValidator)
+        self.assertNotIn('*', validator.allowed_origins)
+        self.host = next(h for h in validator.allowed_origins if not h.startswith('.'))
+
+    def test_validator_uses_allowed_hosts(self):
+        self.assertIn(self.host, settings.ALLOWED_HOSTS)
+
+    def _connects(self, origin):
+        application = self.app
+        headers = [(b'host', self.host.encode())]
+        if origin is not None:
+            headers.append((b'origin', origin))
+        async def run():
+            comm = WebsocketCommunicator(application, '/ws/notify/', headers=headers)
+            connected, _ = await comm.connect()
+            await comm.disconnect()
+            return connected
+        return async_to_sync(run)()
+
+    def test_own_origin_allowed(self):
+        # Anonymous, so NotifyConsumer accepts and then closes with 4401.
+        self.assertTrue(self._connects(f'https://{self.host}'.encode()))
+
+    def test_other_site_refused(self):
+        self.assertFalse(self._connects(b'https://evil.example'))
+        self.assertFalse(self._connects(f'https://{self.host}.evil.example'.encode()))
+
+    def test_missing_origin_refused(self):
+        self.assertFalse(self._connects(None))
+
+
 class EditRideViewTests(TestCase):
     def setUp(self):
         self.driver = make_driver_with_vehicle('edrv_driver@example.com')
