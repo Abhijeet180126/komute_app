@@ -1210,6 +1210,70 @@ class ChatBookingStatusTests(TransactionTestCase):
         self.assertEqual(accept(self.driver, self.booking.id, offer.id, None)[0], 'ok')
 
 
+class ChatConnectionTests(TransactionTestCase):
+    """ISSUES.md H4: a refused or broken chat socket closes with a code the
+    page can act on, the heartbeat is answered, and closes are logged."""
+
+    def setUp(self):
+        self.driver = make_driver_with_vehicle('cc_driver@example.com')
+        self.rider = make_user('cc_rider@example.com')
+        self.stranger = make_user('cc_stranger@example.com')
+        self.booking = RideBooking.objects.create(
+            ride=make_ride(self.driver), passenger=self.rider, seats=1,
+            agreed_price_cents=2500, status=RideBooking.STATUS_CONFIRMED,
+        )
+
+    def _close_code(self, user, token=None):
+        """Connect as `user` and return the code the server closes with."""
+        token = token or make_chat_token(self.booking.id)
+        async def run():
+            comm = WebsocketCommunicator(ChatConsumer.as_asgi(), f'/ws/chat/{token}/')
+            comm.scope['user'] = user
+            comm.scope['url_route'] = {'kwargs': {'token': token}}
+            connected, _ = await comm.connect()
+            # Accepted first, so the browser gets the code instead of 1006.
+            self.assertTrue(connected)
+            output = await comm.receive_output(timeout=5)
+            self.assertEqual(output['type'], 'websocket.close')
+            return output['code']
+        return async_to_sync(run)()
+
+    def test_signed_out_gets_4401(self):
+        from django.contrib.auth.models import AnonymousUser
+        with self.assertLogs('komute.chat', 'WARNING'):
+            self.assertEqual(self._close_code(AnonymousUser()), 4401)
+
+    def test_bad_token_gets_4403(self):
+        self.assertEqual(self._close_code(self.rider, token='not-a-token'), 4403)
+
+    def test_other_users_booking_gets_4403(self):
+        self.assertEqual(self._close_code(self.stranger), 4403)
+
+    def test_channel_layer_down_gets_1011(self):
+        with patch('channels.layers.InMemoryChannelLayer.group_add', side_effect=OSError('redis down')), \
+             self.assertLogs('komute.chat', 'ERROR'):
+            self.assertEqual(self._close_code(self.rider), 1011)
+
+    def test_ping_answered_and_close_logged(self):
+        async def run():
+            comm = ChatIsolationTests._communicator(self.rider, self.booking)
+            connected, _ = await comm.connect()
+            self.assertTrue(connected)
+            await comm.send_json_to({'type': 'ping'})
+            self.assertEqual(await comm.receive_json_from(timeout=5), {'type': 'pong'})
+            await comm.disconnect(code=1006)
+
+        with self.assertLogs('komute.chat', 'INFO') as logs:
+            async_to_sync(run)()
+        self.assertTrue(any('code=1006' in line for line in logs.output))
+
+    def test_chat_page_has_connection_bar(self):
+        c = Client()
+        c.login(username='cc_rider@example.com', password='TestPass123')
+        resp = c.get(reverse('chat', args=[make_chat_token(self.booking.id)]))
+        self.assertContains(resp, 'id="connBar"')
+
+
 class EditRideViewTests(TestCase):
     def setUp(self):
         self.driver = make_driver_with_vehicle('edrv_driver@example.com')

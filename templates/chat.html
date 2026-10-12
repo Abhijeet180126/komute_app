@@ -395,6 +395,26 @@ body{
 }
 .chat-ended-bar.show{display:flex;}
 .chat-ended-bar svg{width:14px;height:14px;stroke:var(--text-muted);fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;}
+/* Connection state (ISSUES.md H4) */
+.conn-bar{
+  flex-shrink:0;
+  background:#fff7e6;
+  border-top:1.5px solid #f5d9a8;
+  padding:9px 20px;
+  display:none;
+  align-items:center;justify-content:center;gap:10px;flex-wrap:wrap;
+  font-size:.82rem;color:#8a5a00;font-weight:500;
+  font-family:'DM Sans',sans-serif;text-align:center;
+}
+.conn-bar.show{display:flex;}
+.conn-bar.failed{background:#fdecec;border-top-color:#f3c2c2;color:#a12a2a;}
+.conn-bar button{
+  background:none;border:1.5px solid currentColor;color:inherit;border-radius:8px;
+  padding:3px 10px;font:inherit;font-weight:600;cursor:pointer;
+}
+.conn-dot{width:8px;height:8px;border-radius:50%;background:currentColor;animation:connPulse 1.2s ease-in-out infinite;}
+.conn-bar.failed .conn-dot{animation:none;}
+@keyframes connPulse{50%{opacity:.25}}
 .input-bar.locked .msg-input{opacity:.5;cursor:not-allowed;background:#ececec;}
 .input-bar.locked .send-btn,.input-bar.locked .extra-btn{opacity:.35;pointer-events:none;cursor:not-allowed;}
 
@@ -551,6 +571,13 @@ body{
   <span id="chatEndedText">{{ chat_closed_message }}</span>
 </div>
 
+<!-- ════ CONNECTION STATE (shown only while the chat socket is down) ════ -->
+<div class="conn-bar" id="connBar" role="status" aria-live="polite">
+  <span class="conn-dot"></span>
+  <span id="connText"></span>
+  <button type="button" id="connBtn"></button>
+</div>
+
 <!-- ════ INPUT BAR ════ -->
 <div class="input-bar{% if chat_is_locked %} locked{% endif %}" id="inputBar">
   <div class="input-extra-btns">
@@ -596,67 +623,221 @@ let currentIncomingBubbleActions = null;  // the .pb-actions node of the newest 
 
 /* ══════════════════════════
    WEBSOCKET
-   Skip entirely for locked (completed / cancelled) chats — no real-time
-   updates are needed, and an unnecessary connect can falsely trigger the
-   "connection lost" toast if anything goes wrong at that moment.
+   Skipped entirely for locked (completed / cancelled) chats — no real-time
+   updates are needed there.
 ══════════════════════════ */
+/* Connection handling (ISSUES.md H4): retry with backoff, a heartbeat to
+   spot dead connections, and a visible state while disconnected. The socket
+   counts as ready only after the first pong, because the server accepts the
+   handshake before joining the chat group and closes (1011) if Redis is down. */
 let socket = null;
-let wsConnected = false;   // true once the server has accepted the handshake
+let wsReady = false;       // first pong received — the server is in the chat group
+let hadFailure = false;    // a drop or failed attempt since this page loaded
+let awaitingPong = false;
+let retryDelay = 1000;
+let retryTimer = null;
+let heartbeatTimer = null;
+let pageLeaving = false;
 
-if (!CHAT_LOCKED) {
+const RETRY_MAX_MS = 30000;
+const HEARTBEAT_MS = 25000;   // well under Nginx proxy_read_timeout (120s)
+const DRAFT_KEY    = 'chatDraft:' + CHAT_TOKEN;
+
+function connectSocket() {
+  if (socket || CHAT_LOCKED) return;
+  clearTimeout(retryTimer);
+  retryTimer = null;
+  if (hadFailure) setConnState('reconnecting');
+
   const wsProtocol = location.protocol === 'https:' ? 'wss' : 'ws';
-  socket = new WebSocket(`${wsProtocol}://${location.host}/ws/chat/${CHAT_TOKEN}/`);
+  const ws = new WebSocket(`${wsProtocol}://${location.host}/ws/chat/${CHAT_TOKEN}/`);
+  socket = ws;
 
-  socket.onopen = function() {
-    wsConnected = true;
+  ws.onopen = function() {
+    if (ws !== socket) return;
+    awaitingPong = true;
+    ws.send(JSON.stringify({ type: 'ping' }));
   };
 
-  socket.onmessage = function(e) {
+  ws.onmessage = function(e) {
+    if (ws !== socket) return;
+    awaitingPong = false;
     const data = JSON.parse(e.data);
-
-    if (data.type === 'message') {
-      const isOut = data.sender_id === CURRENT_USER;
-      renderMsg(data.body, isOut, data.initials, data.time);
-    } else if (data.type === 'price_offer') {
-      const isOut = data.sender_id === CURRENT_USER;
-      if (!isOut) {
-        latestPeerOffer = data.price;
-        latestPeerOfferId = data.offer_id;
-        document.getElementById('riderPriceDisplay').textContent = '$' + data.price;
-      }
-      injectPriceBubble(data.price, isOut ? 'outgoing' : 'incoming-counter', data.offer_id);
-    } else if (data.type === 'price_accepted') {
-      // Server-confirmed echo — every client in the room gets this, including
-      // whoever clicked accept (already applied locally) and the other party
-      // (who did nothing). Just sync UI; never re-send an accept from here,
-      // since the offer is already ACCEPTED and a resend would be rejected.
-      if (!priceAgreed) applyAgreedUI(data.price);
-    } else if (data.type === 'booking_status') {
-      applyBookingStatus(data);
-    } else if (data.type === 'error') {
-      if (data.code === 'offer_stale') {
-        revertStaleOffer();
-      } else if (data.code === 'no_seats') {
-        revertNoSeats();
-      } else if (data.code === 'driver_unverified' || data.code === 'own_offer') {
-        revertOptimisticAccept(data.message);
-      } else if (data.code === 'nego_locked') {
-        if (priceAgreed) revertOptimisticAccept(data.message);
-      } else if (data.code === 'booking_inactive' || (data.message && data.message.indexOf('no longer active') !== -1)) {
-        revertAgreement();
-      }
-      showToast(data.message || 'Something went wrong.');
+    if (data.type === 'pong') {
+      if (!wsReady) onSocketReady();
+      return;
     }
+    handleSocketMessage(data);
   };
 
-  socket.onclose = function(event) {
-    // Only show "connection lost" if the handshake had already succeeded —
-    // failures during the initial connect (e.g. server 403, close-before-accept)
-    // would otherwise fire here with code 1006 and falsely alarm the user.
-    if (wsConnected && event.code !== 1000 && event.code !== 1001) {
-      showToast('Connection lost — please refresh.');
+  ws.onclose = function(event) {
+    if (ws !== socket) return;
+    socket = null;
+    wsReady = false;
+    stopHeartbeat();
+    // 1000 is our own close once the chat locks; pageLeaving is navigation.
+    if (CHAT_LOCKED || pageLeaving || event.code === 1000) { setConnState('ok'); return; }
+    console.warn('Chat connection closed', event.code, event.reason || '');
+    if (event.code === 4401) {
+      setConnState('failed', "You've been signed out. Sign in again to keep chatting.", 'Sign in');
+    } else if (event.code === 4403) {
+      setConnState('failed', 'This chat link is no longer valid. Open the chat again from your bookings.', 'Reload');
+    } else {
+      hadFailure = true;
+      scheduleReconnect();
     }
   };
+}
+
+function onSocketReady() {
+  if (hadFailure) {
+    // Messages, offers or status changes may have arrived while we were
+    // offline; a reload shows exactly what the server has. Keep the draft.
+    saveDraft();
+    location.reload();
+    return;
+  }
+  wsReady = true;
+  retryDelay = 1000;
+  setConnState('ok');
+  startHeartbeat();
+}
+
+function scheduleReconnect() {
+  setConnState('retrying');
+  const delay = retryDelay * (0.75 + Math.random() * 0.5);
+  retryDelay = Math.min(retryDelay * 2, RETRY_MAX_MS);
+  retryTimer = setTimeout(connectSocket, delay);
+}
+
+// A connection can die without a close event (phone asleep, Wi-Fi switch).
+// No reply since the last ping means it's gone: drop it and reconnect.
+function startHeartbeat() {
+  stopHeartbeat();
+  heartbeatTimer = setInterval(function() {
+    if (!socket) return;
+    if (awaitingPong) {
+      const dead = socket;
+      socket = null;
+      wsReady = false;
+      dead.onopen = dead.onmessage = dead.onclose = null;
+      try { dead.close(); } catch (e) {}
+      stopHeartbeat();
+      console.warn('Chat connection timed out (no pong)');
+      hadFailure = true;
+      scheduleReconnect();
+      return;
+    }
+    awaitingPong = true;
+    socket.send(JSON.stringify({ type: 'ping' }));
+  }, HEARTBEAT_MS);
+}
+
+function stopHeartbeat() {
+  clearInterval(heartbeatTimer);
+  heartbeatTimer = null;
+}
+
+function retryNow() {
+  if (retryTimer) connectSocket();
+}
+
+let connDown = false;
+function setConnState(state, text, btnLabel) {
+  const bar  = document.getElementById('connBar');
+  const btn  = document.getElementById('connBtn');
+  connDown = state !== 'ok';
+  bar.classList.toggle('show', connDown);
+  bar.classList.toggle('failed', state === 'failed');
+  if (state === 'retrying') {
+    document.getElementById('connText').textContent = 'Not connected – retrying…';
+    btn.textContent = 'Retry now';
+    btn.onclick = retryNow;
+    btn.style.display = '';
+  } else if (state === 'reconnecting') {
+    document.getElementById('connText').textContent = 'Reconnecting…';
+    btn.style.display = 'none';
+  } else if (state === 'failed') {
+    document.getElementById('connText').textContent = text;
+    btn.textContent = btnLabel;
+    btn.onclick = function() { saveDraft(); location.reload(); };
+    btn.style.display = '';
+  }
+  document.getElementById('sendBtn').disabled = CHAT_LOCKED || connDown;
+}
+
+// Called before sending; explains why nothing happened instead of failing silently.
+function requireConnection() {
+  if (wsReady && socket && socket.readyState === WebSocket.OPEN) return true;
+  showToast(connDown ? 'Not connected – retrying…' : 'Connecting to chat…');
+  return false;
+}
+
+function saveDraft() {
+  try { sessionStorage.setItem(DRAFT_KEY, document.getElementById('msgInput').value); } catch (e) {}
+}
+
+function restoreDraft() {
+  try {
+    const draft = sessionStorage.getItem(DRAFT_KEY);
+    sessionStorage.removeItem(DRAFT_KEY);
+    if (draft && !CHAT_LOCKED) {
+      const input = document.getElementById('msgInput');
+      input.value = draft;
+      autoResize(input);
+    }
+  } catch (e) {}
+}
+
+window.addEventListener('online', retryNow);
+document.addEventListener('visibilitychange', function() {
+  if (document.visibilityState === 'visible') retryNow();
+});
+window.addEventListener('pagehide', function() { pageLeaving = true; });
+window.addEventListener('pageshow', function(e) {
+  // Restored from the back/forward cache: the old socket is gone.
+  if (!e.persisted) return;
+  pageLeaving = false;
+  if (!socket && !CHAT_LOCKED) { hadFailure = true; connectSocket(); }
+});
+
+restoreDraft();
+connectSocket();
+
+function handleSocketMessage(data) {
+  if (data.type === 'message') {
+    const isOut = data.sender_id === CURRENT_USER;
+    renderMsg(data.body, isOut, data.initials, data.time);
+  } else if (data.type === 'price_offer') {
+    const isOut = data.sender_id === CURRENT_USER;
+    if (!isOut) {
+      latestPeerOffer = data.price;
+      latestPeerOfferId = data.offer_id;
+      document.getElementById('riderPriceDisplay').textContent = '$' + data.price;
+    }
+    injectPriceBubble(data.price, isOut ? 'outgoing' : 'incoming-counter', data.offer_id);
+  } else if (data.type === 'price_accepted') {
+    // Server-confirmed echo — every client in the room gets this, including
+    // whoever clicked accept (already applied locally) and the other party
+    // (who did nothing). Just sync UI; never re-send an accept from here,
+    // since the offer is already ACCEPTED and a resend would be rejected.
+    if (!priceAgreed) applyAgreedUI(data.price);
+  } else if (data.type === 'booking_status') {
+    applyBookingStatus(data);
+  } else if (data.type === 'error') {
+    if (data.code === 'offer_stale') {
+      revertStaleOffer();
+    } else if (data.code === 'no_seats') {
+      revertNoSeats();
+    } else if (data.code === 'driver_unverified' || data.code === 'own_offer') {
+      revertOptimisticAccept(data.message);
+    } else if (data.code === 'nego_locked') {
+      if (priceAgreed) revertOptimisticAccept(data.message);
+    } else if (data.code === 'booking_inactive' || (data.message && data.message.indexOf('no longer active') !== -1)) {
+      revertAgreement();
+    }
+    showToast(data.message || 'Something went wrong.');
+  }
 }
 
 /* ══════════════════════════
@@ -719,7 +900,7 @@ function applyBookingStatus(data) {
     }
     addSysMsg(`🔒 ${data.closed_message}`);
     showToast(data.closed_message);
-    // Normal close (1000) so onclose doesn't report "connection lost".
+    // Normal close (1000) so onclose doesn't start reconnecting.
     if (socket) socket.close(1000);
   } else if (wasNegoLocked && !NEGO_LOCKED) {
     if (data.agreed_price !== null && !priceAgreed) applyAgreedUI(data.agreed_price);
@@ -741,7 +922,7 @@ function adjustOffer(delta) {
 }
 
 function proposePrice() {
-  if (CHAT_LOCKED || NEGO_LOCKED || !socket || priceAgreed || socket.readyState !== WebSocket.OPEN) return;
+  if (CHAT_LOCKED || NEGO_LOCKED || priceAgreed || !requireConnection()) return;
   pendingOffer = myOffer;
   socket.send(JSON.stringify({ type: 'price_offer', price: myOffer }));
   toggleBargain();
@@ -835,12 +1016,14 @@ function applyAgreedUI(price) {
   scrollMsgs();
 }
 
+// Returns false if nothing was sent, so callers keep the offer's buttons.
 function finalizeAgreement(price, offerId) {
-  if (priceAgreed) return;
-  if (socket && socket.readyState === WebSocket.OPEN)
-    socket.send(JSON.stringify({ type: 'price_accepted', price: price, offer_id: offerId ?? null }));
+  // Showing "agreed" without reaching the server would be a silent failure.
+  if (priceAgreed || !requireConnection()) return false;
+  socket.send(JSON.stringify({ type: 'price_accepted', price: price, offer_id: offerId ?? null }));
   applyAgreedUI(price);
   showToast(`Price agreed at $${price}/seat! 🎉`);
+  return true;
 }
 
 /* ══════════════════════════
@@ -959,7 +1142,7 @@ function restoreAgreedState(price) {
 }
 
 function acceptBubbleOffer(btn, price, offerId) {
-  finalizeAgreement(price, offerId);
+  if (!finalizeAgreement(price, offerId)) return;
   const actions = btn.closest('.pb-actions');
   if (actions) {
     if (actions === currentIncomingBubbleActions) currentIncomingBubbleActions = null;
@@ -994,10 +1177,10 @@ const DRIVER_REPLIES = [
 let replyIdx = 0;
 
 function sendMsg() {
-  if (CHAT_LOCKED || !socket) return;
+  if (CHAT_LOCKED) return;
   const input = document.getElementById('msgInput');
   const text  = input.value.trim();
-  if (!text || socket.readyState !== WebSocket.OPEN) return;
+  if (!text || !requireConnection()) return;
   socket.send(JSON.stringify({ type: 'message', body: text }));
   input.value = '';
   input.style.height = '';

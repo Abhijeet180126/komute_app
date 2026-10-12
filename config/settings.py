@@ -395,5 +395,11 @@ LOGGING = {
             'level': 'INFO',
             'propagate': False,
         },
+        # Refused chat sockets and close codes (ISSUES.md H4).
+        'komute.chat': {
+            'handlers': ['console'],
+            'level': 'INFO',
+            'propagate': False,
+        },
     },
 }

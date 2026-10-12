@@ -1,7 +1,17 @@
 import json
+import logging
 from channels.generic.websocket import AsyncWebsocketConsumer
 from channels.db import database_sync_to_async
 from django.utils import timezone
+
+# One line per refused connection and per close (ISSUES.md H4), so a chat
+# that "does nothing" can be traced from the server log.
+logger = logging.getLogger('komute.chat')
+
+# Application close codes (4000-4999). The browser stops retrying on these
+# and tells the user what to do instead of reconnecting forever.
+CLOSE_NOT_SIGNED_IN = 4401
+CLOSE_FORBIDDEN     = 4403   # bad or expired token, or not this booking's chat
 
 
 def chat_group_name(booking_id):
@@ -18,17 +28,17 @@ class ChatConsumer(AsyncWebsocketConsumer):
         user  = self.scope['user']
 
         if not user.is_authenticated:
-            await self.close()
+            await self.refuse(CLOSE_NOT_SIGNED_IN, 'not signed in')
             return
 
         booking_id = await self.resolve_token(token)
         if booking_id is None:
-            await self.close()
+            await self.refuse(CLOSE_FORBIDDEN, 'bad or expired token')
             return
 
         booking_info = await self.get_booking_info(user, booking_id)
         if booking_info is None:
-            await self.close()
+            await self.refuse(CLOSE_FORBIDDEN, f'booking {booking_id} not accessible')
             return
 
         self.booking_id  = booking_id
@@ -42,11 +52,28 @@ class ChatConsumer(AsyncWebsocketConsumer):
         try:
             await self.channel_layer.group_add(self.room_group, self.channel_name)
         except Exception:
+            logger.exception('chat booking=%s user=%s: channel layer unavailable', self.booking_id, user.id)
+            del self.room_group   # never joined, so disconnect() mustn't discard
             await self.close(code=1011)
+
+    async def refuse(self, code, reason):
+        # Closing before accept() reaches the browser as a failed handshake
+        # (always code 1006), which looks the same as a network error. Accept
+        # first so it gets `code` and stops retrying.
+        user = self.scope['user']
+        logger.warning('chat refused (%s): %s, user=%s', code, reason,
+                       user.id if user.is_authenticated else None)
+        await self.accept()
+        await self.close(code=code)
 
     async def disconnect(self, code):
         if hasattr(self, 'room_group'):
-            await self.channel_layer.group_discard(self.room_group, self.channel_name)
+            logger.info('chat closed booking=%s user=%s code=%s',
+                        self.booking_id, self.scope['user'].id, code)
+            try:
+                await self.channel_layer.group_discard(self.room_group, self.channel_name)
+            except Exception:
+                logger.exception('chat booking=%s: group_discard failed', self.booking_id)
 
     MAX_FRAME_BYTES = 8_192   # 8 KB raw WebSocket frame limit
     MAX_BODY_CHARS  = 2_000   # visible message character limit
@@ -68,7 +95,12 @@ class ChatConsumer(AsyncWebsocketConsumer):
         data = json.loads(text_data)
         msg_type = data.get('type')
 
-        if msg_type == 'message':
+        if msg_type == 'ping':
+            # Browser heartbeat. The reply keeps an idle chat under Nginx's
+            # proxy_read_timeout and lets the page spot a dead connection.
+            await self.send(text_data=json.dumps({'type': 'pong'}))
+
+        elif msg_type == 'message':
             body = data.get('body', '').strip()
             if not body:
                 return
