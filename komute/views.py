@@ -1599,6 +1599,61 @@ def create_ride_booking(request, ride_id):
     })
 
 
+def _chat_status(booking):
+    """Header badge and lock state of a booking's chat page. Shared by
+    chat_view and the live booking_status event (ISSUES.md H3), so a page
+    updated over the socket matches a freshly loaded one."""
+    ride_status = booking.ride.status
+    closed_message = ''
+    if booking.status == RideBooking.STATUS_CANCELLED:
+        label, status_class = 'Cancelled', 'cancelled'
+        closed_message = 'Booking was cancelled — messaging is closed.'
+    elif booking.status == RideBooking.STATUS_REJECTED:
+        label, status_class = 'Declined', 'cancelled'
+        closed_message = 'Booking request was declined — messaging is closed.'
+    elif booking.status == RideBooking.STATUS_COMPLETED or ride_status == 'completed':
+        label, status_class = 'Completed', 'completed'
+        closed_message = 'Ride completed — messaging is closed.'
+    elif ride_status == 'cancelled':
+        label, status_class = 'Ride Cancelled', 'cancelled'
+        closed_message = 'Ride was cancelled — messaging is closed.'
+    elif booking.status == RideBooking.STATUS_CONFIRMED:
+        label, status_class = 'Confirmed', 'active'
+    elif booking.status == RideBooking.STATUS_DRAFT:
+        label, status_class = 'Negotiating', 'active'
+    else:
+        label, status_class = 'Pending', 'pending'
+    agreed_price = None
+    if booking.status in (RideBooking.STATUS_CONFIRMED, RideBooking.STATUS_COMPLETED) and booking.agreed_price_cents:
+        agreed_price = booking.agreed_price_cents // 100
+    return {
+        'agreed_price':   agreed_price,
+        'label':          label,
+        'status_class':   status_class,
+        'chat_locked':    status_class in ('cancelled', 'completed'),
+        # Negotiation requires a confirmed booking — blocked while approval is pending
+        'nego_locked':    booking.status == RideBooking.STATUS_REQUESTED,
+        'closed_message': closed_message,
+    }
+
+
+def _notify_booking_status(booking):
+    """Push a booking's new status to its open chat pages (ISSUES.md H3), so
+    they lock or unlock without a refresh. Best effort: a channel-layer
+    failure is logged, never raised, so the status change itself stands."""
+    from asgiref.sync import async_to_sync
+    from channels.layers import get_channel_layer
+    from .consumers import chat_group_name
+    try:
+        async_to_sync(get_channel_layer().group_send)(chat_group_name(booking.id), {
+            'type':   'booking_status',
+            'status': booking.status,
+            **_chat_status(booking),
+        })
+    except Exception:
+        logger.warning('Could not push status of booking %s to its chat', booking.id, exc_info=True)
+
+
 @login_required
 def cancel_booking_view(request, booking_id):
     if request.method != 'POST':
@@ -1636,6 +1691,7 @@ def cancel_booking_view(request, booking_id):
         seats_available=Least(F('seats_available') + booking.seats, ride.seats_total)
     )
     Rides.objects.filter(id=ride.id, status='full').update(status='posted')
+    _notify_booking_status(booking)
 
     threading.Thread(
         target=_send_booking_cancelled_emails,
@@ -1669,6 +1725,7 @@ def accept_booking_view(request, booking_id):
     booking.status = RideBooking.STATUS_CONFIRMED
     booking.confirmed_at = timezone.now()
     booking.save(update_fields=['status', 'confirmed_at'])
+    _notify_booking_status(booking)
 
     threading.Thread(
         target=_send_booking_confirmation_emails,
@@ -1708,6 +1765,7 @@ def reject_booking_view(request, booking_id):
         seats_available=Least(F('seats_available') + booking.seats, ride.seats_total)
     )
     Rides.objects.filter(id=ride.id, status='full').update(status='posted')
+    _notify_booking_status(booking)
 
     threading.Thread(
         target=_send_booking_rejected_email,
@@ -1747,6 +1805,14 @@ def cancel_ride_view(request, ride_id):
     ride.status = 'cancelled'
     ride.cancelled_at = timezone.now()
     ride.save(update_fields=['status', 'cancelled_at'])
+    for booking in affected_bookings:
+        booking.status = RideBooking.STATUS_CANCELLED
+        booking.ride = ride
+        _notify_booking_status(booking)
+    # Pre-request chats stay drafts, but their chat closes with the ride.
+    for booking in ride.bookings.filter(status=RideBooking.STATUS_DRAFT):
+        booking.ride = ride
+        _notify_booking_status(booking)
 
     threading.Thread(
         target=_send_ride_cancelled_emails,
@@ -1989,10 +2055,8 @@ def chat_view(request, token):
         for m in history
     ]
 
-    # Agreed price if booking confirmed or completed
-    agreed_price = None
-    if booking.status in (RideBooking.STATUS_CONFIRMED, RideBooking.STATUS_COMPLETED) and booking.agreed_price_cents:
-        agreed_price = booking.agreed_price_cents // 100
+    status = _chat_status(booking)
+    agreed_price = status['agreed_price']
 
     # Latest pending offer from the OTHER user (incoming — needs a response)
     pending_incoming_price = None
@@ -2017,30 +2081,6 @@ def chat_view(request, token):
         )
         pending_outgoing_price = pending_outgoing.price_cents // 100 if pending_outgoing else None
 
-    # Determine display status for the header badge
-    if booking.status == RideBooking.STATUS_CANCELLED:
-        ride_status_label = 'Cancelled'
-        ride_status_class = 'cancelled'
-    elif booking.status == RideBooking.STATUS_COMPLETED or booking.ride.status == 'completed':
-        ride_status_label = 'Completed'
-        ride_status_class = 'completed'
-    elif booking.ride.status == 'cancelled':
-        ride_status_label = 'Ride Cancelled'
-        ride_status_class = 'cancelled'
-    elif booking.status == RideBooking.STATUS_CONFIRMED:
-        ride_status_label = 'Confirmed'
-        ride_status_class = 'active'
-    elif booking.status == RideBooking.STATUS_DRAFT:
-        ride_status_label = 'Negotiating'
-        ride_status_class = 'active'
-    else:
-        ride_status_label = 'Pending'
-        ride_status_class = 'pending'
-
-    chat_is_locked = ride_status_class in ('cancelled', 'completed')
-    # Negotiation requires a confirmed booking — block it while approval is still pending
-    nego_locked = booking.status == RideBooking.STATUS_REQUESTED
-
     return render(request, 'chat.html', {
         'chat_token':             token,
         'booking':                booking,
@@ -2055,10 +2095,11 @@ def chat_view(request, token):
         'pending_incoming_price': pending_incoming_price,
         'pending_incoming_offer_id': pending_incoming_offer_id,
         'pending_outgoing_price': pending_outgoing_price,
-        'ride_status_label':      ride_status_label,
-        'ride_status_class':      ride_status_class,
-        'chat_is_locked':         chat_is_locked,
-        'nego_locked':            nego_locked,
+        'ride_status_label':      status['label'],
+        'ride_status_class':      status['status_class'],
+        'chat_is_locked':         status['chat_locked'],
+        'nego_locked':            status['nego_locked'],
+        'chat_closed_message':    status['closed_message'],
     })
 
 

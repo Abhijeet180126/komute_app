@@ -30,7 +30,7 @@ from django.core import mail
 from django.core.cache import cache
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.core.management import call_command
-from asgiref.sync import async_to_sync
+from asgiref.sync import async_to_sync, sync_to_async
 from channels.testing import WebsocketCommunicator
 from django.test import TestCase, TransactionTestCase, Client, override_settings
 from django.urls import reverse
@@ -1043,13 +1043,14 @@ class ChatIsolationTests(TransactionTestCase):
         self.rider_a = make_user('ci_rider_a@example.com')
         self.rider_b = make_user('ci_rider_b@example.com')
         self.ride = make_ride(self.driver)
+        # Confirmed: offers are refused while a request is pending (H3).
         self.booking_a = RideBooking.objects.create(
             ride=self.ride, passenger=self.rider_a, seats=1,
-            agreed_price_cents=2500, status=RideBooking.STATUS_REQUESTED,
+            agreed_price_cents=2500, status=RideBooking.STATUS_CONFIRMED,
         )
         self.booking_b = RideBooking.objects.create(
             ride=self.ride, passenger=self.rider_b, seats=1,
-            agreed_price_cents=2500, status=RideBooking.STATUS_REQUESTED,
+            agreed_price_cents=2500, status=RideBooking.STATUS_CONFIRMED,
         )
 
     @staticmethod
@@ -1085,6 +1086,128 @@ class ChatIsolationTests(TransactionTestCase):
                 await comm.disconnect()
 
         async_to_sync(run)()
+
+
+class ChatBookingStatusTests(TransactionTestCase):
+    """ISSUES.md H3: an open chat learns about accept / reject / cancel live,
+    and negotiation can't confirm a booking the driver hasn't accepted."""
+
+    def setUp(self):
+        self.driver = make_driver_with_vehicle('bs_driver@example.com')
+        self.rider = make_user('bs_rider@example.com')
+        self.ride = make_ride(self.driver)
+        self.booking = RideBooking.objects.create(
+            ride=self.ride, passenger=self.rider, seats=1,
+            agreed_price_cents=2500 + settings.SERVICE_FEE_CENTS,
+            status=RideBooking.STATUS_REQUESTED,
+        )
+
+    def _client(self, email):
+        c = Client()
+        c.login(username=email, password='TestPass123')
+        return c
+
+    def _status_pushed_by(self, post):
+        """Open the rider's chat, run `post` (a driver/rider action), and
+        return the event the chat receives."""
+        async def run():
+            comm = ChatIsolationTests._communicator(self.rider, self.booking)
+            connected, _ = await comm.connect()
+            self.assertTrue(connected)
+            resp = await sync_to_async(post)()
+            self.assertEqual(resp.status_code, 200)
+            event = await comm.receive_json_from(timeout=5)
+            await comm.disconnect()
+            return event
+        return async_to_sync(run)()
+
+    def test_accept_unlocks_open_chat(self):
+        driver = self._client('bs_driver@example.com')
+        event = self._status_pushed_by(
+            lambda: driver.post(reverse('accept-booking', args=[encode_id(self.booking.id)])))
+        self.assertEqual(event['type'], 'booking_status')
+        self.assertEqual(event['status'], RideBooking.STATUS_CONFIRMED)
+        self.assertEqual(event['label'], 'Confirmed')
+        self.assertFalse(event['nego_locked'])
+        self.assertFalse(event['chat_locked'])
+        self.assertEqual(event['agreed_price'], (2500 + settings.SERVICE_FEE_CENTS) // 100)
+
+    def test_reject_locks_open_chat(self):
+        driver = self._client('bs_driver@example.com')
+        event = self._status_pushed_by(
+            lambda: driver.post(reverse('reject-booking', args=[encode_id(self.booking.id)])))
+        self.assertEqual(event['status'], RideBooking.STATUS_REJECTED)
+        self.assertEqual(event['label'], 'Declined')
+        self.assertTrue(event['chat_locked'])
+        self.assertIn('declined', event['closed_message'])
+
+    def test_rider_cancel_locks_open_chat(self):
+        rider = self._client('bs_rider@example.com')
+        event = self._status_pushed_by(
+            lambda: rider.post(reverse('cancel-booking', args=[encode_id(self.booking.id)])))
+        self.assertEqual(event['status'], RideBooking.STATUS_CANCELLED)
+        self.assertTrue(event['chat_locked'])
+
+    def test_ride_cancel_locks_open_chat(self):
+        driver = self._client('bs_driver@example.com')
+        event = self._status_pushed_by(
+            lambda: driver.post(reverse('cancel-ride', args=[encode_id(self.ride.id)])))
+        self.assertEqual(event['status'], RideBooking.STATUS_CANCELLED)
+        self.assertTrue(event['chat_locked'])
+
+    def test_status_change_survives_channel_layer_failure(self):
+        with patch('channels.layers.InMemoryChannelLayer.group_send', side_effect=OSError('redis down')):
+            resp = self._client('bs_driver@example.com').post(
+                reverse('accept-booking', args=[encode_id(self.booking.id)]))
+        self.assertEqual(resp.status_code, 200)
+        self.booking.refresh_from_db()
+        self.assertEqual(self.booking.status, RideBooking.STATUS_CONFIRMED)
+
+    def test_rejected_chat_page_is_locked(self):
+        RideBooking.objects.filter(pk=self.booking.pk).update(status=RideBooking.STATUS_REJECTED)
+        resp = self._client('bs_rider@example.com').get(
+            reverse('chat', args=[make_chat_token(self.booking.id)]))
+        self.assertEqual(resp.context['ride_status_label'], 'Declined')
+        self.assertTrue(resp.context['chat_is_locked'])
+        self.assertContains(resp, 'Booking request was declined')
+
+    def test_offer_refused_while_request_pending(self):
+        async def run():
+            rider = ChatIsolationTests._communicator(self.rider, self.booking)
+            driver = ChatIsolationTests._communicator(self.driver, self.booking)
+            for comm in (rider, driver):
+                connected, _ = await comm.connect()
+                self.assertTrue(connected)
+            await rider.send_json_to({'type': 'price_offer', 'price': 5})
+            error = await rider.receive_json_from(timeout=5)
+            self.assertEqual(error['code'], 'nego_locked')
+            self.assertTrue(await driver.receive_nothing(timeout=0.5))
+            for comm in (rider, driver):
+                await comm.disconnect()
+
+        async_to_sync(run)()
+        self.assertFalse(PriceOffer.objects.filter(booking=self.booking).exists())
+
+    def test_accept_refused_while_request_pending(self):
+        offer = PriceOffer.objects.create(booking=self.booking, proposed_by=self.driver, price_cents=2000)
+        result, _ = async_to_sync(ChatConsumer().accept_price_offer)(self.rider, self.booking.id, offer.id, None)
+        self.assertEqual(result, 'nego_locked')
+        self.booking.refresh_from_db()
+        self.assertEqual(self.booking.status, RideBooking.STATUS_REQUESTED)
+
+    def test_cannot_accept_own_offer(self):
+        RideBooking.objects.filter(pk=self.booking.pk).update(status=RideBooking.STATUS_DRAFT)
+        offer = PriceOffer.objects.create(booking=self.booking, proposed_by=self.rider, price_cents=500)
+        accept = async_to_sync(ChatConsumer().accept_price_offer)
+        self.assertEqual(accept(self.rider, self.booking.id, offer.id, None)[0], 'own_offer')
+        # Matching by price alone must not pick up the rider's own offer either.
+        self.assertEqual(accept(self.rider, self.booking.id, None, 5)[0], 'offer_stale')
+        self.booking.refresh_from_db()
+        offer.refresh_from_db()
+        self.assertEqual(self.booking.status, RideBooking.STATUS_DRAFT)
+        self.assertEqual(offer.status, PriceOffer.STATUS_PENDING)
+        # The other side still can.
+        self.assertEqual(accept(self.driver, self.booking.id, offer.id, None)[0], 'ok')
 
 
 class EditRideViewTests(TestCase):
@@ -1960,17 +2083,18 @@ class DriverReverificationTests(TestCase):
 
     def test_chat_price_agreement_cannot_confirm_when_lapsed(self):
         ride = make_ride(self.driver)
+        # A pre-request chat: agreeing the price here is what confirms it.
         booking = RideBooking.objects.create(
             ride=ride, passenger=self.rider, seats=1,
-            agreed_price_cents=2500, status=RideBooking.STATUS_REQUESTED,
+            agreed_price_cents=2500, status=RideBooking.STATUS_DRAFT,
         )
         offer = PriceOffer.objects.create(booking=booking, proposed_by=self.driver, price_cents=2000)
         self._verified_days_ago(91)
-        result, _ = async_to_sync(ChatConsumer().accept_price_offer)(booking.id, offer.id, None)
+        result, _ = async_to_sync(ChatConsumer().accept_price_offer)(self.rider, booking.id, offer.id, None)
         self.assertEqual(result, 'driver_unverified')
         booking.refresh_from_db()
         offer.refresh_from_db()
-        self.assertEqual(booking.status, RideBooking.STATUS_REQUESTED)
+        self.assertEqual(booking.status, RideBooking.STATUS_DRAFT)
         self.assertEqual(offer.status, PriceOffer.STATUS_PENDING)
 
     def test_invite_send_and_accept_blocked_when_lapsed(self):

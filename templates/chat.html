@@ -91,6 +91,7 @@ body{
   transition:background .2s;position:relative;
 }
 .topbar-btn:hover{background:rgba(255,255,255,.25);}
+.topbar-btn:disabled{opacity:.4;cursor:not-allowed;}
 .topbar-btn svg{width:17px;height:17px;stroke:white;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;}
 .price-badge-indicator{
   position:absolute;top:-3px;right:-3px;
@@ -447,11 +448,11 @@ body{
     <div class="chat-header-sub">
       <svg viewBox="0 0 24 24"><circle cx="12" cy="10" r="3"/><path d="M12 2a8 8 0 0 0-8 8c0 5.25 8 12 8 12s8-6.75 8-12a8 8 0 0 0-8-8z"/></svg>
       {{ ride.origin }} → {{ ride.destination }}
-      <span class="ride-status-chip {{ ride_status_class }}">{{ ride_status_label }}</span>
+      <span class="ride-status-chip {{ ride_status_class }}" id="rideStatusChip">{{ ride_status_label }}</span>
     </div>
   </div>
   <div class="topbar-actions">
-    <button class="topbar-btn" onclick="{% if not chat_is_locked and not nego_locked %}toggleBargain(){% endif %}" id="bargainTopBtn" title="{% if nego_locked %}Price negotiation available once booking is confirmed{% else %}Price Bargain{% endif %}" {% if chat_is_locked or nego_locked %}disabled style="opacity:.4;cursor:not-allowed"{% endif %}>
+    <button class="topbar-btn" onclick="toggleBargain()" id="bargainTopBtn" title="{% if nego_locked %}Price negotiation available once booking is confirmed{% else %}Price Bargain{% endif %}" {% if chat_is_locked or nego_locked %}disabled{% endif %}>
       <svg viewBox="0 0 24 24"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
       <div class="price-badge-indicator" id="priceBadge"></div>
     </button>
@@ -545,31 +546,29 @@ body{
 </div>
 
 <!-- ════ ENDED / LOCKED BANNER ════ -->
-{% if chat_is_locked %}
-<div class="chat-ended-bar show">
+<div class="chat-ended-bar{% if chat_is_locked %} show{% endif %}" id="chatEndedBar">
   <svg viewBox="0 0 24 24"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
-  {% if ride_status_class == 'cancelled' %}Booking was cancelled — messaging is closed.{% else %}Ride completed — messaging is closed.{% endif %}
+  <span id="chatEndedText">{{ chat_closed_message }}</span>
 </div>
-{% endif %}
 
 <!-- ════ INPUT BAR ════ -->
-<div class="input-bar{% if chat_is_locked %} locked{% endif %}">
+<div class="input-bar{% if chat_is_locked %} locked{% endif %}" id="inputBar">
   <div class="input-extra-btns">
-    <button class="extra-btn price-btn" onclick="{% if not chat_is_locked and not nego_locked %}toggleBargain(){% endif %}" title="{% if nego_locked %}Available once booking is confirmed{% else %}Price negotiation{% endif %}" {% if chat_is_locked or nego_locked %}disabled{% endif %}>
+    <button class="extra-btn price-btn" id="bargainInputBtn" onclick="toggleBargain()" title="{% if nego_locked %}Available once booking is confirmed{% else %}Price negotiation{% endif %}" {% if chat_is_locked or nego_locked %}disabled{% endif %}>
       <svg viewBox="0 0 24 24"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
     </button>
-    <button class="extra-btn" title="Attachment" {% if chat_is_locked %}disabled{% endif %}>
+    <button class="extra-btn" id="attachBtn" title="Attachment" {% if chat_is_locked %}disabled{% endif %}>
       <svg viewBox="0 0 24 24"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
     </button>
   </div>
   <div class="msg-input-wrap">
     <textarea class="msg-input" id="msgInput" rows="1"
       placeholder="{% if chat_is_locked %}Messaging disabled{% else %}Message {{ other_user.full_name }}...{% endif %}"
-      onkeydown="{% if not chat_is_locked %}handleKey(event){% endif %}"
-      oninput="{% if not chat_is_locked %}autoResize(this){% endif %}"
+      onkeydown="handleKey(event)"
+      oninput="autoResize(this)"
       {% if chat_is_locked %}disabled{% endif %}></textarea>
   </div>
-  <button class="send-btn" onclick="{% if not chat_is_locked %}sendMsg(){% endif %}" {% if chat_is_locked %}disabled{% endif %}>
+  <button class="send-btn" id="sendBtn" onclick="sendMsg()" {% if chat_is_locked %}disabled{% endif %}>
     <svg viewBox="0 0 24 24"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
   </button>
 </div>
@@ -584,8 +583,9 @@ const DRIVER_PRICE   = {{ driver_price|default:0 }};
 const CHAT_TOKEN     = '{{ chat_token }}';
 const CURRENT_USER   = {{ request.user.id|default:0 }};
 const IS_DRIVER      = {{ is_driver|yesno:"true,false" }};
-const CHAT_LOCKED    = {{ chat_is_locked|yesno:"true,false" }};
-const NEGO_LOCKED    = {{ nego_locked|yesno:"true,false" }};  // booking pending — no negotiation until confirmed
+// Updated live by booking_status events (ISSUES.md H3)
+let CHAT_LOCKED      = {{ chat_is_locked|yesno:"true,false" }};
+let NEGO_LOCKED      = {{ nego_locked|yesno:"true,false" }};  // booking pending — no negotiation until confirmed
 let myOffer          = {{ driver_price|default:0 }};
 let latestPeerOffer  = {{ driver_price|default:0 }};  // tracks last offer from the other party
 let latestPeerOfferId = null;  // id of the offer latestPeerOffer refers to, sent back on accept
@@ -631,13 +631,17 @@ if (!CHAT_LOCKED) {
       // (who did nothing). Just sync UI; never re-send an accept from here,
       // since the offer is already ACCEPTED and a resend would be rejected.
       if (!priceAgreed) applyAgreedUI(data.price);
+    } else if (data.type === 'booking_status') {
+      applyBookingStatus(data);
     } else if (data.type === 'error') {
       if (data.code === 'offer_stale') {
         revertStaleOffer();
       } else if (data.code === 'no_seats') {
         revertNoSeats();
-      } else if (data.code === 'driver_unverified') {
+      } else if (data.code === 'driver_unverified' || data.code === 'own_offer') {
         revertOptimisticAccept(data.message);
+      } else if (data.code === 'nego_locked') {
+        if (priceAgreed) revertOptimisticAccept(data.message);
       } else if (data.code === 'booking_inactive' || (data.message && data.message.indexOf('no longer active') !== -1)) {
         revertAgreement();
       }
@@ -659,10 +663,68 @@ if (!CHAT_LOCKED) {
    BARGAIN PANEL
 ══════════════════════════ */
 function toggleBargain() {
-  if (NEGO_LOCKED) return;
+  if (CHAT_LOCKED || NEGO_LOCKED) return;
   bargainOpen = !bargainOpen;
   document.getElementById('bargainPanel').classList.toggle('open', bargainOpen);
   if (bargainOpen) scrollMsgs();
+}
+
+/* ══════════════════════════
+   LIVE BOOKING STATUS (ISSUES.md H3)
+   The driver accepts, rejects or cancels from another page; the server
+   pushes the new state so this page matches what a reload would show.
+══════════════════════════ */
+function addSysMsg(text) {
+  const area = document.getElementById('messagesArea');
+  const div = document.createElement('div');
+  div.className = 'sys-msg';
+  div.textContent = text;
+  area.insertBefore(div, document.getElementById('typingRow'));
+  scrollMsgs();
+}
+
+function applyBookingStatus(data) {
+  const wasNegoLocked = NEGO_LOCKED;
+  CHAT_LOCKED = data.chat_locked;
+  NEGO_LOCKED = data.nego_locked;
+
+  const chip = document.getElementById('rideStatusChip');
+  chip.className = 'ride-status-chip ' + data.status_class;
+  chip.textContent = data.label;
+
+  const priceLocked = CHAT_LOCKED || NEGO_LOCKED;
+  const topBtn = document.getElementById('bargainTopBtn');
+  const inputBtn = document.getElementById('bargainInputBtn');
+  topBtn.disabled = priceLocked;
+  inputBtn.disabled = priceLocked;
+  topBtn.title = NEGO_LOCKED ? 'Price negotiation available once booking is confirmed' : 'Price Bargain';
+  inputBtn.title = NEGO_LOCKED ? 'Available once booking is confirmed' : 'Price negotiation';
+  if (priceLocked && bargainOpen) {
+    bargainOpen = false;
+    document.getElementById('bargainPanel').classList.remove('open');
+  }
+
+  if (CHAT_LOCKED) {
+    document.getElementById('chatEndedText').textContent = data.closed_message;
+    document.getElementById('chatEndedBar').classList.add('show');
+    document.getElementById('inputBar').classList.add('locked');
+    const input = document.getElementById('msgInput');
+    input.disabled = true;
+    input.placeholder = 'Messaging disabled';
+    document.getElementById('sendBtn').disabled = true;
+    document.getElementById('attachBtn').disabled = true;
+    if (currentIncomingBubbleActions) {
+      currentIncomingBubbleActions.style.opacity = '.4';
+      currentIncomingBubbleActions.style.pointerEvents = 'none';
+    }
+    addSysMsg(`🔒 ${data.closed_message}`);
+    showToast(data.closed_message);
+    // Normal close (1000) so onclose doesn't report "connection lost".
+    if (socket) socket.close(1000);
+  } else if (wasNegoLocked && !NEGO_LOCKED) {
+    if (data.agreed_price !== null && !priceAgreed) applyAgreedUI(data.agreed_price);
+    showToast(IS_DRIVER ? 'Booking accepted.' : 'The driver accepted your booking! 🎉');
+  }
 }
 
 function adjustOffer(delta) {

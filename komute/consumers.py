@@ -4,6 +4,13 @@ from channels.db import database_sync_to_async
 from django.utils import timezone
 
 
+def chat_group_name(booking_id):
+    # One group per booking (driver + that passenger only). Keying by ride
+    # put every passenger on the ride in one room, leaking their messages
+    # and price offers to each other.
+    return f'chat_booking_{booking_id}'
+
+
 class ChatConsumer(AsyncWebsocketConsumer):
 
     async def connect(self):
@@ -27,10 +34,7 @@ class ChatConsumer(AsyncWebsocketConsumer):
         self.booking_id  = booking_id
         self.ride_id     = booking_info['ride_id']
         self.receiver_id = booking_info['receiver_id']
-        # One group per booking (driver + that passenger only). Keying by ride
-        # put every passenger on the ride in one room, leaking their messages
-        # and price offers to each other.
-        self.room_group  = f'chat_booking_{self.booking_id}'
+        self.room_group  = chat_group_name(self.booking_id)
 
         # Accept before any channel-layer work so the browser sees a proper
         # WebSocket handshake instead of an HTTP 403 that triggers onclose(1006).
@@ -46,6 +50,15 @@ class ChatConsumer(AsyncWebsocketConsumer):
 
     MAX_FRAME_BYTES = 8_192   # 8 KB raw WebSocket frame limit
     MAX_BODY_CHARS  = 2_000   # visible message character limit
+
+    ERROR_MESSAGES = {
+        'booking_inactive':  'This booking is no longer active — it may have been cancelled or rejected.',
+        'nego_locked':       'Price negotiation opens once the driver accepts the booking request.',
+        'own_offer':         'You can\'t accept your own offer — wait for the other side to respond.',
+        'offer_stale':       'That price is no longer available — the other side may have sent a new offer. Check the latest price and try again.',
+        'no_seats':          'Price agreed, but this ride no longer has an open seat to confirm your booking. Please contact the driver.',
+        'driver_unverified': 'This booking can\'t be confirmed until the driver re-verifies their identity.',
+    }
 
     async def receive(self, text_data):
         if len(text_data) > self.MAX_FRAME_BYTES:
@@ -79,9 +92,9 @@ class ChatConsumer(AsyncWebsocketConsumer):
 
         elif msg_type == 'price_offer':
             user = self.scope['user']
-            offer = await self.save_price_offer(user, self.booking_id, data.get('price'))
-            if offer is None:
-                await self.send(text_data=json.dumps({'type': 'error', 'message': 'This booking is no longer active.'}))
+            offer, error = await self.save_price_offer(user, self.booking_id, data.get('price'))
+            if error:
+                await self.send(text_data=json.dumps({'type': 'error', 'code': error, 'message': self.ERROR_MESSAGES[error]}))
                 return
             await self.channel_layer.group_send(self.room_group, {
                 'type':      'price_offer',
@@ -97,15 +110,9 @@ class ChatConsumer(AsyncWebsocketConsumer):
         elif msg_type == 'price_accepted':
             price = data.get('price')
             offer_id = data.get('offer_id')
-            result, agreed_price = await self.accept_price_offer(self.booking_id, offer_id, price)
+            result, agreed_price = await self.accept_price_offer(self.scope['user'], self.booking_id, offer_id, price)
             if result != 'ok':
-                messages_by_code = {
-                    'booking_inactive': 'This booking is no longer active — it may have been cancelled or rejected.',
-                    'offer_stale':      'That price is no longer available — the other side may have sent a new offer. Check the latest price and try again.',
-                    'no_seats':         'Price agreed, but this ride no longer has an open seat to confirm your booking. Please contact the driver.',
-                    'driver_unverified': 'This booking can\'t be confirmed until the driver re-verifies their identity.',
-                }
-                message = messages_by_code.get(result, 'Something went wrong.')
+                message = self.ERROR_MESSAGES.get(result, 'Something went wrong.')
                 await self.send(text_data=json.dumps({'type': 'error', 'code': result, 'message': message}))
                 return
             await self.channel_layer.group_send(self.room_group, {
@@ -138,6 +145,20 @@ class ChatConsumer(AsyncWebsocketConsumer):
         await self.send(text_data=json.dumps({
             'type':  'price_accepted',
             'price': event['price'],
+        }))
+
+    async def booking_status(self, event):
+        # Sent by views._notify_booking_status when the booking is accepted,
+        # rejected or cancelled outside the chat (ISSUES.md H3).
+        await self.send(text_data=json.dumps({
+            'type':           'booking_status',
+            'status':         event['status'],
+            'label':          event['label'],
+            'status_class':   event['status_class'],
+            'chat_locked':    event['chat_locked'],
+            'nego_locked':    event['nego_locked'],
+            'closed_message': event['closed_message'],
+            'agreed_price':   event['agreed_price'],
         }))
 
     # ── DB helpers ──
@@ -186,8 +207,12 @@ class ChatConsumer(AsyncWebsocketConsumer):
     def save_price_offer(self, user, booking_id, price):
         from .models import RideBooking, PriceOffer
         booking = RideBooking.objects.get(id=booking_id)
-        if booking.status not in (RideBooking.STATUS_DRAFT, RideBooking.STATUS_REQUESTED, RideBooking.STATUS_CONFIRMED):
-            return None
+        if booking.status == RideBooking.STATUS_REQUESTED:
+            # The page disables negotiation while the driver hasn't answered
+            # the request; enforce it here too, not just in the browser.
+            return None, 'nego_locked'
+        if booking.status not in (RideBooking.STATUS_DRAFT, RideBooking.STATUS_CONFIRMED):
+            return None, 'booking_inactive'
         PriceOffer.objects.filter(
             booking=booking,
             proposed_by=user,
@@ -197,17 +222,21 @@ class ChatConsumer(AsyncWebsocketConsumer):
             booking=booking,
             proposed_by=user,
             price_cents=int(round(float(price) * 100)),
-        )
+        ), None
 
     @database_sync_to_async
-    def accept_price_offer(self, booking_id, offer_id, price):
+    def accept_price_offer(self, user, booking_id, offer_id, price):
         from .models import RideBooking, PriceOffer, Rides
         from django.conf import settings
         from django.db import transaction
         from django.db.models import F
 
         booking = RideBooking.objects.select_related('ride__driver', 'passenger').filter(id=booking_id).first()
-        if booking is None or booking.status not in (RideBooking.STATUS_DRAFT, RideBooking.STATUS_REQUESTED, RideBooking.STATUS_CONFIRMED):
+        if booking is not None and booking.status == RideBooking.STATUS_REQUESTED:
+            # Agreeing a price confirms the booking, so while the request is
+            # waiting for the driver this would bypass their accept/reject.
+            return 'nego_locked', None
+        if booking is None or booking.status not in (RideBooking.STATUS_DRAFT, RideBooking.STATUS_CONFIRMED):
             return 'booking_inactive', None
 
         # Prefer the specific offer the client had on screen — matching by price
@@ -220,9 +249,15 @@ class ChatConsumer(AsyncWebsocketConsumer):
             offer = (
                 PriceOffer.objects
                 .filter(booking_id=booking_id, price_cents=price_cents, status=PriceOffer.STATUS_PENDING)
+                .exclude(proposed_by=user)
                 .order_by('-created_at')
                 .first()
             )
+        if offer is not None and offer.proposed_by_id == user.id:
+            # Only the other side can accept an offer (same rule as
+            # respond_price_offer_view); otherwise a rider could offer a
+            # price and confirm it themselves.
+            return 'own_offer', None
         if offer is None or offer.status != PriceOffer.STATUS_PENDING:
             return 'offer_stale', None
 
