@@ -28,7 +28,15 @@ Copy `.env` and fill in values. All variables are required unless a default is n
 
 | Variable | Default | Description |
 |---|---|---|
-| `REDIS_URL` | `redis://127.0.0.1:6379` | Redis connection URL; use `rediss://` for TLS |
+| `REDIS_URL` | `redis://127.0.0.1:6379` | Redis connection URL; use `rediss://` for TLS (certificate is verified) |
+
+Chat and rate limiting need a running Redis. In development, run one locally and keep the default URL:
+
+- **Docker:** `docker run -d --name komute-redis -p 127.0.0.1:6379:6379 redis:7`
+- **WSL:** `sudo apt install redis-server && sudo service redis-server start`
+- **Windows native:** install [Memurai](https://www.memurai.com/) (Developer edition), which runs as a service on port 6379
+
+Don't point `REDIS_URL` at a free hosted plan: Upstash deletes free databases after 14 days of inactivity. The test suite doesn't need Redis (`config.settings_regression` uses the in-memory channel layer).
 
 ### Application Tuning
 

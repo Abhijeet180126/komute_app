@@ -504,13 +504,26 @@ page_break()
 # ============================================================================
 add_heading("8. Step 5 — Redis Setup", level=1)
 add_para(
-    "Redis backs the Django Channels layer (WebSocket chat fan-out). Default install binds to "
+    "Redis backs the Django Channels layer (WebSocket chat fan-out) and the shared cache used for "
+    "rate limiting. Use this local redis-server, not a free hosted plan: Upstash deletes free "
+    "databases after 14 days of inactivity, which silently breaks chat. Default install binds to "
     "127.0.0.1 only, which is correct — do not expose it externally."
 )
 add_code(r"""
 sudo systemctl status redis-server
 redis-cli ping    # PONG
+
+# Confirm it only listens on localhost and protected mode is on
+grep -E '^(bind|protected-mode)' /etc/redis/redis.conf
+#   bind 127.0.0.1 -::1
+#   protected-mode yes
+sudo ss -ltnp | grep 6379     # only 127.0.0.1:6379 / [::1]:6379, never 0.0.0.0
+sudo ufw status | grep 6379   # no output: the port is not opened in UFW
 """)
+add_para(
+    "Keep REDIS_URL=redis://127.0.0.1:6379 in .env. If a managed Redis is ever used instead, it "
+    "must be a paid plan with a rediss:// (TLS) URL; Komute verifies its certificate."
+)
 add_para("Optional hardening — set a password:")
 add_code(r"""
 sudo nano /etc/redis/redis.conf

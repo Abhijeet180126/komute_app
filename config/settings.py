@@ -80,14 +80,15 @@ INSTALLED_APPS = [
 ASGI_APPLICATION = 'config.asgi.application'
 
 
+# Production uses the droplet's own redis-server on localhost (ISSUES.md H6).
+# A rediss:// URL (managed Redis over TLS) gets redis-py's default
+# certificate checking; it used to be switched off with ssl_cert_reqs=None.
 _redis_url = config('REDIS_URL', default='redis://127.0.0.1:6379')
-_use_ssl = _redis_url.startswith('rediss://')
 CHANNEL_LAYERS = {
     'default': {
         'BACKEND': 'channels_redis.core.RedisChannelLayer',
         'CONFIG': {
-            'hosts': [{'address': _redis_url, 'ssl_cert_reqs': None}
-                      if _use_ssl else _redis_url],
+            'hosts': [_redis_url],
         },
     },
 }
@@ -102,7 +103,6 @@ CACHES = {
         'BACKEND': 'django.core.cache.backends.redis.RedisCache',
         'LOCATION': _redis_url,
         'KEY_PREFIX': 'komute-cache',
-        **({'OPTIONS': {'CONNECTION_POOL_KWARGS': {'ssl_cert_reqs': None}}} if _use_ssl else {}),
     },
 }
 
