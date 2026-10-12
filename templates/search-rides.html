@@ -566,6 +566,8 @@ nav {
       <input type="hidden" name="dest_lat"   id="destLat"   value="0">
       <input type="hidden" name="dest_lng"   id="destLng"   value="0">
       <input type="hidden" name="page"       id="pageInput" value="1">
+      <!-- Browser timezone: dates and time slots are matched in it (ISSUES.md H5) -->
+      <input type="hidden" name="tz"         id="tzInput"   value="">
 
       <!-- From / To with swap -->
       <div class="search-fields">
@@ -936,6 +938,9 @@ nav {
     const picker = document.getElementById('searchDate_picker');
     picker.min = _todayStr();
     picker.max = _maxSearchDateStr();
+    try {
+      document.getElementById('tzInput').value = Intl.DateTimeFormat().resolvedOptions().timeZone || '';
+    } catch (e) {}
   })();
 
   document.querySelectorAll('.vehicle-color-dot[data-color]').forEach(el => el.style.background = el.dataset.color);

@@ -21,8 +21,9 @@ import json
 import shutil
 import tempfile
 import time
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from pathlib import Path
+from zoneinfo import ZoneInfo
 from unittest.mock import MagicMock, mock_open, patch
 
 from django.conf import settings
@@ -824,6 +825,87 @@ class SearchRidesViewTests(TestCase):
         c.login(username='search_rider@example.com', password='TestPass123')
         resp = self._search(c)
         self.assertEqual(resp.context['total_count'], 0)
+
+    # ── ISSUES.md H5 ──
+
+    def _toronto_evening_ride(self):
+        """Move the ride to 8 pm Toronto, three days out: already the next
+        day in UTC."""
+        tz = ZoneInfo('America/Toronto')
+        day = timezone.localdate(timezone=tz) + timedelta(days=3)
+        depart = datetime.combine(day, datetime.min.time().replace(hour=20), tzinfo=tz)
+        Rides.objects.filter(pk=self.ride.pk).update(depart_at=depart)
+        self.assertNotEqual(depart.astimezone(ZoneInfo('UTC')).date(), day)
+        return day
+
+    def _rider(self):
+        c = Client()
+        c.login(username='search_rider@example.com', password='TestPass123')
+        return c
+
+    def test_evening_ride_found_on_riders_local_date(self):
+        day = self._toronto_evening_ride()
+        c = self._rider()
+        resp = self._search(c, date=day.isoformat(), tz='America/Toronto')
+        self.assertEqual(resp.context['total_count'], 1)
+        resp = self._search(c, date=(day + timedelta(days=1)).isoformat(), tz='America/Toronto')
+        self.assertEqual(resp.context['total_count'], 0)
+
+    def test_time_slot_uses_riders_local_hour(self):
+        day = self._toronto_evening_ride()
+        c = self._rider()
+        resp = self._search(c, date=day.isoformat(), tz='America/Toronto', depart_time_slot='evening')
+        self.assertEqual(resp.context['total_count'], 1)
+        resp = self._search(c, date=day.isoformat(), tz='America/Toronto', depart_time_slot='morning')
+        self.assertEqual(resp.context['total_count'], 0)
+
+    def test_today_not_past_when_utc_is_already_tomorrow(self):
+        c = self._rider()
+        # 9 pm in Toronto on Oct 12 is already Oct 13 in UTC.
+        late_evening = datetime(2026, 10, 13, 1, 0, tzinfo=ZoneInfo('UTC'))
+        with patch('django.utils.timezone.now', return_value=late_evening):
+            resp = self._search(c, date='2026-10-12', tz='America/Toronto')
+            self.assertNotIn('date', resp.context['errors'])
+            resp = self._search(c, date='2026-10-12', tz='UTC')
+            self.assertEqual(resp.context['errors']['date'], 'Search date cannot be in the past.')
+
+    def test_unknown_timezone_falls_back_to_utc(self):
+        resp = self._search(self._rider(), tz='Not/AZone')
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.context['total_count'], 1)
+
+
+class RecurringRideTimezoneTests(TestCase):
+    """ISSUES.md H5: recurring rides repeat on the driver's local weekday and
+    clock time, including across a DST change."""
+
+    def test_recurring_ride_keeps_local_weekday_and_time(self):
+        driver = make_driver_with_vehicle('rr_driver@example.com')
+        tz = ZoneInfo('America/Toronto')
+        today = timezone.localdate(timezone=tz)
+        first = today + timedelta(days=(7 - today.weekday()) % 7 or 7)   # next Monday
+        depart = datetime.combine(first, datetime.min.time().replace(hour=20), tzinfo=tz)
+        end = first + timedelta(weeks=26)   # half a year always crosses a DST change
+        c = Client()
+        c.login(username='rr_driver@example.com', password='TestPass123')
+        resp = c.post(reverse('post-ride'), {
+            'origin': 'Toronto, ON', 'destination': 'Ottawa, ON',
+            'date': first.isoformat(), 'depart_time': '20:00',
+            'depart_utc': depart.astimezone(ZoneInfo('UTC')).isoformat().replace('+00:00', 'Z'),
+            'tz': 'America/Toronto',
+            'seats': '3', 'vehicle': str(driver.vehicles.first().id), 'price': '25.00',
+            'origin_lat': '43.65', 'origin_lng': '-79.38',
+            'destination_lat': '45.42', 'destination_lng': '-75.69',
+            'is_recurring': '1', 'recurring_days': '0', 'recurring_end_date': end.isoformat(),
+        })
+        self.assertEqual(resp.status_code, 302)
+        rides = list(Rides.objects.filter(driver=driver).order_by('depart_at'))
+        self.assertEqual(len(rides), 27)
+        local = [r.depart_at.astimezone(tz) for r in rides]
+        self.assertTrue(all(d.weekday() == 0 and (d.hour, d.minute) == (20, 0) for d in local))
+        self.assertEqual(local[0].date(), first)
+        offsets = {d.utcoffset() for d in local}
+        self.assertEqual(len(offsets), 2)   # both EDT and EST in the range
 
 
 class RouteDemandViewTests(TestCase):

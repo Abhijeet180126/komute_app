@@ -24,7 +24,7 @@ from django.core.validators import validate_email
 from django.core.exceptions import ValidationError
 from django.db import transaction
 from django.db.models import Avg, Count, F, Q, Sum
-from django.db.models.functions import Least
+from django.db.models.functions import ExtractHour, Least
 from django.utils import timezone
 from django.core.paginator import Paginator
 from django.views.decorators.cache import never_cache
@@ -100,6 +100,27 @@ def _local_dt(ride, dt):
         except Exception:
             pass
     return dt
+
+
+def _zone_or_utc(name):
+    """ZoneInfo for an IANA timezone name sent by the browser (the `tz` form
+    field); UTC when it's missing or not a known zone."""
+    from zoneinfo import ZoneInfo
+    if name:
+        try:
+            return ZoneInfo(name)
+        except (ValueError, KeyError):   # ZoneInfoNotFoundError is a KeyError
+            pass
+    return ZoneInfo('UTC')
+
+
+def _local_day_bounds(day, tz):
+    """[start, end) of calendar day `day` in `tz`, as aware datetimes, for
+    filtering a DateTimeField. `depart_at__date` would use the UTC date, which
+    puts a Toronto ride at 8 pm on the next day (ISSUES.md H5)."""
+    start = datetime.combine(day, datetime.min.time(), tzinfo=tz)
+    end = datetime.combine(day + timedelta(days=1), datetime.min.time(), tzinfo=tz)
+    return start, end
 
 
 def _send_booking_confirmation_emails(booking):
@@ -339,10 +360,11 @@ def _in_us_canada(lat, lng):
 _MAX_RIDE_LEAD_MONTHS = 4
 
 
-def _max_ride_date():
+def _max_ride_date(today=None):
     """Today + 4 calendar months (day clamped to the target month's length),
-    the furthest-out a ride can be posted or searched for."""
-    today = date.today()
+    the furthest-out a ride can be posted or searched for. Pass `today` to
+    count from a user's local date instead of the server's."""
+    today = today or date.today()
     m = today.month - 1 + _MAX_RIDE_LEAD_MONTHS
     y = today.year + m // 12
     m = m % 12 + 1
@@ -993,6 +1015,7 @@ def post_ride_view(request):
         price_str        = request.POST.get("price", "").strip()
         notes            = request.POST.get("notes", "").strip()
         tz_name          = request.POST.get("tz", "").strip() or None
+        driver_tz        = _zone_or_utc(tz_name)
         _prefs_raw = request.POST.get("preferences_json", "").strip()
         try:
             preferences_json = json.loads(_prefs_raw) if _prefs_raw else None
@@ -1095,6 +1118,9 @@ def post_ride_view(request):
         if depart_utc_str and "date" not in errors and "depart_time" not in errors:
             try:
                 depart_at = datetime.fromisoformat(depart_utc_str.replace('Z', '+00:00'))
+                if timezone.is_naive(depart_at):
+                    from datetime import timezone as _utc
+                    depart_at = depart_at.replace(tzinfo=_utc.utc)
                 if depart_at < timezone.now() + timedelta(minutes=30):
                     errors["depart_time"] = "Departure must be at least 30 minutes from now."
                 elif depart_at.date() > _max_ride_date():
@@ -1103,7 +1129,9 @@ def post_ride_view(request):
                 errors["depart_time"] = "Invalid departure date or time."
         elif date_str and time_str and "date" not in errors and "depart_time" not in errors:
             try:
-                depart_at = timezone.make_aware(datetime.fromisoformat(f"{date_str}T{time_str}"))
+                # No depart_utc (script didn't run): the form's date and time
+                # are the driver's local ones.
+                depart_at = timezone.make_aware(datetime.fromisoformat(f"{date_str}T{time_str}"), driver_tz)
                 if depart_at < timezone.now() + timedelta(minutes=30):
                     errors["depart_time"] = "Departure must be at least 30 minutes from now."
                 elif depart_at.date() > _max_ride_date():
@@ -1128,7 +1156,7 @@ def post_ride_view(request):
             else:
                 try:
                     recurring_end = date.fromisoformat(recurring_end_str)
-                    if depart_at and recurring_end <= depart_at.date():
+                    if depart_at and recurring_end <= depart_at.astimezone(driver_tz).date():
                         errors["recurring_end_date"] = "End date must be after the departure date."
                 except ValueError:
                     errors["recurring_end_date"] = "Invalid end date."
@@ -1191,13 +1219,17 @@ def post_ride_view(request):
                 return ride
 
             if is_recurring:
+                # Weekdays and the clock time are the driver's local ones
+                # (ISSUES.md H5): in UTC an 8 pm Toronto ride lands on the
+                # next weekday, and DST would shift it by an hour.
                 group_id = str(uuid.uuid4())
-                current = depart_at.date()
-                ride_time = depart_at.time()
+                local_depart = depart_at.astimezone(driver_tz)
+                current = local_depart.date()
+                ride_time = local_depart.time().replace(tzinfo=None)
                 first_ride = None
                 while current <= recurring_end:
                     if current.weekday() in recurring_days:
-                        dt = timezone.make_aware(datetime.combine(current, ride_time))
+                        dt = datetime.combine(current, ride_time, tzinfo=driver_tz)
                         r = _create_ride(dt, group_id)
                         if first_ride is None:
                             first_ride = r
@@ -1228,6 +1260,10 @@ def search_rides_view(request):
     search_from = request.POST.get('from', '').strip()
     search_to   = request.POST.get('to', '').strip()
     search_date = request.POST.get('date', '').strip()
+    # Dates and time slots are the rider's local ones, matching how results
+    # are displayed (the page converts depart_at to browser time).
+    rider_tz    = _zone_or_utc(request.POST.get('tz', '').strip())
+    rider_today = timezone.localdate(timezone=rider_tz)
 
     parsed_search_date = None
     if search_date:
@@ -1246,9 +1282,9 @@ def search_rides_view(request):
     errors = {}
 
     if parsed_search_date:
-        if parsed_search_date < date.today():
+        if parsed_search_date < rider_today:
             errors['date'] = 'Search date cannot be in the past.'
-        elif parsed_search_date > _max_ride_date():
+        elif parsed_search_date > _max_ride_date(rider_today):
             errors['date'] = 'You can only search up to 4 months ahead.'
 
     _TIME_SLOT_HOURS = {
@@ -1343,12 +1379,9 @@ def search_rides_view(request):
                         continue
                 filtered_ids.append(ride.id)
             qs = qs.filter(id__in=filtered_ids)
-        if search_date:
-            try:
-                from datetime import date as _date
-                qs = qs.filter(depart_at__date=_date.fromisoformat(search_date))
-            except ValueError:
-                pass
+        if parsed_search_date:
+            day_start, day_end = _local_day_bounds(parsed_search_date, rider_tz)
+            qs = qs.filter(depart_at__gte=day_start, depart_at__lt=day_end)
 
         if filter_seats:
             try:
@@ -1362,7 +1395,8 @@ def search_rides_view(request):
                 pass
         if filter_time_slot in _TIME_SLOT_HOURS:
             start_h, end_h = _TIME_SLOT_HOURS[filter_time_slot]
-            qs = qs.filter(depart_at__hour__gte=start_h, depart_at__hour__lt=end_h)
+            qs = (qs.annotate(local_hour=ExtractHour('depart_at', tzinfo=rider_tz))
+                    .filter(local_hour__gte=start_h, local_hour__lt=end_h))
         if filter_preference:
             qs = qs.filter(preferences_json__icontains=filter_preference)
 
