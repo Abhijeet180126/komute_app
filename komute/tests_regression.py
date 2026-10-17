@@ -3409,6 +3409,37 @@ class AuditFixTests(TestCase):
         self.assertEqual(resp.status_code, 400)
         booking.refresh_from_db()
         self.assertEqual(booking.status, RideBooking.STATUS_CANCELLED)
+    def test_rate_limit_ignores_client_supplied_forwarded_for(self):
+        limits = {**settings.RATE_LIMITS, 'forgot-password-ip': (2, 3600), 'forgot-password-email': (100, 3600)}
+        with override_settings(RATE_LIMITS=limits):
+            for i in range(3):
+                # A fresh fake address each time, Nginx's real one appended last.
+                Client().post(reverse('forgot-password'), {'email': 'au_rider@example.com'},
+                              HTTP_X_FORWARDED_FOR=f'10.0.0.{i}, 203.0.113.7')
+        self.assertEqual(len(mail.outbox), 2)
+
+    def test_allauth_pages_go_to_the_apps_own(self):
+        c = Client()
+        for path, name in (('/accounts/signup/', 'signup'), ('/accounts/login/', 'login'),
+                           ('/accounts/password/reset/', 'forgot-password')):
+            self.assertRedirects(c.get(path), reverse(name), fetch_redirect_response=False)
+        resp = c.post('/accounts/signup/', {'email': 'sneaky@example.com', 'password1': 'Xx1!aaaaaaaa', 'password2': 'Xx1!aaaaaaaa'})
+        self.assertEqual(resp.status_code, 302)
+        self.assertFalse(CustomUser.objects.filter(email='sneaky@example.com').exists())
+
+    def test_email_confirmation_link_still_works(self):
+        from allauth.account.models import EmailAddress, EmailConfirmationHMAC
+        address = EmailAddress.objects.create(user=self.rider, email=self.rider.email, primary=True, verified=False)
+        key = EmailConfirmationHMAC(address).key
+        c = Client()
+        url = reverse('account_confirm_email', args=[key])
+        resp = c.get(url)
+        if resp.status_code == 200:   # confirmation page with a confirm button
+            resp = c.post(url)
+        self.assertIn(resp.status_code, (301, 302))
+        self.rider.refresh_from_db()
+        self.assertTrue(self.rider.email_verified)
+
 
 class AuditChatFixTests(TransactionTestCase):
     """Socket-side fixes from the full security audit."""
@@ -3465,21 +3496,3 @@ class AuditRecurringRideTests(TestCase):
         resp = c.post(reverse('post-ride'), {**base, 'recurring_end_date': (first + timedelta(days=366)).isoformat()})
         self.assertEqual(resp.status_code, 302)
         self.assertEqual(Rides.objects.filter(driver=driver).count(), 367)
-
-    def test_rate_limit_ignores_client_supplied_forwarded_for(self):
-        limits = {**settings.RATE_LIMITS, 'forgot-password-ip': (2, 3600), 'forgot-password-email': (100, 3600)}
-        with override_settings(RATE_LIMITS=limits):
-            for i in range(3):
-                # A fresh fake address each time, Nginx's real one appended last.
-                Client().post(reverse('forgot-password'), {'email': 'au_rider@example.com'},
-                              HTTP_X_FORWARDED_FOR=f'10.0.0.{i}, 203.0.113.7')
-        self.assertEqual(len(mail.outbox), 2)
-
-    def test_allauth_pages_go_to_the_apps_own(self):
-        c = Client()
-        for path, name in (('/accounts/signup/', 'signup'), ('/accounts/login/', 'login'),
-                           ('/accounts/password/reset/', 'forgot-password')):
-            self.assertRedirects(c.get(path), reverse(name), status_code=301, fetch_redirect_response=False)
-        resp = c.post('/accounts/signup/', {'email': 'sneaky@example.com', 'password1': 'Xx1!aaaaaaaa', 'password2': 'Xx1!aaaaaaaa'})
-        self.assertEqual(resp.status_code, 301)
-        self.assertFalse(CustomUser.objects.filter(email='sneaky@example.com').exists())
