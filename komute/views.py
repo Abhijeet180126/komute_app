@@ -1633,10 +1633,6 @@ def create_ride_booking(request, ride_id):
     service_fee_display   = f"${settings.SERVICE_FEE_CENTS / 100:.2f}"
     initial_total_display = f"${(ride.price_cents + settings.SERVICE_FEE_CENTS) / 100:.2f}"
 
-    user_name = (request.user.full_name or '').title()
-    user_parts = user_name.split()
-    user_initials = ''.join(p[0].upper() for p in user_parts[:2]) if user_parts else '?'
-
     v = ride.vehicle
     ride_ctx = {
         'id':                  encode_id(ride.id),
@@ -1681,7 +1677,6 @@ def create_ride_booking(request, ride_id):
         'service_fee_cents':       settings.SERVICE_FEE_CENTS,
         'service_fee_display':     service_fee_display,
         'initial_total_display':   initial_total_display,
-        'user_initials':           user_initials,
         'existing_chat_token':     existing_chat_token,
         'existing_booking_status': existing_booking_status,
     })
