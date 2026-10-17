@@ -735,7 +735,9 @@ nav {
   /* ── TOAST ── */
   function showToast(msg) {
     const toast = document.getElementById('toast');
-    toast.innerHTML = `<svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg> ${msg}`;
+    // The message can hold a rider's name, so it goes in as text, not HTML.
+    toast.innerHTML = '<svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg> ';
+    toast.append(msg);
     toast.classList.add('show');
     clearTimeout(toast._timer);
     toast._timer = setTimeout(() => toast.classList.remove('show'), 3200);
