@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Confirm account deactivation – Komüte</title>
+<title>Confirm account deletion – Komüte</title>
 </head>
 <body style="margin:0;padding:0;background-color:#E9F7EE;font-family:Arial,Helvetica,sans-serif;">
 
@@ -46,7 +46,7 @@
 
                   <!-- Heading -->
                   <p style="margin:0 0 8px;font-size:22px;font-weight:700;color:#0D7810;font-family:Arial,Helvetica,sans-serif;">
-                    Confirm account deactivation
+                    Confirm account deletion
                   </p>
 
                   <!-- Greeting -->
@@ -56,10 +56,10 @@
 
                   <!-- Body text -->
                   <p style="margin:0 0 12px;font-size:15px;color:#3d5c43;line-height:1.7;font-family:Arial,Helvetica,sans-serif;">
-                    You requested to deactivate your <strong style="color:#0D7810;">Komüte</strong> account.
+                    We received a request to delete your <strong style="color:#0D7810;">Komüte</strong> account.
                   </p>
                   <p style="margin:0 0 28px;font-size:15px;color:#3d5c43;line-height:1.7;font-family:Arial,Helvetica,sans-serif;">
-                    Click the button below to confirm. Once confirmed, you'll be signed out immediately and won't be able to log back in until support reactivates your account.
+                    Click the button below to confirm. Your account is closed straight away and permanently deleted after {{ grace_days }} days. Contact support within that time if you change your mind. Some records (e.g. completed ride history) are kept for the periods in our privacy policy.
                   </p>
 
                   <!-- CTA Button -->
@@ -68,7 +68,7 @@
                       <td style="border-radius:10px;background:#dc2626;">
                         <a href="{{ confirm_url }}"
                            style="display:inline-block;padding:14px 36px;font-family:Arial,Helvetica,sans-serif;font-size:15px;font-weight:700;color:#ffffff;text-decoration:none;border-radius:10px;letter-spacing:0.3px;">
-                          Confirm Deactivation
+                          Delete My Account
                         </a>
                       </td>
                     </tr>
@@ -76,7 +76,7 @@
 
                   <!-- Expiry note -->
                   <p style="margin:0 0 24px;font-size:13px;color:#5a7060;line-height:1.6;font-family:Arial,Helvetica,sans-serif;">
-                    This link will expire in <strong>24 hours</strong>. If it expires, go to your profile and request deactivation again.
+                    This link will expire in <strong>24 hours</strong>. If it expires, request a new one from your profile or at <a href="{{ delete_account_url }}" style="color:#0C63B4;">{{ delete_account_url }}</a>.
                   </p>
 
                   <!-- Divider -->
@@ -103,7 +103,7 @@
               <tr>
                 <td style="background:#f6fbf7;border-top:1.5px solid #edf7ee;padding:20px 40px;border-radius:0 0 20px 20px;">
                   <p style="margin:0;font-size:12px;color:#5a7060;line-height:1.6;font-family:Arial,Helvetica,sans-serif;">
-                    <strong>Didn't request this?</strong> Ignore this email — your account will stay active.
+                    <strong>Didn't request this?</strong> Ignore this email — nothing happens unless you click the button, and your account stays open.
                   </p>
                 </td>
               </tr>

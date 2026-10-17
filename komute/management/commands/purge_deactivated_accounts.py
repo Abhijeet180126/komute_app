@@ -18,7 +18,7 @@ class Command(BaseCommand):
     help = (
         'Fulfil confirmed account-deletion requests per privacy policy Section 8: '
         'ACCOUNT_DELETION_GRACE_DAYS after a user confirms deactivation (see '
-        'confirm_deactivate_account_view), delete their ride search logs, '
+        'confirm_delete_account_view), delete their ride search logs, '
         'verification records, chat messages and vehicles, and anonymize their '
         'profile. Rides/bookings/reviews involving other users are kept intact '
         '(the other party has a legitimate interest in that record — financial, '

@@ -1743,7 +1743,7 @@ body.role-rider .driver-only { display: none; }
   </div>
 
   <!-- ── DANGER ZONE ── -->
-  <div class="section-card danger-zone-card">
+  <div class="section-card danger-zone-card" id="delete-account">
     <div class="section-header">
       <div class="section-icon">
         <svg viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
@@ -1756,10 +1756,10 @@ body.role-rider .driver-only { display: none; }
     <div class="section-body">
       <div class="danger-zone-row">
         <div>
-          <h4>Deactivate Account</h4>
-          <p>We'll email a confirmation link first — nothing happens until you click it. Once confirmed, you'll be signed out immediately and won't be able to log back in until support reactivates your account. If your account isn't reactivated, your personal data — profile info, ride history, search logs, verification records, and chat messages — will be deleted or anonymized within 45 days, per our <a href="{% url 'privacy-policy' %}" target="_blank" rel="noopener">Privacy Policy</a>.</p>
+          <h4>Delete Account</h4>
+          <p>We'll email a confirmation link first — nothing happens until you click it. Your account is closed now and permanently deleted after {{ account_deletion_grace_days }} days. Contact support within that time if you change your mind. Some records (e.g. completed ride history) are kept for the periods in our <a href="{% url 'privacy-policy' %}" target="_blank" rel="noopener">Privacy Policy</a>.</p>
         </div>
-        <button type="button" class="btn-danger" onclick="openDeactivateModal()">Deactivate Account</button>
+        <button type="button" class="btn-danger" onclick="openDeleteAccountModal()">Delete Account</button>
       </div>
     </div>
   </div>
@@ -2532,19 +2532,19 @@ body.role-rider .driver-only { display: none; }
     .catch(() => alert('Network error — please try again.'));
   }
 
-  /* ── DEACTIVATE ACCOUNT MODAL ── */
-  function openDeactivateModal() {
-    document.getElementById('deactivateModal').classList.add('show');
+  /* ── DELETE ACCOUNT MODAL ── */
+  function openDeleteAccountModal() {
+    document.getElementById('deleteAccountModal').classList.add('show');
   }
-  function closeDeactivateModal() {
-    document.getElementById('deactivateModal').classList.remove('show');
+  function closeDeleteAccountModal() {
+    document.getElementById('deleteAccountModal').classList.remove('show');
   }
-  function submitDeactivateAccount() {
-    const btn = document.getElementById('deactivateConfirmBtn');
+  function submitDeleteAccount() {
+    const btn = document.getElementById('deleteAccountConfirmBtn');
     btn.disabled = true;
     btn.textContent = 'Sending…';
 
-    fetch("{% url 'request-deactivate-account' %}", {
+    fetch("{% url 'request-delete-account' %}", {
       method:  'POST',
       headers: { 'X-CSRFToken': getCsrfToken() },
     })
@@ -2555,7 +2555,7 @@ body.role-rider .driver-only { display: none; }
       if (data.error) {
         alert(data.error);
       } else {
-        closeDeactivateModal();
+        closeDeleteAccountModal();
         alert(data.message);
       }
     })
@@ -3089,16 +3089,16 @@ body.role-rider .driver-only { display: none; }
   </div>
 </div>
 <!-- ══════════════════════════════════
-     MODAL: Deactivate Account
+     MODAL: Delete Account
      ══════════════════════════════════ -->
-<div class="modal-backdrop" id="deactivateModal" onclick="if(event.target===this) closeDeactivateModal()">
+<div class="modal-backdrop" id="deleteAccountModal" onclick="if(event.target===this) closeDeleteAccountModal()">
   <div class="modal">
-    <h3>Deactivate Account</h3>
-    <p class="modal-sub">We'll send a confirmation link to <strong>{{ email }}</strong>. Nothing happens until you click it — once you do, you'll be signed out and unable to log back in until support reactivates your account. Unless your account is reactivated, your personal data will be deleted or anonymized within 45 days of confirmation, in accordance with our <a href="{% url 'privacy-policy' %}" target="_blank" rel="noopener">Privacy Policy</a>.</p>
+    <h3>Delete Account</h3>
+    <p class="modal-sub">We'll send a confirmation link to <strong>{{ email }}</strong>. Nothing happens until you click it. Once you do, your account is closed and you're signed out. It is permanently deleted after {{ account_deletion_grace_days }} days. Contact support within that time if you change your mind. Some records (e.g. completed ride history) are kept for the periods in our <a href="{% url 'privacy-policy' %}" target="_blank" rel="noopener">Privacy Policy</a>.</p>
 
     <div class="modal-actions">
-      <button class="btn-modal btn-modal-secondary" onclick="closeDeactivateModal()">Cancel</button>
-      <button class="btn-modal" id="deactivateConfirmBtn" style="background:#dc2626;color:#fff;box-shadow:0 4px 14px rgba(220,38,38,0.25);" onclick="submitDeactivateAccount()">Send Confirmation Link</button>
+      <button class="btn-modal btn-modal-secondary" onclick="closeDeleteAccountModal()">Cancel</button>
+      <button class="btn-modal" id="deleteAccountConfirmBtn" style="background:#dc2626;color:#fff;box-shadow:0 4px 14px rgba(220,38,38,0.25);" onclick="submitDeleteAccount()">Send Confirmation Link</button>
     </div>
   </div>
 </div>

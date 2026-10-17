@@ -1,0 +1,21 @@
+Hello from Komüte!
+
+Hi {{ user.full_name }},
+
+We received a request to delete your Komüte account.
+
+To confirm, click the link below:
+
+{{ confirm_url }}
+
+This link expires in 24 hours. Nothing happens until you click it.
+
+Once you confirm, your account is closed and you're signed out straight away. It is permanently deleted after {{ grace_days }} days. Contact support within that time if you change your mind. Some records (e.g. completed ride history) are kept for the periods in our privacy policy.
+
+If the link expires, request a new one from your profile or at {{ delete_account_url }}
+
+If you didn't ask for this, ignore this email. Your account stays open.
+
+Thank you,
+The Komüte Team
+komute.org

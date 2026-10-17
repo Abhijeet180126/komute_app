@@ -993,6 +993,7 @@ def profile_view(request):
         # Was verified, and that verification has run out.
         "reverify_expired": not verification_current and reverify_due_at is not None
                             and timezone.now() >= reverify_due_at,
+        "account_deletion_grace_days": settings.ACCOUNT_DELETION_GRACE_DAYS,
         # Users this user has blocked, each with an Unblock button (ISSUES.md A1).
         "blocked_users": [
             {
@@ -3437,7 +3438,10 @@ class CustomConfirmEmailView(AllauthConfirmEmailView):
 
 
 # ──────────────────────────────────────────────────────────────────
-# ACCOUNT DEACTIVATION
+# ACCOUNT DELETION (ISSUES.md A2)
+# The account closes (is_active=False, deactivated_at set) when the emailed
+# link is clicked; purge_deactivated_accounts deletes or anonymizes it
+# ACCOUNT_DELETION_GRACE_DAYS later.
 # ──────────────────────────────────────────────────────────────────
 
 _DEACTIVATE_SALT = 'komute-deactivate-v1'
@@ -3476,50 +3480,108 @@ def _decode_deactivate_token(token):
     return user.id
 
 
-@login_required
-@require_POST
-def request_deactivate_account_view(request):
-    user = request.user
+def _account_deletion_message():
+    days = settings.ACCOUNT_DELETION_GRACE_DAYS
+    return (
+        f'Your account is closed now and permanently deleted after {days} days. '
+        f'Contact support within that time if you change your mind. Some records '
+        f'(e.g. completed ride history) are kept for the periods in our privacy policy.'
+    )
+
+
+def _send_delete_account_email(request, user):
+    """Email `user` the signed link that closes their account. Raises if the
+    email can't be sent."""
     token = _make_deactivate_token(user)
     confirm_url = request.build_absolute_uri(
-        reverse('confirm-deactivate-account', args=[token])
+        reverse('confirm-delete-account', args=[token])
     )
-    ctx = {'user': user, 'confirm_url': confirm_url}
+    ctx = {
+        'user': user,
+        'confirm_url': confirm_url,
+        'grace_days': settings.ACCOUNT_DELETION_GRACE_DAYS,
+        'delete_account_url': request.build_absolute_uri(reverse('delete-account')),
+    }
+    text_body = render_to_string('account/email/delete_account_confirmation.txt', ctx)
+    html_body = render_to_string('account/email/delete_account_confirmation.html', ctx)
+    msg = EmailMultiAlternatives(
+        subject='[Komüte] Confirm account deletion',
+        body=text_body,
+        from_email=settings.DEFAULT_FROM_EMAIL,
+        to=[user.email],
+        cc=[settings.ADMIN_EMAIL],
+        reply_to=[settings.REPLY_TO_EMAIL_ACCOUNT_DEACTIVATION],
+    )
+    msg.attach_alternative(html_body, 'text/html')
+    msg.send()
 
+
+@login_required
+@require_POST
+def request_delete_account_view(request):
+    user = request.user
     try:
-        text_body = render_to_string('account/email/deactivate_account_confirmation.txt', ctx)
-        html_body = render_to_string('account/email/deactivate_account_confirmation.html', ctx)
-        msg = EmailMultiAlternatives(
-            subject='[Komüte] Confirm account deactivation',
-            body=text_body,
-            from_email=settings.DEFAULT_FROM_EMAIL,
-            to=[user.email],
-            cc=[settings.ADMIN_EMAIL],
-            reply_to=[settings.REPLY_TO_EMAIL_ACCOUNT_DEACTIVATION],
-        )
-        msg.attach_alternative(html_body, 'text/html')
-        msg.send()
+        _send_delete_account_email(request, user)
     except Exception:
-        logger.exception("request_deactivate_account_view failed for user %s", user.id)
+        logger.exception("request_delete_account_view failed for user %s", user.id)
         return JsonResponse({'error': 'Could not send confirmation email. Please try again later.'}, status=400)
 
-    return JsonResponse({'message': f'A confirmation link has been sent to {user.email}. Click it to deactivate your account.'})
+    return JsonResponse({'message': f'A confirmation link has been sent to {user.email}. Click it to delete your account.'})
 
 
-def confirm_deactivate_account_view(request, token):
+_DELETE_ACCOUNT_SENT_MESSAGE = (
+    "If an account exists for that email, we've sent it a link to confirm the deletion. "
+    "Nothing happens until the link is clicked."
+)
+
+
+def delete_account_request_view(request):
+    """Public page for asking to delete an account without signing in or
+    using the app (Google Play's account deletion URL, ISSUES.md A2). Sends
+    the same confirmation link as the profile page."""
+    if request.method == 'POST':
+        email = request.POST.get('email', '').strip().lower()
+
+        # Same shape as forgot_password_view: throttled per IP and per
+        # email before the lookup, and one reply whether or not the account
+        # exists, so the form can't be used to find accounts.
+        blocked = _rate_limited(request, 'delete-account-ip')
+        if email:
+            blocked = _rate_limited(request, 'delete-account-email', extra_key=email) or blocked
+
+        user = None
+        if email and not blocked:
+            user = User.objects.filter(email__iexact=email, is_active=True).first()
+        if user:
+            try:
+                _send_delete_account_email(request, user)
+            except Exception:
+                logger.exception("delete_account_request_view failed for user %s", user.id)
+
+        messages.success(request, _DELETE_ACCOUNT_SENT_MESSAGE)
+        return redirect('delete-account')
+
+    initial_email = request.user.email if request.user.is_authenticated else ''
+    return render(request, 'delete-account.html', {
+        'initial_email': initial_email,
+        'grace_days': settings.ACCOUNT_DELETION_GRACE_DAYS,
+    })
+
+
+def confirm_delete_account_view(request, token):
     try:
         user_id = _decode_deactivate_token(token)
     except signing.SignatureExpired:
-        messages.error(request, 'This deactivation link has expired. Please request a new one from your profile.')
-        return redirect('login')
+        messages.error(request, 'This deletion link has expired. Please request a new one.')
+        return redirect('delete-account')
     except signing.BadSignature:
-        messages.error(request, 'Invalid deactivation link.')
-        return redirect('login')
+        messages.error(request, 'Invalid account deletion link.')
+        return redirect('delete-account')
 
     user = get_object_or_404(User, id=user_id)
 
     if not user.is_active:
-        messages.info(request, 'This account has already been deactivated.')
+        messages.info(request, 'This account is already closed and scheduled for deletion.')
         return redirect('login')
 
     user.is_active = False
@@ -3529,7 +3591,7 @@ def confirm_deactivate_account_view(request, token):
     if request.user.is_authenticated and request.user.id == user.id:
         auth_logout(request)
 
-    messages.success(request, 'Your account has been deactivated. Contact support if you want it reactivated.')
+    messages.success(request, _account_deletion_message())
     return redirect('login')
 
 
@@ -3645,12 +3707,12 @@ def reset_password_view(request, token):
     if not user.is_active:
         # Login (ModelBackend) refuses any is_active=False account regardless
         # of password, so letting the form "succeed" here would silently set
-        # a password the user could never log in with. Deactivation is a
-        # deliberate, support-gated action (see deactivate_account_view) --
-        # a password reset alone shouldn't undo it.
+        # a password the user could never log in with. A closed account is
+        # reopened only by support (see confirm_delete_account_view) -- a
+        # password reset alone shouldn't undo it.
         messages.error(
             request,
-            'This account has been deactivated. Contact support to have it reactivated before resetting your password.'
+            'This account is closed and scheduled for deletion. Contact support if you want it reopened.'
         )
         return redirect('forgot-password')
 

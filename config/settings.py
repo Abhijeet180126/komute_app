@@ -316,6 +316,11 @@ RATE_LIMITS = {
                                config('RATE_LIMIT_SEND_INVITE_DAILY_WINDOW',  default=86400, cast=int)),
     'verify-driver':         (config('RATE_LIMIT_VERIFY_DRIVER_MAX',         default=5,   cast=int),
                                config('RATE_LIMIT_VERIFY_DRIVER_WINDOW',      default=3600, cast=int)),
+    # Public account deletion page (ISSUES.md A2), same limits as forgot-password.
+    'delete-account-ip':     (config('RATE_LIMIT_DELETE_ACCOUNT_IP_MAX',     default=10,  cast=int),
+                               config('RATE_LIMIT_DELETE_ACCOUNT_IP_WINDOW',  default=3600, cast=int)),
+    'delete-account-email':  (config('RATE_LIMIT_DELETE_ACCOUNT_EMAIL_MAX',  default=3,   cast=int),
+                               config('RATE_LIMIT_DELETE_ACCOUNT_EMAIL_WINDOW', default=3600, cast=int)),
     'report-user':           (config('RATE_LIMIT_REPORT_USER_MAX',           default=10,  cast=int),
                                config('RATE_LIMIT_REPORT_USER_WINDOW',        default=3600, cast=int)),
 }

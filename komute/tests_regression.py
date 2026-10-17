@@ -133,28 +133,38 @@ class ProfileAndAccountMgmtTests(TestCase):
         self.assertEqual(resp.status_code, 400)
 
 
-class DeactivateAccountFlowTests(TestCase):
+class DeleteAccountFlowTests(TestCase):
+    """Account deletion (ISSUES.md A2): requested from the profile or the
+    public /delete-account/ page, confirmed through the emailed link."""
+
     def setUp(self):
+        cache.clear()   # rate-limit buckets
         self.user = make_user('deact@example.com')
         self.client.login(username='deact@example.com', password='TestPass123')
 
-    def test_request_then_confirm_deactivation(self):
-        resp = self.client.post(reverse('request-deactivate-account'))
+    @staticmethod
+    def _token_from(email):
+        confirm_line = [l for l in email.body.splitlines() if l.startswith('http') and '/confirm/' in l][0]
+        return confirm_line.rstrip('/').split('/')[-1]
+
+    def test_request_then_confirm_deletion(self):
+        resp = self.client.post(reverse('request-delete-account'))
         self.assertEqual(resp.status_code, 200)
-        self.assertIn('confirmation link', json.loads(resp.content)['message'])
+        self.assertIn('delete your account', json.loads(resp.content)['message'])
         self.assertEqual(len(mail.outbox), 1)
-        self.assertIn(self.user.email, mail.outbox[0].to)
-        self.assertIn('confirm_url', mail.outbox[0].body) if False else None
+        email = mail.outbox[0]
+        self.assertIn(self.user.email, email.to)
+        self.assertEqual(email.subject, '[Komüte] Confirm account deletion')
+        self.assertIn(f'permanently deleted after {settings.ACCOUNT_DELETION_GRACE_DAYS} days', email.body)
+        self.assertNotIn('deactivat', email.body.lower())
+        self.assertNotIn('deactivat', email.alternatives[0][0].lower())
 
-        # Extract the token from the emailed confirm_url
-        body = mail.outbox[0].body
-        confirm_line = [l for l in body.splitlines() if l.startswith('http')][0]
-        token = confirm_line.rstrip('/').split('/')[-1]
+        token = self._token_from(email)
+        self.assertTrue(CustomUser.objects.get(pk=self.user.pk).is_active)  # still active pre-confirm
 
-        self.assertFalse(CustomUser.objects.get(pk=self.user.pk).is_active is False)  # still active pre-confirm
-
-        resp = self.client.get(reverse('confirm-deactivate-account', args=[token]))
+        resp = self.client.get(reverse('confirm-delete-account', args=[token]), follow=True)
         self.assertRedirects(resp, reverse('login'))
+        self.assertContains(resp, 'Your account is closed now and permanently deleted after')
 
         self.user.refresh_from_db()
         self.assertFalse(self.user.is_active)
@@ -163,6 +173,13 @@ class DeactivateAccountFlowTests(TestCase):
         # Session should be logged out
         resp = self.client.get(reverse('profile'))
         self.assertNotEqual(resp.status_code, 200)  # redirected to login (302)
+
+    def test_old_deactivate_link_path_still_confirms(self):
+        from komute.views import _make_deactivate_token
+        resp = self.client.get(f'/deactivate/{_make_deactivate_token(self.user)}/')
+        self.assertRedirects(resp, reverse('login'))
+        self.user.refresh_from_db()
+        self.assertFalse(self.user.is_active)
 
     def test_deactivated_user_cannot_login(self):
         self.user.is_active = False
@@ -173,10 +190,8 @@ class DeactivateAccountFlowTests(TestCase):
         self.assertFalse(resp.wsgi_request.user.is_authenticated)
 
     def test_confirm_with_bad_token_errors_gracefully(self):
-        resp = self.client.get(reverse('confirm-deactivate-account', args=['not-a-real-token']))
-        # fetch_redirect_response=False: this client is still logged in as
-        # self.user, so /login/ itself 302s onward to /profile/.
-        self.assertRedirects(resp, reverse('login'), fetch_redirect_response=False)
+        resp = self.client.get(reverse('confirm-delete-account', args=['not-a-real-token']))
+        self.assertRedirects(resp, reverse('delete-account'))
         self.user.refresh_from_db()
         self.assertTrue(self.user.is_active)  # untouched
 
@@ -186,10 +201,53 @@ class DeactivateAccountFlowTests(TestCase):
         self.user.save()
         from komute.views import _make_deactivate_token
         token = _make_deactivate_token(self.user)
-        resp = self.client.get(reverse('confirm-deactivate-account', args=[token]))
+        resp = self.client.get(reverse('confirm-delete-account', args=[token]))
         self.assertRedirects(resp, reverse('login'))
         self.user.refresh_from_db()
         self.assertFalse(self.user.is_active)
+
+    def test_profile_says_delete_not_deactivate(self):
+        resp = self.client.get(reverse('profile'))
+        self.assertContains(resp, 'Delete Account')
+        self.assertContains(resp, 'id="delete-account"')
+        self.assertNotContains(resp, 'Deactivate')
+
+    # ── Public page ──
+
+    def test_public_page_needs_no_login(self):
+        resp = Client().get(reverse('delete-account'))
+        self.assertEqual(resp.status_code, 200)
+        self.assertContains(resp, 'Delete your account')
+
+    def test_public_page_emails_the_same_confirmation_link(self):
+        c = Client()
+        resp = c.post(reverse('delete-account'), {'email': 'DEACT@example.com'})
+        self.assertRedirects(resp, reverse('delete-account'))
+        self.assertEqual(len(mail.outbox), 1)
+        self.assertEqual(mail.outbox[0].to, [self.user.email])
+        resp = c.get(reverse('confirm-delete-account', args=[self._token_from(mail.outbox[0])]))
+        self.assertRedirects(resp, reverse('login'))
+        self.user.refresh_from_db()
+        self.assertFalse(self.user.is_active)
+
+    def test_public_page_same_reply_for_unknown_or_closed_account(self):
+        closed = make_user('closed@example.com', is_active=False, deactivated_at=timezone.now())
+        replies = []
+        for email in ('deact@example.com', 'nobody@example.com', closed.email):
+            resp = Client().post(reverse('delete-account'), {'email': email}, follow=True)
+            replies.append([str(m) for m in resp.context['messages']])
+        self.assertEqual(replies[0], replies[1])
+        self.assertEqual(replies[0], replies[2])
+        self.assertEqual(len(mail.outbox), 1)   # only the open account got one
+
+    def test_public_page_rate_limited(self):
+        for _ in range(4):
+            Client().post(reverse('delete-account'), {'email': 'deact@example.com'})
+        self.assertEqual(len(mail.outbox), settings.RATE_LIMITS['delete-account-email'][0])
+
+    def test_signed_in_user_sees_their_email_filled_in(self):
+        resp = self.client.get(reverse('delete-account'))
+        self.assertContains(resp, 'value="deact@example.com"')
 
 
 class PasswordResetFlowTests(TestCase):

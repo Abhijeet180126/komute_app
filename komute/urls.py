@@ -13,7 +13,7 @@ from .views import (
     leave_review_view, submit_review_view,
     route_demand_view,
     send_invite_view, invite_detail_view, accept_invite_view, decline_invite_view,
-    request_deactivate_account_view, confirm_deactivate_account_view,
+    request_delete_account_view, delete_account_request_view, confirm_delete_account_view,
     forgot_password_view, reset_password_view,
     private_media_view, upload_too_large_view,
     report_user_view, block_user_view, unblock_user_view,
@@ -48,8 +48,12 @@ urlpatterns = [
     path('negotiations/respond/<str:offer_id>/', respond_price_offer_view, name='respond-price-offer'),
     path('privacy-policy/', privacy_policy_view, name='privacy-policy'),
     path('profile/change-email/', change_email_view, name='change-email'),
-    path('profile/deactivate/', request_deactivate_account_view, name='request-deactivate-account'),
-    path('deactivate/<str:token>/', confirm_deactivate_account_view, name='confirm-deactivate-account'),
+    path('profile/delete-account/', request_delete_account_view, name='request-delete-account'),
+    # Public: Google Play's account deletion URL (ISSUES.md A2).
+    path('delete-account/', delete_account_request_view, name='delete-account'),
+    path('delete-account/confirm/<str:token>/', confirm_delete_account_view, name='confirm-delete-account'),
+    # Links emailed before A2 used this path; they expire after 24 hours.
+    path('deactivate/<str:token>/', confirm_delete_account_view),
     path('contact-us/', contact_view, name='contact-us'),
     path('terms-condition/', terms_view, name='terms-condition'),
     path('community-guidelines/', communityguide_view, name='community-guidelines'),

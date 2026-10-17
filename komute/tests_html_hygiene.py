@@ -32,6 +32,7 @@ from django.urls import reverse
 PUBLIC_PAGE_NAMES = [
     'home', 'login', 'signup', 'about', 'how-it-works',
     'privacy-policy', 'contact-us', 'terms-condition', 'community-guidelines',
+    'delete-account',
 ]
 
 # (page_name, href) pairs where href="#" is intentional (e.g. a JS-driven
