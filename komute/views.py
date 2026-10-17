@@ -40,7 +40,6 @@ from django.utils.crypto import salted_hmac, constant_time_compare
 from django.utils.http import url_has_allowed_host_and_scheme
 from django.template.loader import render_to_string
 from django.urls import reverse
-from django.contrib.auth import logout as auth_logout
 
 from .models import Rides, RideStop, Vehicle, RideBooking, PriceOffer, Message, RideSearch, VerificationLog, Review, RideInvite, UserBlock, UserReport
 from .hashid_utils import encode_id, decode_id
@@ -292,7 +291,7 @@ def _send_booking_rejected_email(booking):
         }
         html = render_to_string('account/email/booking_rejected_rider.html', ctx)
         msg  = EmailMultiAlternatives(
-            subject=f"Your booking request was not accepted",
+            subject="Your booking request was not accepted",
             body=f"Hi {ctx['rider_name']}, unfortunately the driver could not accommodate your booking request. Ref: {booking_ref}",
             from_email=settings.DEFAULT_FROM_EMAIL,
             to=[rider.email],
@@ -2271,7 +2270,8 @@ def contact_view(request):
             reply_to=[formataddr((name, email))],
         )
         msg.send(fail_silently=False)
-    except Exception as exc:
+    except Exception:
+        logger.exception('contact_view: could not send the contact email')
         return JsonResponse({'error': 'Could not send message. Please try again later.'}, status=500)
 
     return JsonResponse({'success': True})
@@ -2388,8 +2388,12 @@ def edit_ride_view(request, ride_id):
         depart_utc_str = request.POST.get('depart_utc', '').strip()
         if depart_utc_str and 'date' not in errors and 'depart_time' not in errors:
             try:
-                from datetime import timezone as _utc
                 depart_at = datetime.fromisoformat(depart_utc_str.replace('Z', '+00:00'))
+                # Same as post_ride_view: a value without an offset is UTC.
+                # Comparing it naive with timezone.now() raised a 500.
+                if timezone.is_naive(depart_at):
+                    from datetime import timezone as _utc
+                    depart_at = depart_at.replace(tzinfo=_utc.utc)
                 if depart_at < timezone.now() + timedelta(minutes=30):
                     errors['depart_time'] = 'Departure must be at least 30 minutes from now.'
                 elif depart_at.date() > _max_ride_date():
@@ -3459,7 +3463,7 @@ class CustomConfirmEmailView(AllauthConfirmEmailView):
         # which triggers signals.py to update user.email and user.username.
         super().post(*args, **kwargs)
         # Log out so the session reflects the new credentials.
-        auth_logout(self.request)
+        logout(self.request)
         messages.success(self.request, 'Email confirmed! Please sign in with your new email address.')
         return redirect('login')
 
@@ -3616,7 +3620,7 @@ def confirm_delete_account_view(request, token):
     user.save(update_fields=['is_active', 'deactivated_at'])
 
     if request.user.is_authenticated and request.user.id == user.id:
-        auth_logout(request)
+        logout(request)
 
     messages.success(request, _account_deletion_message())
     return redirect('login')
@@ -3792,7 +3796,6 @@ def ride_receipt_pdf_view(request, ride_id):
 
     # ── build context (same logic as ride_summary_view) ──────────
     origin_city = ride.origin.split(',')[0].strip()
-    dest_city   = ride.destination.split(',')[0].strip()
     distance_km = round(_haversine_km(ride.origin_lat, ride.origin_lng, ride.dest_lat, ride.dest_lng))
 
     duration = ''
@@ -3812,7 +3815,6 @@ def ride_receipt_pdf_view(request, ride_id):
     enriched_bookings = []
     for b in active_bookings:
         name  = _display_name(b.passenger)
-        parts = name.split()
         pickup_name = b.pickup_stop.location.split(',')[0].strip() if b.pickup_stop else origin_city
         total_cents += b.agreed_price_cents
         enriched_bookings.append({
@@ -3841,7 +3843,6 @@ def ride_receipt_pdf_view(request, ride_id):
     )
 
     GREEN  = colors.HexColor('#0D7810')
-    BLUE   = colors.HexColor('#0C63B4')
     DARK   = colors.HexColor('#121212')
     MUTED  = colors.HexColor('#5a7060')
     LIGHT  = colors.HexColor('#E9F7EE')

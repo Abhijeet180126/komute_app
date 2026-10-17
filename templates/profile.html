@@ -2735,7 +2735,6 @@ body.role-rider .driver-only { display: none; }
 
   /* ── SEND VERIFICATION EMAIL ── */
   function VerifyEmail() {
-      console.log("Sending verification email...");
       fetch("/profile/send-verification/", {
           method: "POST",
           headers: {

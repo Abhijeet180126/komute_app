@@ -3468,6 +3468,17 @@ class AuditFixTests(TestCase):
         for name in ('route-demand', 'driver-inbox', 'my-rides'):
             resp = driver.get(reverse(name))
             self.assertNotContains(resp, 'au_rider@example.com', msg_prefix=name)
+    def test_edit_ride_accepts_departure_without_offset(self):
+        c = self._client('au_driver@example.com')
+        depart = (timezone.now() + timedelta(days=2)).replace(microsecond=0, tzinfo=None)
+        resp = c.post(reverse('edit-ride', args=[encode_id(self.ride.id)]), {
+            'origin': 'Toronto, ON', 'destination': 'Ottawa, ON',
+            'origin_lat': '43.65', 'origin_lng': '-79.38', 'destination_lat': '45.42', 'destination_lng': '-75.69',
+            'date': depart.date().isoformat(), 'depart_time': depart.strftime('%H:%M'),
+            'depart_utc': depart.isoformat(), 'seats': '3', 'price': '25.00',
+            'vehicle': str(self.driver.vehicles.first().id),
+        })
+        self.assertIn(resp.status_code, (200, 302))
 
 class AuditChatFixTests(TransactionTestCase):
     """Socket-side fixes from the full security audit."""
