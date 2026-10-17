@@ -52,6 +52,15 @@ User = get_user_model()
 logger = logging.getLogger(__name__)
 
 
+_UNNAMED_USER = 'Komüte user'
+
+
+def _display_name(user):
+    """How another person is named on pages and in emails: their name, never
+    their email address (some older accounts have no name)."""
+    return (user.full_name or '').strip().title() or _UNNAMED_USER
+
+
 def _client_ip(request):
     """The address Nginx saw. Nginx appends it to X-Forwarded-For
     ($proxy_add_x_forwarded_for), so it is the last entry; earlier entries
@@ -147,8 +156,8 @@ def _send_booking_confirmation_emails(booking):
         seats_remaining = ride.seats_available
 
         rider_ctx = {
-            'rider_name':      (rider.full_name or rider.email).title(),
-            'driver_name':     (driver.full_name or driver.email).title(),
+            'rider_name':      _display_name(rider),
+            'driver_name':     _display_name(driver),
             'origin':          ride.origin,
             'destination':     ride.destination,
             'depart_display':  depart_display,
@@ -159,8 +168,8 @@ def _send_booking_confirmation_emails(booking):
             'booking_ref':     booking_ref,
         }
         driver_ctx = {
-            'driver_name':     (driver.full_name or driver.email).title(),
-            'rider_name':      (rider.full_name or rider.email).title(),
+            'driver_name':     _display_name(driver),
+            'rider_name':      _display_name(rider),
             'origin':          ride.origin,
             'destination':     ride.destination,
             'depart_display':  depart_display,
@@ -208,7 +217,7 @@ def _send_booking_cancelled_emails(booking):
         booking_ref    = f"KMT-{ride.depart_at.year}-{ride.id:04d}-B{booking.id}"
 
         ctx = {
-            'driver_name':    (driver.full_name or driver.email).title(),
+            'driver_name':    _display_name(driver),
             'rider_name':     (rider.full_name  or rider.email).title(),
             'origin':         ride.origin,
             'destination':    ride.destination,
@@ -241,7 +250,7 @@ def _send_booking_request_email(booking):
         booking_ref    = f"KMT-{ride.depart_at.year}-{ride.id:04d}-B{booking.id}"
 
         ctx = {
-            'driver_name':    (driver.full_name or driver.email).title(),
+            'driver_name':    _display_name(driver),
             'rider_name':     (rider.full_name  or rider.email).title(),
             'origin':         ride.origin,
             'destination':    ride.destination,
@@ -275,7 +284,7 @@ def _send_booking_rejected_email(booking):
 
         ctx = {
             'rider_name':     (rider.full_name  or rider.email).title(),
-            'driver_name':    (driver.full_name or driver.email).title(),
+            'driver_name':    _display_name(driver),
             'origin':         ride.origin,
             'destination':    ride.destination,
             'depart_display': depart_display,
@@ -306,7 +315,7 @@ def _send_ride_cancelled_emails(ride, affected_bookings):
                 rider = booking.passenger
                 ctx   = {
                     'rider_name':     (rider.full_name  or rider.email).title(),
-                    'driver_name':    (driver.full_name or driver.email).title(),
+                    'driver_name':    _display_name(driver),
                     'origin':         ride.origin,
                     'destination':    ride.destination,
                     'depart_display': depart_display,
@@ -1986,7 +1995,7 @@ def my_rides_view(request):
             name = (b.passenger.full_name or '').title()
             parts = name.split()
             passengers.append({
-                'name':       name or b.passenger.email,
+                'name':       name or _UNNAMED_USER,
                 'initials':   ''.join(p[0].upper() for p in parts[:2]) if parts else '?',
                 'chat_token': make_chat_token(b.id),
             })
@@ -2565,7 +2574,7 @@ def ride_summary_view(request, ride_id):
     total_cents = 0
     enriched_bookings = []
     for b in active_bookings:
-        name   = (b.passenger.full_name or b.passenger.email).title()
+        name   = _display_name(b.passenger)
         parts  = name.split()
         initials   = ''.join(p[0].upper() for p in parts[:2]) if parts else '?'
         first_name = parts[0] if parts else name
@@ -2597,7 +2606,7 @@ def ride_summary_view(request, ride_id):
             'rating_stars':         '',
         })
 
-    driver_name_full  = (ride.driver.full_name or ride.driver.email).title()
+    driver_name_full  = _display_name(ride.driver)
     driver_parts      = driver_name_full.split()
     driver_first_name = driver_parts[0] if driver_parts else driver_name_full
 
@@ -2678,7 +2687,7 @@ def leave_review_view(request, booking_id):
         role_label    = 'Your Driver'
         eyebrow_text  = 'Rate your driver'
 
-    reviewee_name       = (reviewee.full_name or reviewee.email).title()
+    reviewee_name       = _display_name(reviewee)
     parts               = reviewee_name.split()
     reviewee_initials   = ''.join(p[0].upper() for p in parts[:2]) if parts else '?'
     reviewee_first_name = parts[0] if parts else reviewee_name
@@ -2937,7 +2946,7 @@ def driver_inbox_view(request):
             'booking_encoded_id': encode_id(booking.id),
             'booking_status':     booking.status,
             'chat_token':         make_chat_token(booking.id),
-            'passenger_name':     name or passenger.email,
+            'passenger_name':     name or _UNNAMED_USER,
             'blocked_by_me':      passenger.id in my_blocks,
             'initials':           initials,
             'avatar_class':       AVATAR_CLASSES[i % 5],
@@ -3118,7 +3127,7 @@ def rider_inbox_view(request):
             'booking_encoded_id': encode_id(booking.id),
             'booking_status':     booking.status,
             'chat_token':         make_chat_token(booking.id),
-            'driver_name':        name or driver.email,
+            'driver_name':        name or _UNNAMED_USER,
             'driver_verified':    driver.driver_verified,
             'blocked_by_me':      driver.id in my_blocks,
             'initials':           initials,
@@ -3807,7 +3816,7 @@ def ride_receipt_pdf_view(request, ride_id):
     total_cents = 0
     enriched_bookings = []
     for b in active_bookings:
-        name  = (b.passenger.full_name or b.passenger.email).title()
+        name  = _display_name(b.passenger)
         parts = name.split()
         pickup_name = b.pickup_stop.location.split(',')[0].strip() if b.pickup_stop else origin_city
         total_cents += b.agreed_price_cents
@@ -3819,7 +3828,7 @@ def ride_receipt_pdf_view(request, ride_id):
         })
 
     ride_ref = f"KMT-{ride.depart_at.year}-{ride.id:04d}"
-    driver_name = (ride.driver.full_name or ride.driver.email).title()
+    driver_name = _display_name(ride.driver)
 
     # Convert to ride's local timezone for display in the PDF
     _depart_local = _local_dt(ride, ride.depart_at)
@@ -4314,7 +4323,7 @@ def route_demand_view(request):
                 continue
             seen_users.add(uid)
             u    = s.user
-            name = (u.full_name or u.email).title()
+            name = _display_name(u)
             initials = ''.join(w[0].upper() for w in name.split()[:2])
             avatar_color = AVATAR_COLORS[uid % len(AVATAR_COLORS)]
             latest = max(
@@ -4445,7 +4454,7 @@ def _send_invite_email(request, invite):
 
         ctx = {
             'rider_name':    (rider.full_name  or rider.email).title(),
-            'driver_name':   (driver.full_name or driver.email).title(),
+            'driver_name':   _display_name(driver),
             'origin':        ride.origin,
             'destination':   ride.destination,
             'depart_display': _fmt_ride_local(ride),

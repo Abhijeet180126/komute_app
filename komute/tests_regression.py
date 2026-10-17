@@ -3455,6 +3455,19 @@ class AuditFixTests(TestCase):
         call_command('purge_deactivated_accounts')
         self.assertFalse(EmailAddress.objects.filter(user=self.rider).exists())
         self.assertFalse(EmailAddress.objects.filter(email__in=['au_rider@example.com', 'old-address@example.com']).exists())
+    def test_nameless_users_are_not_shown_by_email(self):
+        CustomUser.objects.filter(pk=self.rider.pk).update(full_name='')
+        RideSearch.objects.create(
+            user=self.rider, origin='Toronto, ON', origin_lat=43.65, origin_lng=-79.38,
+            destination='Ottawa, ON', dest_lat=45.42, dest_lng=-75.69,
+            search_date=date.today(), passenger_count=1,
+        )
+        RideBooking.objects.create(ride=self.ride, passenger=self.rider, seats=1,
+                                   agreed_price_cents=2600, status=RideBooking.STATUS_REQUESTED)
+        driver = self._client('au_driver@example.com')
+        for name in ('route-demand', 'driver-inbox', 'my-rides'):
+            resp = driver.get(reverse(name))
+            self.assertNotContains(resp, 'au_rider@example.com', msg_prefix=name)
 
 class AuditChatFixTests(TransactionTestCase):
     """Socket-side fixes from the full security audit."""
