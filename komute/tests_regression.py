@@ -3440,6 +3440,12 @@ class AuditFixTests(TestCase):
         self.rider.refresh_from_db()
         self.assertTrue(self.rider.email_verified)
 
+    def test_permissions_policy_header(self):
+        resp = Client().get(reverse('home'))
+        policy = resp['Permissions-Policy']
+        self.assertIn('camera=(self)', policy)
+        self.assertIn('geolocation=(self)', policy)
+        self.assertIn('microphone=()', policy)
 
 class AuditChatFixTests(TransactionTestCase):
     """Socket-side fixes from the full security audit."""

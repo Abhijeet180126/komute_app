@@ -108,6 +108,7 @@ CACHES = {
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
+    'komute.middleware.PermissionsPolicyMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',

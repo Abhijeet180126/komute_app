@@ -1,6 +1,40 @@
 from django.utils.cache import add_never_cache_headers
 
 
+# Browser features the site uses, for its own pages only: the camera for
+# the verification selfie (profile) and geolocation for "Locate me"
+# (search, post ride). Everything else is off, including for any embedded
+# third-party content. clipboard-write is allowed by default in browsers.
+PERMISSIONS_POLICY = ', '.join([
+    'camera=(self)',
+    'geolocation=(self)',
+    'microphone=()',
+    'payment=()',
+    'usb=()',
+    'serial=()',
+    'bluetooth=()',
+    'hid=()',
+    'midi=()',
+    'magnetometer=()',
+    'gyroscope=()',
+    'accelerometer=()',
+    'display-capture=()',
+    'browsing-topics=()',
+])
+
+
+class PermissionsPolicyMiddleware:
+    """Adds the Permissions-Policy header above to every response."""
+
+    def __init__(self, get_response):
+        self.get_response = get_response
+
+    def __call__(self, request):
+        response = self.get_response(request)
+        response.setdefault('Permissions-Policy', PERMISSIONS_POLICY)
+        return response
+
+
 class NoStoreForSignedInUsersMiddleware:
     """Stop browsers from caching pages rendered for a signed-in user
     (ISSUES.md M3).
