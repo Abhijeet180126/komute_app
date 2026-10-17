@@ -3316,3 +3316,29 @@ class VerificationResultStorageTests(TestCase):
             with self.subTest(text=text):
                 self.assertEqual(_reason_codes([text]), [code])
         self.assertEqual(_reason_codes(["Name mismatch", "Name mismatch (surname)"]), ['NAME_MISMATCH'])
+
+
+class AuditFixTests(TestCase):
+    """Fixes from the full security audit (audit/full-review branch)."""
+
+    def setUp(self):
+        cache.clear()
+        self.driver = make_driver_with_vehicle('au_driver@example.com')
+        self.rider = make_user('au_rider@example.com')
+        self.ride = make_ride(self.driver)
+
+    def _client(self, email):
+        c = Client()
+        c.login(username=email, password='TestPass123')
+        return c
+
+    def test_closed_account_session_loses_access(self):
+        # Sign in through the app's own login view (it used to store a
+        # session user id that outlived deactivation).
+        c = Client()
+        c.post(reverse('login'), {'email': 'au_driver@example.com', 'password': 'TestPass123'})
+        self.assertEqual(c.get(reverse('profile')).status_code, 200)
+        CustomUser.objects.filter(pk=self.driver.pk).update(is_active=False)
+        self.assertRedirects(c.get(reverse('profile')), reverse('login'), fetch_redirect_response=False)
+        self.assertRedirects(c.get(reverse('post-ride')), reverse('login'), fetch_redirect_response=False)
+        self.assertEqual(c.post(reverse('verify-driver')).status_code, 401)

@@ -633,9 +633,7 @@ def login_view(request):
         if user:
             is_first_login = user.last_login is None
             login(request, user)
-            request.session["user_id"] = user.id
             if is_first_login:
-                request.session["show_role_select"] = True
                 return redirect("role-select")
             if next_url and url_has_allowed_host_and_scheme(
                 next_url, allowed_hosts={request.get_host()}, require_https=request.is_secure()
@@ -669,13 +667,9 @@ def home_view(request):
 
 
 def profile_view(request):
-    user_id = request.session.get("user_id")
-    
-    user = None
-    if user_id:
-        user = User.objects.filter(id=user_id).first()
-    elif request.user.is_authenticated:
-        user = request.user
+    # request.user only: a session-stored user id outlived deactivation
+    # (closed or banned accounts kept access to this view).
+    user = request.user if request.user.is_authenticated else None
 
     if not user:
         messages.error(request, "Please log in to view your profile.")
@@ -1008,12 +1002,9 @@ def profile_view(request):
 
 
 def post_ride_view(request):
-    user_id = request.session.get("user_id")
-    user = None
-    if user_id:
-        user = User.objects.filter(id=user_id).first()
-    elif request.user.is_authenticated:
-        user = request.user
+    # request.user only: a session-stored user id outlived deactivation
+    # (closed or banned accounts kept access to this view).
+    user = request.user if request.user.is_authenticated else None
 
     if not user:
         return redirect("login")
@@ -4033,12 +4024,9 @@ def verify_driver_view(request):
     if request.method != "POST":
         return JsonResponse({"error": "Method not allowed"}, status=405)
 
-    user_id = request.session.get("user_id")
-    user = None
-    if user_id:
-        user = User.objects.filter(id=user_id).first()
-    elif request.user.is_authenticated:
-        user = request.user
+    # request.user only: a session-stored user id outlived deactivation
+    # (closed or banned accounts kept access to this view).
+    user = request.user if request.user.is_authenticated else None
 
     if not user:
         return JsonResponse({"error": "Not authenticated"}, status=401)
