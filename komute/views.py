@@ -1655,7 +1655,8 @@ def create_ride_booking(request, ride_id):
         'driver_rating':       round(rating, 1),
         'driver_rating_count': rating_count,
         'driver_rating_stars': rating_stars,
-        'driver_phone':        driver.phone or '',
+        # Filled in below only for a confirmed booking (privacy policy s.10).
+        'driver_phone':        '',
         'driver_gender':       driver.get_gender_display() if driver.gender else '',
         'vehicle':             v,
         'vehicle_color':       v.color or 'silver',
@@ -1670,6 +1671,9 @@ def create_ride_booking(request, ride_id):
     ).first()
     existing_chat_token    = make_chat_token(existing_booking.id) if existing_booking else None
     existing_booking_status = existing_booking.status if existing_booking else None
+    # The driver's phone is shared only to coordinate a confirmed trip.
+    if existing_booking_status == RideBooking.STATUS_CONFIRMED:
+        ride_ctx['driver_phone'] = driver.phone or ''
 
     return render(request, 'booking-details.html', {
         'ride':                    ride_ctx,

@@ -3487,6 +3487,16 @@ class AuditFixTests(TestCase):
                 reverse('create-ride-booking', args=[encode_id(self.ride.id)]), {'seats': '2'})
         booking = RideBooking.objects.get(ride=self.ride, passenger=self.rider)
         self.assertEqual(booking.agreed_price_cents, 2 * self.ride.price_cents)
+    def test_driver_phone_hidden_until_booking_confirmed(self):
+        CustomUser.objects.filter(pk=self.driver.pk).update(phone='+14165550123')
+        url = reverse('create-ride-booking', args=[encode_id(self.ride.id)])
+        rider = self._client('au_rider@example.com')
+        self.assertNotContains(rider.get(url), '+14165550123')
+        booking = RideBooking.objects.create(ride=self.ride, passenger=self.rider, seats=1,
+                                             agreed_price_cents=2500, status=RideBooking.STATUS_REQUESTED)
+        self.assertNotContains(rider.get(url), '+14165550123')
+        RideBooking.objects.filter(pk=booking.pk).update(status=RideBooking.STATUS_CONFIRMED)
+        self.assertContains(rider.get(url), '+14165550123')
 
 class AuditChatFixTests(TransactionTestCase):
     """Socket-side fixes from the full security audit."""
