@@ -94,6 +94,7 @@ class ChatConsumer(AsyncWebsocketConsumer):
         'no_seats':          'Price agreed, but this ride no longer has an open seat to confirm your booking. Please contact the driver.',
         'driver_unverified': 'This booking can\'t be confirmed until the driver re-verifies their identity.',
         'blocked':           'You can\'t message this user.',
+        'bad_price':         'Offers must be between $0.01 and $1,000 a seat.',
     }
 
     async def receive(self, text_data):
@@ -273,6 +274,13 @@ class ChatConsumer(AsyncWebsocketConsumer):
             return None, 'nego_locked'
         if booking.status not in (RideBooking.STATUS_DRAFT, RideBooking.STATUS_CONFIRMED):
             return None, 'booking_inactive'
+        # Same bounds as create_price_offer_view: 1 cent to $1,000 a seat.
+        try:
+            price_cents = int(round(float(price) * 100))
+        except (TypeError, ValueError, OverflowError):
+            return None, 'bad_price'
+        if not 0 < price_cents <= 100_000:
+            return None, 'bad_price'
         PriceOffer.objects.filter(
             booking=booking,
             proposed_by=user,
@@ -281,7 +289,7 @@ class ChatConsumer(AsyncWebsocketConsumer):
         return PriceOffer.objects.create(
             booking=booking,
             proposed_by=user,
-            price_cents=int(round(float(price) * 100)),
+            price_cents=price_cents,
         ), None
 
     @database_sync_to_async
@@ -297,6 +305,10 @@ class ChatConsumer(AsyncWebsocketConsumer):
             # waiting for the driver this would bypass their accept/reject.
             return 'nego_locked', None
         if booking is None or booking.status not in (RideBooking.STATUS_DRAFT, RideBooking.STATUS_CONFIRMED):
+            return 'booking_inactive', None
+        # cancel_ride_view leaves drafts in place, so a draft can outlive its
+        # ride; agreeing a price must not confirm a seat on it.
+        if booking.ride.status not in ('posted', 'full') or booking.ride.depart_at <= timezone.now():
             return 'booking_inactive', None
 
         # Prefer the specific offer the client had on screen — matching by price

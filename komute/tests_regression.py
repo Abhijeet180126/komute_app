@@ -3354,3 +3354,70 @@ class AuditFixTests(TestCase):
                 reverse('ride-receipt-pdf', args=[encode_id(self.ride.id)]))
         self.assertEqual(resp.status_code, 200)
         self.assertEqual(resp['Content-Type'], 'application/pdf')
+
+    def test_no_booking_or_draft_on_finished_rides(self):
+        rider = self._client('au_rider@example.com')
+        past = make_ride(self.driver, depart_at=timezone.now() - timedelta(hours=1))
+        cancelled = make_ride(self.driver, status='cancelled')
+        for ride in (past, cancelled):
+            for intent in ('book', 'chat'):
+                resp = rider.post(reverse('create-ride-booking', args=[encode_id(ride.id)]),
+                                  {'seats': '1', 'intent': intent})
+                self.assertEqual(resp.status_code, 400, (ride.status, intent))
+        self.assertFalse(RideBooking.objects.filter(passenger=self.rider).exists())
+
+    def _review(self, booking):
+        return self._client('au_rider@example.com').post(
+            reverse('submit-review'),
+            data=json.dumps({'booking_id': encode_id(booking.id), 'reviewee_id': self.driver.id, 'rating': 1}),
+            content_type='application/json')
+
+    def test_only_bookings_that_happened_can_be_reviewed(self):
+        Rides.objects.filter(pk=self.ride.pk).update(status='completed')
+        for status in (RideBooking.STATUS_DRAFT, RideBooking.STATUS_REJECTED, RideBooking.STATUS_CANCELLED):
+            booking = RideBooking.objects.create(ride=self.ride, passenger=self.rider, seats=1,
+                                                 agreed_price_cents=2600, status=status)
+            self.assertEqual(self._review(booking).status_code, 400, status)
+            booking.delete()
+        self.assertFalse(Review.objects.exists())
+        booking = RideBooking.objects.create(ride=self.ride, passenger=self.rider, seats=1,
+                                             agreed_price_cents=2600, status=RideBooking.STATUS_CONFIRMED)
+        self.assertEqual(self._review(booking).status_code, 200)
+
+    def test_invite_cannot_be_accepted_after_departure(self):
+        from komute.views import _make_invite_token
+        invite = RideInvite.objects.create(driver=self.driver, passenger=self.rider, ride=self.ride)
+        Rides.objects.filter(pk=self.ride.pk).update(depart_at=timezone.now() - timedelta(minutes=5))
+        resp = self._client('au_rider@example.com').post(reverse('accept-invite', args=[_make_invite_token(invite.id)]))
+        self.assertContains(resp, 'no longer available')
+        self.assertFalse(RideBooking.objects.filter(passenger=self.rider).exists())
+
+
+class AuditChatFixTests(TransactionTestCase):
+    """Socket-side fixes from the full security audit."""
+
+    def setUp(self):
+        self.driver = make_driver_with_vehicle('ac_driver@example.com')
+        self.rider = make_user('ac_rider@example.com')
+        self.ride = make_ride(self.driver)
+        self.booking = RideBooking.objects.create(
+            ride=self.ride, passenger=self.rider, seats=1,
+            agreed_price_cents=2600, status=RideBooking.STATUS_DRAFT,
+        )
+
+    def test_socket_offers_are_bounded(self):
+        offer = async_to_sync(ChatConsumer().save_price_offer)
+        for price in (-5, 0, 1000.01, 'inf', 'nan', 'abc', None):
+            self.assertEqual(offer(self.rider, self.booking.id, price), (None, 'bad_price'), price)
+        self.assertFalse(PriceOffer.objects.exists())
+        created, error = offer(self.rider, self.booking.id, 12.5)
+        self.assertIsNone(error)
+        self.assertEqual(created.price_cents, 1250)
+
+    def test_draft_on_cancelled_ride_cannot_be_confirmed(self):
+        offer = PriceOffer.objects.create(booking=self.booking, proposed_by=self.driver, price_cents=2000)
+        Rides.objects.filter(pk=self.ride.pk).update(status='cancelled')
+        result, _ = async_to_sync(ChatConsumer().accept_price_offer)(self.rider, self.booking.id, offer.id, None)
+        self.assertEqual(result, 'booking_inactive')
+        self.booking.refresh_from_db()
+        self.assertEqual(self.booking.status, RideBooking.STATUS_DRAFT)

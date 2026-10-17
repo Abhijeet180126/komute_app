@@ -1513,6 +1513,10 @@ def create_ride_booking(request, ride_id):
         raise Http404
 
     if request.method == "POST":
+        # Covers "Chat with driver" too: a draft on a finished ride could
+        # later be confirmed in chat or used to leave a review.
+        if ride.status not in ('posted', 'full') or ride.depart_at <= timezone.now():
+            return JsonResponse({'ok': False, 'error': 'This ride is no longer available.'}, status=400)
         intent = request.POST.get("intent", "book")
         try:
             seats = int(request.POST.get("seats", 1))
@@ -2715,7 +2719,14 @@ def submit_review_view(request):
     if not is_driver and not is_passenger:
         return JsonResponse({'error': 'Not authorized.'}, status=403)
 
-    if booking.status != RideBooking.STATUS_COMPLETED and ride.status != 'completed':
+    # The trip must have happened for this booking: a completed booking, or
+    # a confirmed one on a completed ride. A rejected, cancelled or draft
+    # booking on a completed ride doesn't count.
+    took_place = (
+        booking.status == RideBooking.STATUS_COMPLETED
+        or (booking.status == RideBooking.STATUS_CONFIRMED and ride.status == 'completed')
+    )
+    if not took_place:
         return JsonResponse({'error': 'Can only review completed rides.'}, status=400)
 
     try:
@@ -4599,7 +4610,8 @@ def accept_invite_view(request, token):
 
     ride = invite.ride
 
-    if ride.status in ['cancelled', 'completed'] or UserBlock.objects.between(ride.driver_id, request.user.id):
+    if (ride.status in ['cancelled', 'completed'] or ride.depart_at <= timezone.now()
+            or UserBlock.objects.between(ride.driver_id, request.user.id)):
         return render(request, 'invite-detail.html', {
             'invite': invite, 'token': token,
             'error':  'This ride is no longer available.',
