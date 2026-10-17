@@ -385,6 +385,7 @@ def _clean_stops(post):
 
 
 _MAX_RIDE_LEAD_MONTHS = 4
+_MAX_RECURRING_SPAN_DAYS = 366
 
 
 def _max_ride_date(today=None):
@@ -1189,6 +1190,10 @@ def post_ride_view(request):
                     recurring_end = date.fromisoformat(recurring_end_str)
                     if depart_at and recurring_end <= depart_at.astimezone(driver_tz).date():
                         errors["recurring_end_date"] = "End date must be after the departure date."
+                    # One ride row per matching day is created below, so an
+                    # unbounded end date was a one-request database flood.
+                    elif depart_at and recurring_end > depart_at.astimezone(driver_tz).date() + timedelta(days=_MAX_RECURRING_SPAN_DAYS):
+                        errors["recurring_end_date"] = "Recurring rides can repeat for up to one year."
                 except ValueError:
                     errors["recurring_end_date"] = "Invalid end date."
 

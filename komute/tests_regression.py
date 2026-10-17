@@ -3421,3 +3421,30 @@ class AuditChatFixTests(TransactionTestCase):
         self.assertEqual(result, 'booking_inactive')
         self.booking.refresh_from_db()
         self.assertEqual(self.booking.status, RideBooking.STATUS_DRAFT)
+
+
+class AuditRecurringRideTests(TestCase):
+    def test_recurring_series_capped_at_one_year(self):
+        driver = make_driver_with_vehicle('ar_driver@example.com')
+        tz = ZoneInfo('America/Toronto')
+        first = timezone.localdate(timezone=tz) + timedelta(days=7)
+        depart = datetime.combine(first, datetime.min.time().replace(hour=8), tzinfo=tz)
+        c = Client()
+        c.login(username='ar_driver@example.com', password='TestPass123')
+        base = {
+            'origin': 'Toronto, ON', 'destination': 'Ottawa, ON',
+            'date': first.isoformat(), 'depart_time': '08:00',
+            'depart_utc': depart.astimezone(ZoneInfo('UTC')).isoformat().replace('+00:00', 'Z'),
+            'tz': 'America/Toronto',
+            'seats': '3', 'vehicle': str(driver.vehicles.first().id), 'price': '25.00',
+            'origin_lat': '43.65', 'origin_lng': '-79.38',
+            'destination_lat': '45.42', 'destination_lng': '-75.69',
+            'is_recurring': '1', 'recurring_days': '0,1,2,3,4,5,6',
+        }
+        resp = c.post(reverse('post-ride'), {**base, 'recurring_end_date': '9999-12-31'})
+        self.assertEqual(resp.status_code, 200)
+        self.assertIn('recurring_end_date', resp.context['errors'])
+        self.assertFalse(Rides.objects.filter(driver=driver).exists())
+        resp = c.post(reverse('post-ride'), {**base, 'recurring_end_date': (first + timedelta(days=366)).isoformat()})
+        self.assertEqual(resp.status_code, 302)
+        self.assertEqual(Rides.objects.filter(driver=driver).count(), 367)
