@@ -6,6 +6,7 @@ from django.core.mail import send_mail
 from django.core.management.base import BaseCommand
 from django.db import transaction
 from django.db.models import Q
+from allauth.account.models import EmailAddress
 from django.utils import timezone
 
 from komute.models import CustomUser, Message, RideSearch, UserBlock, Vehicle, VerificationLog
@@ -67,6 +68,9 @@ class Command(BaseCommand):
                     # Reports by or about them stay until purge_user_reports
                     # (safety records); blocks have no further use.
                     UserBlock.objects.filter(Q(blocker=user) | Q(blocked=user)).delete()
+                    # allauth's copy of the address (and any old ones) would
+                    # otherwise outlive the anonymized user row.
+                    EmailAddress.objects.filter(user=user).delete()
 
                     vehicles = Vehicle.objects.filter(owner=user)
                     for vehicle in vehicles:

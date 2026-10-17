@@ -3446,6 +3446,15 @@ class AuditFixTests(TestCase):
         self.assertIn('camera=(self)', policy)
         self.assertIn('geolocation=(self)', policy)
         self.assertIn('microphone=()', policy)
+    def test_purge_removes_allauth_email_addresses(self):
+        from allauth.account.models import EmailAddress
+        EmailAddress.objects.create(user=self.rider, email=self.rider.email, primary=True, verified=True)
+        EmailAddress.objects.create(user=self.rider, email='old-address@example.com', verified=True)
+        CustomUser.objects.filter(pk=self.rider.pk).update(
+            is_active=False, deactivated_at=timezone.now() - timedelta(days=settings.ACCOUNT_DELETION_GRACE_DAYS + 1))
+        call_command('purge_deactivated_accounts')
+        self.assertFalse(EmailAddress.objects.filter(user=self.rider).exists())
+        self.assertFalse(EmailAddress.objects.filter(email__in=['au_rider@example.com', 'old-address@example.com']).exists())
 
 class AuditChatFixTests(TransactionTestCase):
     """Socket-side fixes from the full security audit."""
