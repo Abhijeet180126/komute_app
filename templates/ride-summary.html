@@ -486,6 +486,19 @@ const RIDE_ID = "{{ ride_id }}";
     attribution: '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a>',
   }).addTo(map);
 
+  // Popups are built from text nodes: place names are free text typed by
+  // the driver, and a string passed to bindPopup is parsed as HTML.
+  const popupNode = (title, subtitle) => {
+    const box = document.createElement('div');
+    const strong = document.createElement('b');
+    strong.textContent = title;
+    const note = document.createElement('span');
+    note.style.cssText = 'font-size:.8rem;color:#555';
+    note.textContent = subtitle;
+    box.append(strong, document.createElement('br'), note);
+    return box;
+  };
+
   const mkDot = (color) => L.divIcon({
     className: '',
     html: `<div style="width:14px;height:14px;border-radius:50%;background:${color};border:3px solid white;box-shadow:0 2px 6px rgba(0,0,0,.35)"></div>`,
@@ -494,17 +507,17 @@ const RIDE_ID = "{{ ride_id }}";
 
   L.marker([originLat, originLng], { icon: mkDot('#0D7810') })
     .addTo(map)
-    .bindPopup('<b>{{ ride.origin|escapejs }}</b><br><span style="font-size:.8rem;color:#555">Departure point</span>');
+    .bindPopup(popupNode('{{ ride.origin|escapejs }}', 'Departure point'));
 
   stops.forEach((s, i) => {
     L.marker([s.lat, s.lng], { icon: mkDot('#f59e0b') })
       .addTo(map)
-      .bindPopup(`<b>Stop ${i + 1}</b><br><span style="font-size:.8rem;color:#555">${s.name}</span>`);
+      .bindPopup(popupNode(`Stop ${i + 1}`, s.name));
   });
 
   L.marker([destLat, destLng], { icon: mkDot('#0C63B4') })
     .addTo(map)
-    .bindPopup('<b>{{ ride.destination|escapejs }}</b><br><span style="font-size:.8rem;color:#555">Destination</span>');
+    .bindPopup(popupNode('{{ ride.destination|escapejs }}', 'Destination'));
 
   const waypoints = [[originLng, originLat], ...stops.map(s => [s.lng, s.lat]), [destLng, destLat]];
   const coordStr  = waypoints.map(w => w.join(',')).join(';');
