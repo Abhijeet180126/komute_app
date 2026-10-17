@@ -1807,9 +1807,17 @@ def accept_booking_view(request, booking_id):
     if UserBlock.objects.between(booking.ride.driver_id, booking.passenger_id):
         return JsonResponse({'error': "You can't accept this booking request."}, status=403)
 
+    # Conditional, like reject and cancel: a cancel that lands between the
+    # check above and this write must not be overwritten to confirmed after
+    # its seat was already released.
+    confirmed_at = timezone.now()
+    updated = RideBooking.objects.filter(
+        id=booking.id, status=RideBooking.STATUS_REQUESTED,
+    ).update(status=RideBooking.STATUS_CONFIRMED, confirmed_at=confirmed_at)
+    if not updated:
+        return JsonResponse({'error': 'This booking request is no longer pending.'}, status=400)
     booking.status = RideBooking.STATUS_CONFIRMED
-    booking.confirmed_at = timezone.now()
-    booking.save(update_fields=['status', 'confirmed_at'])
+    booking.confirmed_at = confirmed_at
     _notify_booking_status(booking)
     notify_bookings_changed([booking.passenger_id], 'Your booking request was accepted.')
 

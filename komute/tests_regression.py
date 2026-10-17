@@ -3393,6 +3393,23 @@ class AuditFixTests(TestCase):
         self.assertFalse(RideBooking.objects.filter(passenger=self.rider).exists())
 
 
+    def test_accept_does_not_overwrite_a_concurrent_cancel(self):
+        from komute import views
+        booking = RideBooking.objects.create(ride=self.ride, passenger=self.rider, seats=1,
+                                             agreed_price_cents=2600, status=RideBooking.STATUS_REQUESTED)
+        real_get = views.get_object_or_404
+
+        def read_then_rider_cancels(*args, **kwargs):
+            obj = real_get(*args, **kwargs)
+            RideBooking.objects.filter(id=booking.id).update(status=RideBooking.STATUS_CANCELLED)
+            return obj
+
+        with patch('komute.views.get_object_or_404', side_effect=read_then_rider_cancels):
+            resp = self._client('au_driver@example.com').post(reverse('accept-booking', args=[encode_id(booking.id)]))
+        self.assertEqual(resp.status_code, 400)
+        booking.refresh_from_db()
+        self.assertEqual(booking.status, RideBooking.STATUS_CANCELLED)
+
 class AuditChatFixTests(TransactionTestCase):
     """Socket-side fixes from the full security audit."""
 
