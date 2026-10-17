@@ -3741,7 +3741,10 @@ def ride_receipt_pdf_view(request, ride_id):
     from reportlab.lib.units import mm
     from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, HRFlowable
     from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-    from reportlab.lib.enums import TA_CENTER, TA_RIGHT, TA_LEFT
+    from reportlab.lib.enums import TA_CENTER, TA_RIGHT
+    # Paragraph parses its text as markup (and fetches <img> sources), so
+    # user-typed names and places must be escaped before they go in.
+    from xml.sax.saxutils import escape as _pdf_escape
 
     ride = get_object_or_404(
         Rides.objects.prefetch_related('stops', 'bookings__passenger', 'bookings__pickup_stop').filter(
@@ -3844,7 +3847,7 @@ def ride_receipt_pdf_view(request, ride_id):
     ]))
     story.append(header_tbl)
     story.append(Spacer(1, 5*mm))
-    story.append(Paragraph(f'Issued on {timezone.now().strftime("%B %d, %Y")}  ·  Driver: {driver_name}', sub_style))
+    story.append(Paragraph(f'Issued on {timezone.now().strftime("%B %d, %Y")}  ·  Driver: {_pdf_escape(driver_name)}', sub_style))
     story.append(HRFlowable(width=W, color=colors.HexColor('#c2dfc8'), thickness=1, spaceAfter=5*mm))
 
     # ── Trip Overview ──
@@ -3889,9 +3892,9 @@ def ride_receipt_pdf_view(request, ride_id):
     cost_rows = [cost_header]
     for b in enriched_bookings:
         cost_rows.append([
-            Paragraph(b['name'],         body_style),
+            Paragraph(_pdf_escape(b['name']), body_style),
             Paragraph(str(b['seats']),   _s('Normal', fontName='Helvetica', fontSize=10, textColor=DARK, alignment=TA_CENTER)),
-            Paragraph(b['pickup'],       muted_style),
+            Paragraph(_pdf_escape(b['pickup']), muted_style),
             Paragraph(b['contribution'], right_style),
         ])
     cost_rows.append([

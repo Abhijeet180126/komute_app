@@ -3342,3 +3342,15 @@ class AuditFixTests(TestCase):
         self.assertRedirects(c.get(reverse('profile')), reverse('login'), fetch_redirect_response=False)
         self.assertRedirects(c.get(reverse('post-ride')), reverse('login'), fetch_redirect_response=False)
         self.assertEqual(c.post(reverse('verify-driver')).status_code, 401)
+
+    def test_receipt_pdf_escapes_user_markup(self):
+        hostile = 'Ann & <b>Bo</b> <img src="http://127.0.0.1:9/x.png"/>'
+        CustomUser.objects.filter(pk=self.driver.pk).update(full_name=hostile)
+        CustomUser.objects.filter(pk=self.rider.pk).update(full_name=hostile)
+        RideBooking.objects.create(ride=self.ride, passenger=self.rider, seats=1,
+                                   agreed_price_cents=2600, status=RideBooking.STATUS_CONFIRMED)
+        with patch('urllib.request.urlopen', side_effect=AssertionError('PDF fetched a URL')):
+            resp = self._client('au_driver@example.com').get(
+                reverse('ride-receipt-pdf', args=[encode_id(self.ride.id)]))
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp['Content-Type'], 'application/pdf')
