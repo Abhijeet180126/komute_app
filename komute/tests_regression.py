@@ -3465,3 +3465,12 @@ class AuditRecurringRideTests(TestCase):
         resp = c.post(reverse('post-ride'), {**base, 'recurring_end_date': (first + timedelta(days=366)).isoformat()})
         self.assertEqual(resp.status_code, 302)
         self.assertEqual(Rides.objects.filter(driver=driver).count(), 367)
+
+    def test_rate_limit_ignores_client_supplied_forwarded_for(self):
+        limits = {**settings.RATE_LIMITS, 'forgot-password-ip': (2, 3600), 'forgot-password-email': (100, 3600)}
+        with override_settings(RATE_LIMITS=limits):
+            for i in range(3):
+                # A fresh fake address each time, Nginx's real one appended last.
+                Client().post(reverse('forgot-password'), {'email': 'au_rider@example.com'},
+                              HTTP_X_FORWARDED_FOR=f'10.0.0.{i}, 203.0.113.7')
+        self.assertEqual(len(mail.outbox), 2)

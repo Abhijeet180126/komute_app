@@ -52,6 +52,16 @@ User = get_user_model()
 logger = logging.getLogger(__name__)
 
 
+def _client_ip(request):
+    """The address Nginx saw. Nginx appends it to X-Forwarded-For
+    ($proxy_add_x_forwarded_for), so it is the last entry; earlier entries
+    come from the client and can be anything."""
+    xff = request.META.get('HTTP_X_FORWARDED_FOR', '')
+    if xff:
+        return xff.rsplit(',', 1)[-1].strip()
+    return request.META.get('REMOTE_ADDR', 'unknown')
+
+
 def _rate_limited(request, name, extra_key=''):
     """Fixed-window throttle backed by the shared cache (Redis in production
     — see CACHES in settings.py — so the count holds across worker
@@ -66,9 +76,7 @@ def _rate_limited(request, name, extra_key=''):
     Fails open (never blocks) if the cache backend itself is unreachable —
     a Redis blip shouldn't turn into a login/signup outage on top of it."""
     limit, window_seconds = settings.RATE_LIMITS[name]
-    xff = request.META.get('HTTP_X_FORWARDED_FOR', '')
-    ip = xff.split(',')[0].strip() if xff else request.META.get('REMOTE_ADDR', 'unknown')
-    bucket = f'ratelimit:{name}:{ip}:{extra_key}'
+    bucket = f'ratelimit:{name}:{_client_ip(request)}:{extra_key}'
     try:
         cache.add(bucket, 0, window_seconds)
         count = cache.incr(bucket)
