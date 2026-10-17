@@ -14,6 +14,7 @@ logger = logging.getLogger('komute.chat')
 # and tells the user what to do instead of reconnecting forever.
 CLOSE_NOT_SIGNED_IN = 4401
 CLOSE_FORBIDDEN     = 4403   # bad or expired token, or not this booking's chat
+CLOSE_BLOCKED       = 4410   # one of the two has blocked the other (ISSUES.md A1)
 
 
 def chat_group_name(booking_id):
@@ -46,6 +47,11 @@ class ChatConsumer(AsyncWebsocketConsumer):
         self.booking_id  = booking_id
         self.ride_id     = booking_info['ride_id']
         self.receiver_id = booking_info['receiver_id']
+
+        if await self.is_blocked():
+            await self.refuse(CLOSE_BLOCKED, f'booking {booking_id}: users blocked')
+            return
+
         self.room_group  = chat_group_name(self.booking_id)
 
         # Accept before any channel-layer work so the browser sees a proper
@@ -87,6 +93,7 @@ class ChatConsumer(AsyncWebsocketConsumer):
         'offer_stale':       'That price is no longer available — the other side may have sent a new offer. Check the latest price and try again.',
         'no_seats':          'Price agreed, but this ride no longer has an open seat to confirm your booking. Please contact the driver.',
         'driver_unverified': 'This booking can\'t be confirmed until the driver re-verifies their identity.',
+        'blocked':           'You can\'t message this user.',
     }
 
     async def receive(self, text_data):
@@ -101,6 +108,11 @@ class ChatConsumer(AsyncWebsocketConsumer):
             # Browser heartbeat. The reply keeps an idle chat under Nginx's
             # proxy_read_timeout and lets the page spot a dead connection.
             await self.send(text_data=json.dumps({'type': 'pong'}))
+
+        elif msg_type in ('message', 'price_offer', 'price_accepted') and await self.is_blocked():
+            # A socket opened before the block: the page locks itself on the
+            # booking_status push, but the server must refuse too.
+            await self.send(text_data=json.dumps({'type': 'error', 'code': 'blocked', 'message': self.ERROR_MESSAGES['blocked']}))
 
         elif msg_type == 'message':
             body = data.get('body', '').strip()
@@ -225,6 +237,11 @@ class ChatConsumer(AsyncWebsocketConsumer):
             'ride_id':     booking.ride_id,
             'receiver_id': receiver.id,
         }
+
+    @database_sync_to_async
+    def is_blocked(self):
+        from .models import UserBlock
+        return UserBlock.objects.between(self.scope['user'].id, self.receiver_id)
 
     @database_sync_to_async
     def save_message(self, user, body):

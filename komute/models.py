@@ -759,3 +759,138 @@ class RideInvite(models.Model):
 
     def __str__(self):
         return f"Invite #{self.id} — ride {self.ride_id} → {self.passenger_id} ({self.status})"
+
+
+class UserReport(models.Model):
+    """A user's report about another user (ISSUES.md A1). Staff work through
+    open reports in the admin. Closed reports are deleted
+    REPORT_RETENTION_DAYS after closing (purge_user_reports)."""
+
+    REASON_HARASSMENT            = "harassment"
+    REASON_UNSAFE_DRIVING        = "unsafe_driving"
+    REASON_NO_SHOW               = "no_show"
+    REASON_FRAUD                 = "fraud"
+    REASON_INAPPROPRIATE_MESSAGE = "inappropriate_message"
+    REASON_OTHER                 = "other"
+
+    REASON_CHOICES = [
+        (REASON_HARASSMENT,            "Harassment or threats"),
+        (REASON_UNSAFE_DRIVING,        "Unsafe driving"),
+        (REASON_NO_SHOW,               "No-show"),
+        (REASON_FRAUD,                 "Fraud or fake profile"),
+        (REASON_INAPPROPRIATE_MESSAGE, "Inappropriate message"),
+        (REASON_OTHER,                 "Other"),
+    ]
+
+    STATUS_OPEN      = "open"
+    STATUS_REVIEWING = "reviewing"
+    STATUS_ACTIONED  = "actioned"
+    STATUS_DISMISSED = "dismissed"
+
+    STATUS_CHOICES = [
+        (STATUS_OPEN,      "Open"),
+        (STATUS_REVIEWING, "Reviewing"),
+        (STATUS_ACTIONED,  "Actioned"),
+        (STATUS_DISMISSED, "Dismissed"),
+    ]
+    CLOSED_STATUSES = (STATUS_ACTIONED, STATUS_DISMISSED)
+
+    reporter = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        related_name="reports_made",
+    )
+
+    reported = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="reports_received",
+    )
+
+    # The booking the report came from, if any. Staff read the chat from it.
+    booking = models.ForeignKey(
+        "RideBooking",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="reports",
+    )
+
+    reason = models.TextField(choices=REASON_CHOICES)
+    details = models.TextField(blank=True, default="")
+
+    status = models.TextField(choices=STATUS_CHOICES, default=STATUS_OPEN)
+    staff_note = models.TextField(blank=True, default="")
+
+    handled_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="reports_handled",
+    )
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "user_reports"
+        ordering = ["-created_at"]
+
+    def __str__(self):
+        return f"Report #{self.id} — {self.reporter_id} → {self.reported_id} ({self.reason}, {self.status})"
+
+
+class UserBlockManager(models.Manager):
+    def between(self, user_a_id, user_b_id):
+        """True if either user has blocked the other."""
+        return self.filter(
+            models.Q(blocker_id=user_a_id, blocked_id=user_b_id)
+            | models.Q(blocker_id=user_b_id, blocked_id=user_a_id)
+        ).exists()
+
+    def hidden_ids(self, user_id):
+        """IDs of users this user has blocked or been blocked by."""
+        pairs = self.filter(
+            models.Q(blocker_id=user_id) | models.Q(blocked_id=user_id)
+        ).values_list("blocker_id", "blocked_id")
+        return {b if a == user_id else a for a, b in pairs}
+
+
+class UserBlock(models.Model):
+    """A block hides each user's rides from the other, refuses bookings and
+    invites between them, and closes their chats (ISSUES.md A1). It works
+    the same in both directions; only the blocker can lift it."""
+
+    blocker = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="blocks_made",
+    )
+
+    blocked = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="blocks_received",
+    )
+
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    objects = UserBlockManager()
+
+    class Meta:
+        db_table = "user_blocks"
+        constraints = [
+            models.UniqueConstraint(
+                fields=["blocker", "blocked"],
+                name="unique_user_block",
+            ),
+            models.CheckConstraint(
+                condition=~models.Q(blocker=models.F("blocked")),
+                name="user_block_not_self",
+            ),
+        ]
+
+    def __str__(self):
+        return f"Block {self.blocker_id} → {self.blocked_id}"

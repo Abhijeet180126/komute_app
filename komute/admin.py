@@ -1,12 +1,19 @@
-from django.contrib import admin
+import logging
+
+from django.conf import settings
+from django.contrib import admin, messages
 from django.contrib.auth import get_user_model
+from django.core.mail import EmailMultiAlternatives
+from django.urls import reverse
+from django.utils import timezone
 
 from komute.models import (
     Vehicle, Rides, RideStop, RideBooking, Message, PriceOffer,
-    RideSearch, VerificationLog, Review, RideInvite,
+    RideSearch, VerificationLog, Review, RideInvite, UserReport, UserBlock,
 )
 
 User = get_user_model()
+logger = logging.getLogger(__name__)
 
 
 @admin.register(User)
@@ -86,3 +93,101 @@ class ReviewAdmin(admin.ModelAdmin):
 class RideInviteAdmin(admin.ModelAdmin):
     list_display = ('id', 'driver', 'passenger', 'ride', 'status', 'sent_at')
     list_filter = ('status',)
+
+
+WARNING_EMAIL_BODY = """Hi {name},
+
+We received a report about your activity on Komüte and have reviewed it.
+
+Please take a moment to read our Community Guidelines:
+{guidelines_url}
+
+Repeated or serious breaches can lead to your account being suspended or
+removed. If you think this is a mistake, reply to this email and tell us
+what happened.
+
+The Komüte team
+"""
+
+
+@admin.register(UserReport)
+class UserReportAdmin(admin.ModelAdmin):
+    """Report queue (ISSUES.md A1). Filter by status "Open" to work through
+    new reports. Each action closes the report and records who handled it."""
+    list_display = ('id', 'created_at', 'reported', 'reporter', 'reason', 'status', 'handled_by')
+    list_filter = ('status', 'reason')
+    search_fields = ('reported__email', 'reporter__email', 'details')
+    date_hierarchy = 'created_at'
+    fields = ('reported', 'reported_account', 'reporter', 'booking', 'reason', 'details',
+              'created_at', 'status', 'staff_note', 'handled_by', 'updated_at')
+    readonly_fields = ('reported', 'reported_account', 'reporter', 'booking', 'reason', 'details',
+                       'created_at', 'handled_by', 'updated_at')
+    actions = ('mark_reviewing', 'dismiss', 'warn_by_email', 'deactivate_reported_account')
+
+    @admin.display(description='Reported account')
+    def reported_account(self, obj):
+        user = obj.reported
+        count = UserReport.objects.filter(reported=user).count()
+        state = 'active' if user.is_active else 'deactivated'
+        return f'{state}; {count} report(s) in total'
+
+    def save_model(self, request, obj, form, change):
+        if change and 'status' in form.changed_data:
+            obj.handled_by = request.user
+        super().save_model(request, obj, form, change)
+
+    def _close(self, request, queryset, status, note):
+        stamp = f'{timezone.localdate():%Y-%m-%d} {request.user.email}: {note}'
+        for report in queryset:
+            report.status = status
+            report.handled_by = request.user
+            report.staff_note = f'{report.staff_note}\n{stamp}'.strip()
+            report.save(update_fields=['status', 'handled_by', 'staff_note', 'updated_at'])
+
+    @admin.action(description='Mark as reviewing')
+    def mark_reviewing(self, request, queryset):
+        queryset.update(status=UserReport.STATUS_REVIEWING, handled_by=request.user, updated_at=timezone.now())
+
+    @admin.action(description='Dismiss (no action needed)')
+    def dismiss(self, request, queryset):
+        self._close(request, queryset, UserReport.STATUS_DISMISSED, 'dismissed')
+
+    @admin.action(description='Warn the reported user by email')
+    def warn_by_email(self, request, queryset):
+        guidelines_url = request.build_absolute_uri(reverse('community-guidelines'))
+        warned = set()
+        for report in queryset.select_related('reported'):
+            user = report.reported
+            if user.id not in warned:
+                try:
+                    EmailMultiAlternatives(
+                        subject='[Komüte] A note about your account',
+                        body=WARNING_EMAIL_BODY.format(name=user.full_name or 'there', guidelines_url=guidelines_url),
+                        from_email=settings.DEFAULT_FROM_EMAIL,
+                        to=[user.email],
+                        reply_to=[settings.REPLY_TO_EMAIL_SUPPORT_CONTACT],
+                    ).send(fail_silently=False)
+                except Exception:
+                    logger.exception('Could not send a warning email to user %s', user.id)
+                    self.message_user(request, f'Could not email {user.email}; report #{report.id} left open.', messages.ERROR)
+                    continue
+                warned.add(user.id)
+            self._close(request, [report], UserReport.STATUS_ACTIONED, 'warned by email')
+        if warned:
+            self.message_user(request, f'Warning sent to {len(warned)} user(s).')
+
+    @admin.action(description='Deactivate the reported account')
+    def deactivate_reported_account(self, request, queryset):
+        # is_active=False signs them out and blocks login. deactivated_at is
+        # left empty so purge_deactivated_accounts doesn't delete the account
+        # while the report may still be needed.
+        reported_ids = set(queryset.values_list('reported_id', flat=True))
+        count = User.objects.filter(id__in=reported_ids, is_staff=False).update(is_active=False)
+        self._close(request, queryset, UserReport.STATUS_ACTIONED, 'account deactivated')
+        self.message_user(request, f'Deactivated {count} account(s). Staff accounts are never deactivated here.')
+
+
+@admin.register(UserBlock)
+class UserBlockAdmin(admin.ModelAdmin):
+    list_display = ('id', 'blocker', 'blocked', 'created_at')
+    search_fields = ('blocker__email', 'blocked__email')

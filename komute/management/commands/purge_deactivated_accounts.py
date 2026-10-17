@@ -8,7 +8,7 @@ from django.db import transaction
 from django.db.models import Q
 from django.utils import timezone
 
-from komute.models import CustomUser, Message, RideSearch, Vehicle, VerificationLog
+from komute.models import CustomUser, Message, RideSearch, UserBlock, Vehicle, VerificationLog
 from komute.private_media import delete_stored_file as _delete_stored_file
 
 logger = logging.getLogger(__name__)
@@ -64,6 +64,9 @@ class Command(BaseCommand):
                     RideSearch.objects.filter(user=user).delete()
                     VerificationLog.objects.filter(user=user).delete()
                     Message.objects.filter(Q(sender=user) | Q(receiver=user)).delete()
+                    # Reports by or about them stay until purge_user_reports
+                    # (safety records); blocks have no further use.
+                    UserBlock.objects.filter(Q(blocker=user) | Q(blocked=user)).delete()
 
                     vehicles = Vehicle.objects.filter(owner=user)
                     for vehicle in vehicles:

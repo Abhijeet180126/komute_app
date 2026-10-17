@@ -45,6 +45,7 @@ from komute.hashid_utils import decode_id, encode_id
 from komute.models import (
     CustomUser, Vehicle, Rides, RideStop, RideBooking, Message,
     RideSearch, VerificationLog, Review, RideInvite, PriceOffer,
+    UserBlock, UserReport,
 )
 
 
@@ -665,7 +666,8 @@ class RetentionCommandsSmokeTests(TestCase):
 
     def test_all_purge_commands_dry_run_clean(self):
         for cmd in ['purge_old_messages', 'purge_completed_rides', 'purge_cancelled_rides',
-                    'purge_ride_search_log', 'scrub_verification_data', 'purge_deactivated_accounts']:
+                    'purge_ride_search_log', 'scrub_verification_data', 'purge_deactivated_accounts',
+                    'purge_user_reports']:
             call_command(cmd, '--dry-run')  # just must not raise
 
     def test_all_purge_commands_run_clean(self):
@@ -1612,6 +1614,377 @@ class WebSocketOriginTests(TransactionTestCase):
 
     def test_missing_origin_refused(self):
         self.assertFalse(self._connects(None))
+
+
+class ReportAndBlockTests(TestCase):
+    """ISSUES.md A1: users can report and block each other; a block hides
+    rides, refuses bookings, invites and negotiation, and closes the chat."""
+
+    def setUp(self):
+        cache.clear()   # rate-limit buckets
+        self.driver = make_driver_with_vehicle('rb_driver@example.com')
+        self.rider = make_user('rb_rider@example.com')
+        self.stranger = make_user('rb_stranger@example.com')
+        self.ride = make_ride(self.driver)
+        self.booking = RideBooking.objects.create(
+            ride=self.ride, passenger=self.rider, seats=1,
+            agreed_price_cents=2500 + settings.SERVICE_FEE_CENTS,
+            status=RideBooking.STATUS_CONFIRMED,
+        )
+
+    def _client(self, email):
+        c = Client()
+        c.login(username=email, password='TestPass123')
+        return c
+
+    def _report(self, email, **data):
+        return self._client(email).post(reverse('report-user'), data)
+
+    def _search(self):
+        return self._client('rb_rider@example.com').post(reverse('search-rides'), {
+            'from': 'Toronto, ON', 'to': 'Ottawa, ON',
+            'date': self.ride.depart_at.date().isoformat(),
+            'origin_lat': '43.65', 'origin_lng': '-79.38',
+            'dest_lat': '45.42', 'dest_lng': '-75.69',
+        })
+
+    def _block(self, blocker, blocked):
+        return UserBlock.objects.create(blocker=blocker, blocked=blocked)
+
+    # ── Report ──
+
+    def test_report_from_booking_saved_and_emailed_to_admin(self):
+        resp = self._report('rb_rider@example.com', booking=encode_id(self.booking.id),
+                            reason='harassment', details='Rude messages')
+        self.assertEqual(resp.status_code, 200)
+        report = UserReport.objects.get()
+        self.assertEqual((report.reporter, report.reported, report.booking), (self.rider, self.driver, self.booking))
+        self.assertEqual((report.reason, report.details, report.status), ('harassment', 'Rude messages', 'open'))
+        self.assertEqual(len(mail.outbox), 1)
+        self.assertEqual(mail.outbox[0].to, [settings.ADMIN_EMAIL])
+        self.assertIn('Harassment or threats', mail.outbox[0].subject)
+        self.assertIn('Rude messages', mail.outbox[0].body)
+        self.assertIn(reverse('admin:komute_userreport_change', args=[report.id]), mail.outbox[0].body)
+
+    def test_driver_reports_passenger(self):
+        self._report('rb_driver@example.com', booking=encode_id(self.booking.id), reason='no_show')
+        self.assertEqual(UserReport.objects.get().reported, self.rider)
+
+    def test_report_from_ride_page_names_its_driver(self):
+        resp = self._report('rb_stranger@example.com', ride=encode_id(self.ride.id), reason='fraud')
+        self.assertEqual(resp.status_code, 200)
+        report = UserReport.objects.get()
+        self.assertEqual((report.reported, report.booking), (self.driver, None))
+
+    def test_report_saved_even_if_admin_email_fails(self):
+        with patch('komute.views.EmailMultiAlternatives.send', side_effect=OSError('SES down')), \
+             self.assertLogs('komute.views', 'ERROR'):
+            resp = self._report('rb_rider@example.com', booking=encode_id(self.booking.id), reason='no_show')
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(UserReport.objects.count(), 1)
+
+    def test_report_validation(self):
+        key = encode_id(self.booking.id)
+        for data in ({'reason': 'bogus'}, {'reason': ''}, {'reason': 'other'},
+                     {'reason': 'other', 'details': '   '}, {'reason': 'harassment', 'details': 'x' * 2001}):
+            resp = self._report('rb_rider@example.com', booking=key, **data)
+            self.assertEqual(resp.status_code, 400, data)
+        self.assertFalse(UserReport.objects.exists())
+
+    def test_only_a_party_can_report_through_a_booking(self):
+        self.assertEqual(self._report('rb_stranger@example.com', booking=encode_id(self.booking.id),
+                                      reason='fraud').status_code, 404)
+        self.assertEqual(self._report('rb_driver@example.com', ride=encode_id(self.ride.id),
+                                      reason='fraud').status_code, 404)   # own ride
+        self.assertEqual(self._report('rb_rider@example.com', booking='bad', reason='fraud').status_code, 404)
+        self.assertEqual(self._report('rb_rider@example.com', reason='fraud').status_code, 404)
+        self.assertFalse(UserReport.objects.exists())
+
+    def test_report_needs_login_and_post(self):
+        self.assertEqual(Client().post(reverse('report-user'), {'reason': 'fraud'}).status_code, 302)
+        self.assertEqual(self._client('rb_rider@example.com').get(reverse('report-user')).status_code, 405)
+
+    def test_reports_rate_limited(self):
+        limits = {**settings.RATE_LIMITS, 'report-user': (2, 3600)}
+        with override_settings(RATE_LIMITS=limits):
+            codes = [self._report('rb_rider@example.com', booking=encode_id(self.booking.id),
+                                  reason='no_show').status_code for _ in range(3)]
+        self.assertEqual(codes, [200, 200, 429])
+        self.assertEqual(UserReport.objects.count(), 2)
+
+    # ── Block ──
+
+    def test_block_from_booking_and_ride(self):
+        resp = self._client('rb_rider@example.com').post(reverse('block-user'), {'booking': encode_id(self.booking.id)})
+        self.assertEqual(resp.status_code, 200)
+        self.assertTrue(UserBlock.objects.filter(blocker=self.rider, blocked=self.driver).exists())
+        # Blocking again is harmless.
+        self._client('rb_rider@example.com').post(reverse('block-user'), {'booking': encode_id(self.booking.id)})
+        self.assertEqual(UserBlock.objects.count(), 1)
+
+        resp = self._client('rb_stranger@example.com').post(reverse('block-user'), {'ride': encode_id(self.ride.id)})
+        self.assertEqual(resp.status_code, 200)
+        self.assertTrue(UserBlock.objects.filter(blocker=self.stranger, blocked=self.driver).exists())
+
+    def test_cannot_block_through_someone_elses_booking(self):
+        resp = self._client('rb_stranger@example.com').post(reverse('block-user'), {'booking': encode_id(self.booking.id)})
+        self.assertEqual(resp.status_code, 404)
+        self.assertFalse(UserBlock.objects.exists())
+
+    def test_block_hides_rides_from_search_both_ways(self):
+        self.assertEqual(self._search().context['total_count'], 1)
+        block = self._block(self.rider, self.driver)
+        self.assertEqual(self._search().context['total_count'], 0)
+        block.delete()
+        self._block(self.driver, self.rider)
+        self.assertEqual(self._search().context['total_count'], 0)
+
+    def test_block_refuses_booking_and_hides_ride_page(self):
+        other_ride = make_ride(self.driver, depart_at=timezone.now() + timedelta(days=2))
+        self._block(self.driver, self.rider)
+        rider = self._client('rb_rider@example.com')
+        url = reverse('create-ride-booking', args=[encode_id(other_ride.id)])
+        self.assertEqual(rider.get(url).status_code, 404)
+        for intent in ('book', 'chat'):
+            resp = rider.post(url, {'seats': '1', 'intent': intent})
+            self.assertEqual(resp.status_code, 403)
+        self.assertFalse(RideBooking.objects.filter(ride=other_ride).exists())
+        other_ride.refresh_from_db()
+        self.assertEqual(other_ride.seats_available, 3)
+
+    def test_pending_request_cannot_be_accepted_after_block_but_can_be_rejected(self):
+        RideBooking.objects.filter(pk=self.booking.pk).update(status=RideBooking.STATUS_REQUESTED)
+        self._block(self.rider, self.driver)
+        driver = self._client('rb_driver@example.com')
+        resp = driver.post(reverse('accept-booking', args=[encode_id(self.booking.id)]))
+        self.assertEqual(resp.status_code, 403)
+        self.booking.refresh_from_db()
+        self.assertEqual(self.booking.status, RideBooking.STATUS_REQUESTED)
+        resp = driver.post(reverse('reject-booking', args=[encode_id(self.booking.id)]))
+        self.assertEqual(resp.status_code, 200)
+
+    def test_confirmed_booking_left_alone_and_can_be_cancelled(self):
+        self._block(self.driver, self.rider)
+        self.booking.refresh_from_db()
+        self.assertEqual(self.booking.status, RideBooking.STATUS_CONFIRMED)
+        resp = self._client('rb_rider@example.com').post(reverse('cancel-booking', args=[encode_id(self.booking.id)]))
+        self.assertEqual(resp.status_code, 200)
+
+    def test_block_refuses_invites_and_hides_rider_from_route_demand(self):
+        RideSearch.objects.create(
+            user=self.stranger, origin='Toronto, ON', origin_lat=43.65, origin_lng=-79.38,
+            destination='Ottawa, ON', dest_lat=45.42, dest_lng=-75.69,
+            search_date=date.today(), passenger_count=1,
+        )
+        driver = self._client('rb_driver@example.com')
+        riders = driver.get(reverse('route-demand')).context['route_demands'][0]['riders']
+        self.assertEqual([r['id'] for r in riders], [self.stranger.id])
+
+        self._block(self.stranger, self.driver)
+        riders = driver.get(reverse('route-demand')).context['route_demands'][0]['riders']
+        self.assertEqual(riders, [])
+        payload = lambda rider_id: json.dumps({'rider_id': rider_id, 'ride_id': encode_id(self.ride.id)})
+        resp = driver.post(reverse('send-invite'), data=payload(self.stranger.id), content_type='application/json')
+        # Same answer as an ineligible rider, so the driver isn't told about the block.
+        unknown = driver.post(reverse('send-invite'), data=payload(999999999), content_type='application/json')
+        self.assertEqual((resp.status_code, resp.json()), (unknown.status_code, unknown.json()))
+        self.assertFalse(RideInvite.objects.exists())
+
+    def test_invite_sent_before_block_cannot_be_accepted(self):
+        from komute.views import _make_invite_token
+        invite = RideInvite.objects.create(driver=self.driver, passenger=self.stranger, ride=self.ride)
+        self._block(self.stranger, self.driver)
+        resp = self._client('rb_stranger@example.com').post(
+            reverse('accept-invite', args=[_make_invite_token(invite.id)]))
+        self.assertContains(resp, 'no longer available')
+        self.assertFalse(RideBooking.objects.filter(passenger=self.stranger).exists())
+        invite.refresh_from_db()
+        self.assertEqual(invite.status, RideInvite.STATUS_SENT)
+
+    def test_http_negotiation_refused_after_block(self):
+        offer = PriceOffer.objects.create(booking=self.booking, proposed_by=self.driver, price_cents=2000)
+        self._block(self.driver, self.rider)
+        rider = self._client('rb_rider@example.com')
+        resp = rider.post(reverse('create-price-offer', args=[encode_id(self.booking.id)]), {'price_cents': '1500'})
+        self.assertEqual(resp.status_code, 403)
+        resp = rider.post(reverse('respond-price-offer', args=[encode_id(offer.id)]), {'action': 'accept'})
+        self.assertEqual(resp.status_code, 403)
+        offer.refresh_from_db()
+        self.assertEqual(offer.status, PriceOffer.STATUS_PENDING)
+
+    def test_chat_page_closed_for_both_sides(self):
+        from komute.views import BLOCKED_CHAT_MESSAGE
+        self._block(self.driver, self.rider)
+        for email, blocked_by_me in (('rb_rider@example.com', False), ('rb_driver@example.com', True)):
+            resp = self._client(email).get(reverse('chat', args=[make_chat_token(self.booking.id)]))
+            self.assertTrue(resp.context['chat_is_locked'], email)
+            self.assertEqual(resp.context['chat_closed_message'], BLOCKED_CHAT_MESSAGE)
+            self.assertEqual(resp.context['ride_status_label'], 'Confirmed')
+            self.assertEqual(resp.context['blocked_by_me'], blocked_by_me)
+
+    def test_a_cancelled_chat_keeps_its_own_closed_message(self):
+        RideBooking.objects.filter(pk=self.booking.pk).update(status=RideBooking.STATUS_CANCELLED)
+        self._block(self.driver, self.rider)
+        resp = self._client('rb_rider@example.com').get(reverse('chat', args=[make_chat_token(self.booking.id)]))
+        self.assertIn('cancelled', resp.context['chat_closed_message'])
+
+    def test_unblock_from_profile(self):
+        self._block(self.rider, self.driver)
+        rider = self._client('rb_rider@example.com')
+        page = rider.get(reverse('profile'))
+        self.assertEqual([b['name'] for b in page.context['blocked_users']], [self.driver.full_name.title()])
+        url = reverse('unblock-user', args=[encode_id(self.driver.id)])
+        self.assertContains(page, url)
+        # The driver can't lift a block the rider made.
+        self._client('rb_driver@example.com').post(reverse('unblock-user', args=[encode_id(self.rider.id)]))
+        self.assertTrue(UserBlock.objects.exists())
+        self.assertRedirects(rider.post(url), reverse('profile'))
+        self.assertFalse(UserBlock.objects.exists())
+        self.assertEqual(self._search().context['total_count'], 1)
+
+    def test_inboxes_show_blocked_state(self):
+        self._block(self.rider, self.driver)
+        convo = self._client('rb_rider@example.com').get(reverse('rider-inbox')).context['conversations'][0]
+        self.assertTrue(convo['blocked_by_me'])
+        convo = self._client('rb_driver@example.com').get(reverse('driver-inbox')).context['conversations'][0]
+        self.assertFalse(convo['blocked_by_me'])
+
+    def test_pages_show_report_and_block_controls(self):
+        rider = self._client('rb_rider@example.com')
+        driver = self._client('rb_driver@example.com')
+        other_ride = make_ride(self.driver, depart_at=timezone.now() + timedelta(days=2))
+        pages = (
+            (rider, reverse('chat', args=[make_chat_token(self.booking.id)])),
+            (rider, reverse('create-ride-booking', args=[encode_id(other_ride.id)])),
+            (rider, reverse('rider-inbox')),
+            (driver, reverse('driver-inbox')),
+        )
+        for client, url in pages:
+            resp = client.get(url)
+            self.assertContains(resp, 'data-safety="report"', msg_prefix=url)
+            self.assertContains(resp, 'data-safety="block"', msg_prefix=url)
+            self.assertContains(resp, 'js/report-block.js', msg_prefix=url)
+            for value, label in UserReport.REASON_CHOICES:
+                self.assertContains(resp, f'value="{value}"', msg_prefix=url)
+        self.assertContains(rider.get(reverse('profile')), 'Blocked users')
+
+    # ── Staff actions and retention ──
+
+    def _admin_action(self, action, report):
+        staff = CustomUser.objects.create_superuser(email='rb_admin@example.com', password='TestPass123',
+                                                    full_name='Admin', dob=date(1990, 1, 1))
+        c = self._client(staff.email)
+        resp = c.post(reverse('admin:komute_userreport_changelist'),
+                      {'action': action, '_selected_action': [report.id]})
+        self.assertEqual(resp.status_code, 302)
+        report.refresh_from_db()
+        self.assertEqual(report.handled_by, staff)
+        return report
+
+    def _open_report(self):
+        return UserReport.objects.create(reporter=self.rider, reported=self.driver, booking=self.booking, reason='harassment')
+
+    def test_admin_warn_by_email(self):
+        report = self._admin_action('warn_by_email', self._open_report())
+        self.assertEqual(report.status, UserReport.STATUS_ACTIONED)
+        self.assertIn('warned by email', report.staff_note)
+        self.assertEqual(len(mail.outbox), 1)
+        self.assertEqual(mail.outbox[0].to, [self.driver.email])
+        self.assertIn(reverse('community-guidelines'), mail.outbox[0].body)
+        self.assertNotIn(self.rider.email, mail.outbox[0].body)
+
+    def test_admin_deactivate_reported_account(self):
+        report = self._admin_action('deactivate_reported_account', self._open_report())
+        self.assertEqual(report.status, UserReport.STATUS_ACTIONED)
+        self.driver.refresh_from_db()
+        self.assertFalse(self.driver.is_active)
+        # Not queued for deletion: purge_deactivated_accounts needs deactivated_at.
+        self.assertIsNone(self.driver.deactivated_at)
+
+    def test_admin_dismiss(self):
+        report = self._admin_action('dismiss', self._open_report())
+        self.assertEqual(report.status, UserReport.STATUS_DISMISSED)
+        self.driver.refresh_from_db()
+        self.assertTrue(self.driver.is_active)
+        self.assertEqual(len(mail.outbox), 0)
+
+    def test_purge_user_reports_deletes_only_old_closed_reports(self):
+        old = timezone.now() - timedelta(days=settings.REPORT_RETENTION_DAYS + 1)
+        old_closed, old_open, new_closed = (self._open_report() for _ in range(3))
+        UserReport.objects.filter(pk=old_closed.pk).update(status=UserReport.STATUS_DISMISSED, updated_at=old)
+        UserReport.objects.filter(pk=old_open.pk).update(updated_at=old)
+        UserReport.objects.filter(pk=new_closed.pk).update(status=UserReport.STATUS_ACTIONED)
+        call_command('purge_user_reports')
+        self.assertEqual(set(UserReport.objects.values_list('pk', flat=True)), {old_open.pk, new_closed.pk})
+
+    def test_purged_account_loses_its_blocks_but_reports_stay(self):
+        self._block(self.rider, self.driver)
+        self._block(self.stranger, self.rider)
+        self._open_report()
+        CustomUser.objects.filter(pk=self.rider.pk).update(
+            is_active=False, deactivated_at=timezone.now() - timedelta(days=settings.ACCOUNT_DELETION_GRACE_DAYS + 1))
+        call_command('purge_deactivated_accounts')
+        self.assertFalse(UserBlock.objects.exists())
+        self.assertEqual(UserReport.objects.count(), 1)
+
+
+class BlockChatSocketTests(TransactionTestCase):
+    """ISSUES.md A1: a block closes open chats live and the socket refuses
+    blocked users."""
+
+    def setUp(self):
+        self.driver = make_driver_with_vehicle('bk_driver@example.com')
+        self.rider = make_user('bk_rider@example.com')
+        self.booking = RideBooking.objects.create(
+            ride=make_ride(self.driver), passenger=self.rider, seats=1,
+            agreed_price_cents=2500, status=RideBooking.STATUS_CONFIRMED,
+        )
+
+    def test_block_locks_open_chat(self):
+        driver = Client()
+        driver.login(username='bk_driver@example.com', password='TestPass123')
+        async def run():
+            comm = ChatIsolationTests._communicator(self.rider, self.booking)
+            connected, _ = await comm.connect()
+            self.assertTrue(connected)
+            resp = await sync_to_async(driver.post)(reverse('block-user'), {'booking': encode_id(self.booking.id)})
+            self.assertEqual(resp.status_code, 200)
+            event = await comm.receive_json_from(timeout=5)
+            await comm.disconnect()
+            return event
+        event = async_to_sync(run)()
+        self.assertEqual(event['type'], 'booking_status')
+        self.assertTrue(event['chat_locked'])
+        self.assertEqual(event['closed_message'], "You can't message this user.")
+
+    def test_socket_refused_once_blocked(self):
+        UserBlock.objects.create(blocker=self.rider, blocked=self.driver)
+        async def run():
+            comm = ChatIsolationTests._communicator(self.driver, self.booking)
+            connected, _ = await comm.connect()
+            self.assertTrue(connected)
+            return await comm.receive_output(timeout=5)
+        with self.assertLogs('komute.chat', 'WARNING'):
+            output = async_to_sync(run)()
+        self.assertEqual(output, {'type': 'websocket.close', 'code': 4410})
+
+    def test_socket_opened_before_block_refuses_messages_and_offers(self):
+        async def run():
+            comm = ChatIsolationTests._communicator(self.rider, self.booking)
+            connected, _ = await comm.connect()
+            self.assertTrue(connected)
+            await sync_to_async(UserBlock.objects.create)(blocker=self.driver, blocked=self.rider)
+            errors = []
+            for frame in ({'type': 'message', 'body': 'hello'}, {'type': 'price_offer', 'price': 10},
+                          {'type': 'price_accepted', 'offer_id': 1}):
+                await comm.send_json_to(frame)
+                errors.append(await comm.receive_json_from(timeout=5))
+            await comm.disconnect()
+            return errors
+        errors = async_to_sync(run)()
+        self.assertEqual([e['code'] for e in errors], ['blocked'] * 3)
+        self.assertFalse(Message.objects.exists())
+        self.assertFalse(PriceOffer.objects.exists())
 
 
 class EditRideViewTests(TestCase):

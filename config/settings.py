@@ -274,6 +274,8 @@ VERIFICATION_RECORD_RETENTION_DAYS = config('VERIFICATION_RECORD_RETENTION_DAYS'
 RIDE_SEARCH_RETENTION_DAYS = config('RIDE_SEARCH_RETENTION_DAYS', default=90,  cast=int)
 COMPLETED_RIDE_RETENTION_DAYS = config('COMPLETED_RIDE_RETENTION_DAYS', default=730, cast=int)
 CANCELLED_RIDE_RETENTION_DAYS = config('CANCELLED_RIDE_RETENTION_DAYS', default=180, cast=int)
+# User reports (ISSUES.md A1): kept this long after staff close them.
+REPORT_RETENTION_DAYS = config('REPORT_RETENTION_DAYS', default=365, cast=int)
 STOP_DETOUR_MAX_KM  = config('STOP_DETOUR_MAX_KM',  default=30,  cast=int)
 STOP_DETOUR_MAX_PCT = config('STOP_DETOUR_MAX_PCT',  default=35,  cast=int)
 ACCOUNT_DELETION_GRACE_DAYS = config('ACCOUNT_DELETION_GRACE_DAYS', default=45, cast=int)
@@ -314,6 +316,8 @@ RATE_LIMITS = {
                                config('RATE_LIMIT_SEND_INVITE_DAILY_WINDOW',  default=86400, cast=int)),
     'verify-driver':         (config('RATE_LIMIT_VERIFY_DRIVER_MAX',         default=5,   cast=int),
                                config('RATE_LIMIT_VERIFY_DRIVER_WINDOW',      default=3600, cast=int)),
+    'report-user':           (config('RATE_LIMIT_REPORT_USER_MAX',           default=10,  cast=int),
+                               config('RATE_LIMIT_REPORT_USER_WINDOW',        default=3600, cast=int)),
 }
 
 # Field-level encryption for biometric scores and sensitive OCR data

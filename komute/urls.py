@@ -16,6 +16,7 @@ from .views import (
     request_deactivate_account_view, confirm_deactivate_account_view,
     forgot_password_view, reset_password_view,
     private_media_view, upload_too_large_view,
+    report_user_view, block_user_view, unblock_user_view,
 )
 
 urlpatterns = [
@@ -69,4 +70,7 @@ urlpatterns = [
     path('invite/<str:token>/', invite_detail_view, name='invite-detail'),
     path('invite/<str:token>/accept/', accept_invite_view, name='accept-invite'),
     path('invite/<str:token>/decline/', decline_invite_view, name='decline-invite'),
+    path('report-user/', report_user_view, name='report-user'),
+    path('block-user/', block_user_view, name='block-user'),
+    path('blocked-users/<str:user_id>/unblock/', unblock_user_view, name='unblock-user'),
 ]

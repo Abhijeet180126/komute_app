@@ -1,0 +1,93 @@
+{% load static %}
+{# Report and Block dialogs (ISSUES.md A1). Rendered by {% report_block_dialogs %}; opened by static/js/report-block.js. #}
+<style>
+.rb-backdrop{position:fixed;inset:0;z-index:10050;background:rgba(15,31,18,.55);display:none;align-items:center;justify-content:center;padding:16px;}
+.rb-backdrop.show{display:flex;}
+.rb-dialog{background:#fff;border-radius:16px;width:100%;max-width:440px;max-height:calc(100vh - 32px);overflow-y:auto;padding:24px;box-shadow:0 20px 50px rgba(0,0,0,.25);font-family:'DM Sans',sans-serif;color:#121212;text-align:left;}
+.rb-dialog h3{font-family:'Poppins',sans-serif;font-weight:700;font-size:1.1rem;margin:0 0 6px;}
+.rb-dialog p{font-size:.88rem;line-height:1.5;color:#5a7060;margin:0 0 12px;}
+.rb-dialog label.rb-label{display:block;font-weight:600;font-size:.85rem;margin:14px 0 6px;}
+.rb-reasons{display:flex;flex-direction:column;gap:6px;}
+.rb-reason{display:flex;align-items:center;gap:10px;padding:9px 12px;border:1.5px solid #c2dfc8;border-radius:10px;cursor:pointer;font-size:.9rem;}
+.rb-reason:has(input:checked){border-color:#0D7810;background:#E9F7EE;}
+.rb-reason input{accent-color:#0D7810;margin:0;}
+.rb-dialog textarea{width:100%;min-height:90px;resize:vertical;border:1.5px solid #c2dfc8;border-radius:10px;padding:10px 12px;font:inherit;font-size:.9rem;background:#f6fbf7;box-sizing:border-box;}
+.rb-dialog textarea:focus{outline:none;border-color:#0D7810;}
+.rb-count{font-size:.75rem;color:#5a7060;text-align:right;margin-top:4px;}
+.rb-error{display:none;margin-top:12px;padding:9px 12px;border-radius:10px;background:#fdecec;color:#a12a2a;font-size:.85rem;}
+.rb-error.show{display:block;}
+.rb-note{font-size:.78rem!important;margin:14px 0 0!important;}
+.rb-actions{display:flex;gap:10px;justify-content:flex-end;flex-wrap:wrap;margin-top:18px;}
+.rb-btn{padding:10px 18px;border-radius:10px;border:none;cursor:pointer;font:inherit;font-weight:700;font-size:.88rem;}
+.rb-btn:disabled{opacity:.6;cursor:wait;}
+.rb-btn-secondary{background:#eef2ef;color:#121212;}
+.rb-btn-primary{background:#0D7810;color:#fff;}
+.rb-btn-danger{background:#dc2626;color:#fff;}
+</style>
+
+<div id="rbRoot" data-report-url="{% url 'report-user' %}" data-block-url="{% url 'block-user' %}">
+
+  <!-- Report -->
+  <div class="rb-backdrop" id="rbReport" role="dialog" aria-modal="true" aria-labelledby="rbReportTitle">
+    <div class="rb-dialog">
+      <div id="rbReportForm">
+        <h3 id="rbReportTitle">Report <span data-rb-name></span></h3>
+        <p>Tell us what happened. We don't tell <span data-rb-name></span> who reported them.</p>
+        <label class="rb-label">Reason</label>
+        <div class="rb-reasons">
+          {% for value, label in reasons %}
+          <label class="rb-reason"><input type="radio" name="rbReason" value="{{ value }}"> {{ label }}</label>
+          {% endfor %}
+        </div>
+        <label class="rb-label" for="rbDetails">What happened? <span style="font-weight:400;color:#5a7060">(required for "Other")</span></label>
+        <textarea id="rbDetails" maxlength="2000"></textarea>
+        <div class="rb-count"><span id="rbDetailsCount">0</span>/2000</div>
+        <div class="rb-error" id="rbReportError" role="alert"></div>
+        <p class="rb-note">In an emergency, call 911 (112 in Europe) first. Reports aren't monitored in real time.</p>
+        <div class="rb-actions">
+          <button type="button" class="rb-btn rb-btn-secondary" onclick="komuteSafety.close()">Cancel</button>
+          <button type="button" class="rb-btn rb-btn-primary" id="rbReportSubmit" onclick="komuteSafety.submitReport()">Send report</button>
+        </div>
+      </div>
+      <div id="rbReportDone" hidden>
+        <h3>Thanks for telling us</h3>
+        <p>Our team reviews every report and may email you for more details. If we find a breach of our <a href="{% url 'community-guidelines' %}" target="_blank" rel="noopener">Community Guidelines</a>, we'll take action, from a warning up to removing the account.</p>
+        <p id="rbReportBlockHint">If you don't want any more contact with <span data-rb-name></span>, you can also block them.</p>
+        <div class="rb-actions">
+          <button type="button" class="rb-btn rb-btn-secondary" onclick="komuteSafety.close()">Close</button>
+          <button type="button" class="rb-btn rb-btn-danger" id="rbReportBlockBtn" onclick="komuteSafety.openBlock()">Block <span data-rb-name></span></button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Block -->
+  <div class="rb-backdrop" id="rbBlock" role="dialog" aria-modal="true" aria-labelledby="rbBlockTitle">
+    <div class="rb-dialog">
+      <div id="rbBlockForm">
+        <h3 id="rbBlockTitle">Block <span data-rb-name></span>?</h3>
+        <p>Are you sure? Once blocked:</p>
+        <ul style="font-size:.88rem;line-height:1.5;color:#5a7060;margin:0 0 12px 18px;padding:0;">
+          <li>Neither of you will see the other's rides.</li>
+          <li>You can't book or invite each other.</li>
+          <li>Your chats with each other close.</li>
+        </ul>
+        <p>Confirmed bookings between you stay in place. Cancel them as usual if you no longer want to ride together. You can unblock from your profile at any time.</p>
+        <div class="rb-error" id="rbBlockError" role="alert"></div>
+        <div class="rb-actions">
+          <button type="button" class="rb-btn rb-btn-secondary" onclick="komuteSafety.close()">Cancel</button>
+          <button type="button" class="rb-btn rb-btn-danger" id="rbBlockSubmit" onclick="komuteSafety.submitBlock()">Block</button>
+        </div>
+      </div>
+      <div id="rbBlockDone" hidden>
+        <h3>You blocked <span data-rb-name></span></h3>
+        <p>You can unblock them from "Blocked users" on your profile.</p>
+        <div class="rb-actions">
+          <button type="button" class="rb-btn rb-btn-primary" onclick="komuteSafety.close()">Close</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div>
+<script src="{% static 'js/report-block.js' %}"></script>

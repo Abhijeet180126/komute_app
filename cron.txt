@@ -25,6 +25,10 @@
 # summary of any accounts purged in the run.
 45 3 * * * /var/www/komute/venv/bin/python /var/www/komute/manage.py purge_deactivated_accounts >> /var/www/komute/logs/cron.log 2>&1
 
+# Retention: user reports, REPORT_RETENTION_DAYS (default 365) after staff
+# close them (ISSUES.md A1). Open reports are kept until closed.
+0 4 * * * /var/www/komute/venv/bin/python /var/www/komute/manage.py purge_user_reports >> /var/www/komute/logs/cron.log 2>&1
+
 # Driver identity re-verification (ISSUES.md C2): reminder email
 # DRIVER_REVERIFY_REMINDER_DAYS (10) before, then verification cleared after
 # DRIVER_REVERIFY_DAYS (90). 14:00 UTC = 9-10 am Eastern, so reminders arrive in daytime.

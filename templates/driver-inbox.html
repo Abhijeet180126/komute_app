@@ -103,6 +103,12 @@ body{font-family:'DM Sans',sans-serif;background:var(--light-bg);min-height:100v
 .btn-reject:hover{background:#fecaca;}
 .btn-accept svg,.btn-reject svg{width:13px;height:13px;stroke:currentColor;fill:none;stroke-width:2.5;stroke-linecap:round;stroke-linejoin:round;}
 
+/* Report / block (ISSUES.md A1) */
+.convo-safety{display:flex;gap:16px;justify-content:flex-end;align-items:center;margin-top:8px;}
+.convo-safety button{background:none;border:none;padding:0;cursor:pointer;font-family:'DM Sans',sans-serif;font-size:.74rem;font-weight:600;color:var(--text-muted);text-decoration:underline;}
+.convo-safety button:hover{color:#b91c1c;}
+.convo-safety .blocked-tag{font-size:.7rem;font-weight:700;color:#991b1b;background:#fee2e2;border-radius:50px;padding:1px 8px;}
+
 /* pending request badge */
 .pending-chip{display:inline-flex;align-items:center;gap:4px;background:#fef9c3;color:#92400e;border-radius:50px;padding:2px 8px;font-size:.68rem;font-weight:700;margin-right:4px;}
 .pending-chip svg{width:10px;height:10px;stroke:currentColor;fill:none;stroke-width:2.5;stroke-linecap:round;stroke-linejoin:round;}
@@ -234,6 +240,14 @@ body{font-family:'DM Sans',sans-serif;background:var(--light-bg);min-height:100v
           </button>
         </div>
         {% endif %}
+        <div class="convo-safety" onclick="event.stopPropagation()">
+          <button type="button" data-safety="report" data-booking="{{ convo.booking_encoded_id }}" data-name="{{ convo.passenger_name }}" data-blocked="{{ convo.blocked_by_me|yesno:'true,false' }}" onclick="komuteSafety.open(this)">Report</button>
+          {% if convo.blocked_by_me %}
+          <span class="blocked-tag">Blocked</span>
+          {% else %}
+          <button type="button" data-safety="block" data-booking="{{ convo.booking_encoded_id }}" data-name="{{ convo.passenger_name }}" data-after-block="reload" onclick="komuteSafety.open(this)">Block</button>
+          {% endif %}
+        </div>
       </div>
     </div>
     {% endfor %}
@@ -359,6 +373,7 @@ function showToast(msg){
 </script>
 
 <script src="{% static 'js/booking-updates.js' %}" data-fingerprint="{{ bookings_fingerprint }}"></script>
+{% load safety_tags %}{% report_block_dialogs %}
 
 {% include 'footer.html' %}
 </body>

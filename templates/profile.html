@@ -987,6 +987,14 @@ nav {
   .photo-actions { justify-content: center; }
 }
 
+/* ── Blocked users ── */
+.blocked-row { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 12px 0; border-bottom: 1px solid var(--input-border, #c2dfc8); }
+.blocked-row:last-child { border-bottom: none; }
+.blocked-name { font-family: 'Poppins', sans-serif; font-weight: 600; font-size: 0.9rem; }
+.blocked-since, .blocked-empty { font-size: 0.8rem; color: var(--text-muted); }
+.btn-unblock { padding: 8px 16px; border-radius: 9px; border: 1.5px solid var(--input-border, #c2dfc8); background: #fff; font-family: 'DM Sans', sans-serif; font-size: 0.82rem; font-weight: 700; cursor: pointer; }
+.btn-unblock:hover { border-color: #0D7810; color: #0D7810; }
+
 /* ── Danger Zone ── */
 .danger-zone-card { border-color: #f5c6c6; }
 .danger-zone-card .section-header { background: linear-gradient(135deg, #fef6f6 0%, #fdeded 100%); border-bottom-color: #f5c6c6; }
@@ -1704,6 +1712,35 @@ body.role-rider .driver-only { display: none; }
   </div>
 
   </form>
+
+  <!-- ── BLOCKED USERS (ISSUES.md A1) ── -->
+  <div class="section-card" id="blocked-users">
+    <div class="section-header">
+      <div class="section-icon">
+        <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/></svg>
+      </div>
+      <div class="section-header-text">
+        <h3>Blocked users</h3>
+        <p>You and these users can't see each other's rides, book or invite each other, or chat</p>
+      </div>
+    </div>
+    <div class="section-body">
+      {% for blocked in blocked_users %}
+      <div class="blocked-row">
+        <div>
+          <div class="blocked-name">{{ blocked.name }}</div>
+          <div class="blocked-since">Blocked {{ blocked.since|date:"M j, Y" }}</div>
+        </div>
+        <form method="post" action="{% url 'unblock-user' blocked.key %}">
+          {% csrf_token %}
+          <button type="submit" class="btn-unblock">Unblock</button>
+        </form>
+      </div>
+      {% empty %}
+      <p class="blocked-empty">You haven't blocked anyone. To block someone, use Report or Block in your chat with them, on the ride details page, or in your inbox.</p>
+      {% endfor %}
+    </div>
+  </div>
 
   <!-- ── DANGER ZONE ── -->
   <div class="section-card danger-zone-card">

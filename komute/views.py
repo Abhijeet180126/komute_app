@@ -42,7 +42,7 @@ from django.template.loader import render_to_string
 from django.urls import reverse
 from django.contrib.auth import logout as auth_logout
 
-from .models import Rides, RideStop, Vehicle, RideBooking, PriceOffer, Message, RideSearch, VerificationLog, Review, RideInvite
+from .models import Rides, RideStop, Vehicle, RideBooking, PriceOffer, Message, RideSearch, VerificationLog, Review, RideInvite, UserBlock, UserReport
 from .hashid_utils import encode_id, decode_id
 from .notifications import booking_fingerprint, notify_bookings_changed
 from . import private_media
@@ -993,6 +993,15 @@ def profile_view(request):
         # Was verified, and that verification has run out.
         "reverify_expired": not verification_current and reverify_due_at is not None
                             and timezone.now() >= reverify_due_at,
+        # Users this user has blocked, each with an Unblock button (ISSUES.md A1).
+        "blocked_users": [
+            {
+                "key":   encode_id(b.blocked_id),
+                "name":  (b.blocked.full_name or "").title() or "Komüte user",
+                "since": b.created_at,
+            }
+            for b in UserBlock.objects.filter(blocker=user).select_related("blocked").order_by("-created_at")
+        ],
     }
     return render(request, "profile.html", context)
 
@@ -1345,6 +1354,8 @@ def search_rides_view(request):
         qs = (
             Rides.objects
             .filter(status__in=['posted', 'full'], depart_at__gte=timezone.now())
+            # Blocked either way: neither sees the other's rides (ISSUES.md A1).
+            .exclude(driver_id__in=UserBlock.objects.hidden_ids(request.user.id))
             .select_related('driver', 'vehicle')
             .prefetch_related('stops')
             .order_by('depart_at')
@@ -1502,6 +1513,13 @@ def create_ride_booking(request, ride_id):
         messages.error(request, "You cannot book your own ride.")
         return redirect("my-rides")
 
+    # Hidden from search when either has blocked the other (ISSUES.md A1),
+    # so a direct link doesn't show it either.
+    if UserBlock.objects.between(ride.driver_id, request.user.id):
+        if request.method == "POST":
+            return JsonResponse({'ok': False, 'error': "You can't book this ride."}, status=403)
+        raise Http404
+
     if request.method == "POST":
         intent = request.POST.get("intent", "book")
         try:
@@ -1651,6 +1669,9 @@ def create_ride_booking(request, ride_id):
     })
 
 
+BLOCKED_CHAT_MESSAGE = "You can't message this user."
+
+
 def _chat_status(booking):
     """Header badge and lock state of a booking's chat page. Shared by
     chat_view and the live booking_status event (ISSUES.md H3), so a page
@@ -1675,6 +1696,11 @@ def _chat_status(booking):
         label, status_class = 'Negotiating', 'active'
     else:
         label, status_class = 'Pending', 'pending'
+    # A block in either direction closes the chat (ISSUES.md A1). The badge
+    # keeps the booking's own status: the booking itself is left alone.
+    blocked = UserBlock.objects.between(booking.ride.driver_id, booking.passenger_id)
+    if blocked and not closed_message:
+        closed_message = BLOCKED_CHAT_MESSAGE
     agreed_price = None
     if booking.status in (RideBooking.STATUS_CONFIRMED, RideBooking.STATUS_COMPLETED) and booking.agreed_price_cents:
         agreed_price = booking.agreed_price_cents // 100
@@ -1682,7 +1708,7 @@ def _chat_status(booking):
         'agreed_price':   agreed_price,
         'label':          label,
         'status_class':   status_class,
-        'chat_locked':    status_class in ('cancelled', 'completed'),
+        'chat_locked':    status_class in ('cancelled', 'completed') or blocked,
         # Negotiation requires a confirmed booking — blocked while approval is pending
         'nego_locked':    booking.status == RideBooking.STATUS_REQUESTED,
         'closed_message': closed_message,
@@ -1774,6 +1800,11 @@ def accept_booking_view(request, booking_id):
 
     if not booking.ride.driver.driver_verification_current:
         return JsonResponse({'error': 'Please verify your identity on your profile page before accepting bookings.'}, status=403)
+
+    # A request sent before a block stays pending; the driver can still
+    # reject it and the rider can cancel it, but it can't be confirmed.
+    if UserBlock.objects.between(booking.ride.driver_id, booking.passenger_id):
+        return JsonResponse({'error': "You can't accept this booking request."}, status=403)
 
     booking.status = RideBooking.STATUS_CONFIRMED
     booking.confirmed_at = timezone.now()
@@ -2161,6 +2192,9 @@ def chat_view(request, token):
         'chat_is_locked':         status['chat_locked'],
         'nego_locked':            status['nego_locked'],
         'chat_closed_message':    status['closed_message'],
+        # Report / block menu (ISSUES.md A1)
+        'booking_key':            encode_id(booking.id),
+        'blocked_by_me':          UserBlock.objects.filter(blocker=request.user, blocked=other_user).exists(),
     })
 
 
@@ -2799,6 +2833,7 @@ def driver_inbox_view(request):
 
     AVATAR_CLASSES = ['c1', 'c2', 'c3', 'c4', 'c5']
     now = timezone.now()
+    my_blocks = set(UserBlock.objects.filter(blocker=user).values_list('blocked_id', flat=True))
 
     conversations = []
     for i, booking in enumerate(unique_bookings):
@@ -2879,6 +2914,7 @@ def driver_inbox_view(request):
             'booking_status':     booking.status,
             'chat_token':         make_chat_token(booking.id),
             'passenger_name':     name or passenger.email,
+            'blocked_by_me':      passenger.id in my_blocks,
             'initials':           initials,
             'avatar_class':       AVATAR_CLASSES[i % 5],
             'is_online':          is_online,
@@ -2984,6 +3020,7 @@ def rider_inbox_view(request):
 
     AVATAR_CLASSES = ['c1', 'c2', 'c3', 'c4', 'c5']
     now = timezone.now()
+    my_blocks = set(UserBlock.objects.filter(blocker=user).values_list('blocked_id', flat=True))
 
     conversations = []
     for i, booking in enumerate(unique_bookings):
@@ -3059,6 +3096,7 @@ def rider_inbox_view(request):
             'chat_token':         make_chat_token(booking.id),
             'driver_name':        name or driver.email,
             'driver_verified':    driver.driver_verified,
+            'blocked_by_me':      driver.id in my_blocks,
             'initials':           initials,
             'avatar_class':       AVATAR_CLASSES[i % 5],
             'is_online':          is_online,
@@ -3159,6 +3197,9 @@ def create_price_offer_view(request, booking_id):
     if booking.status not in (RideBooking.STATUS_REQUESTED, RideBooking.STATUS_CONFIRMED):
         return JsonResponse({'error': 'Negotiation is closed for this booking.'}, status=400)
 
+    if UserBlock.objects.between(booking.ride.driver_id, booking.passenger_id):
+        return JsonResponse({'error': BLOCKED_CHAT_MESSAGE}, status=403)
+
     try:
         price_cents = int(round(float(request.POST.get('price_cents', 0))))
     except (ValueError, TypeError):
@@ -3213,6 +3254,9 @@ def respond_price_offer_view(request, offer_id):
 
     if booking.status not in (RideBooking.STATUS_REQUESTED, RideBooking.STATUS_CONFIRMED):
         return JsonResponse({'error': f'This booking is no longer active ({booking.status}).'}, status=400)
+
+    if UserBlock.objects.between(booking.ride.driver_id, booking.passenger_id):
+        return JsonResponse({'error': BLOCKED_CHAT_MESSAGE}, status=403)
 
     if offer.status != PriceOffer.STATUS_PENDING:
         return JsonResponse({'error': 'This offer is no longer pending.'}, status=400)
@@ -4112,6 +4156,8 @@ def route_demand_view(request):
         RideSearch.objects
         .filter(created_at__gte=week_ago, user__isnull=False)
         .exclude(user=driver)
+        # Blocked riders can't be invited, so don't list them (ISSUES.md A1).
+        .exclude(user_id__in=UserBlock.objects.hidden_ids(driver.id))
         .select_related('user')
         .order_by('-created_at')
     )
@@ -4399,8 +4445,10 @@ def send_invite_view(request):
 
     # Identical response whether rider_id doesn't exist at all or exists but
     # isn't a legitimate invite target for this ride — otherwise the status
-    # code/message becomes an oracle for enumerating real user IDs.
-    if rider is None or not _rider_is_inviteable(driver, ride, rider):
+    # code/message becomes an oracle for enumerating real user IDs. The same
+    # goes for a block either way (ISSUES.md A1): the driver isn't told.
+    if (rider is None or UserBlock.objects.between(driver.id, rider.id)
+            or not _rider_is_inviteable(driver, ride, rider)):
         return JsonResponse({'error': 'This rider is not eligible to be invited to this ride.'}, status=400)
 
     if ride.seats_available <= 0:
@@ -4498,7 +4546,7 @@ def accept_invite_view(request, token):
 
     ride = invite.ride
 
-    if ride.status in ['cancelled', 'completed']:
+    if ride.status in ['cancelled', 'completed'] or UserBlock.objects.between(ride.driver_id, request.user.id):
         return render(request, 'invite-detail.html', {
             'invite': invite, 'token': token,
             'error':  'This ride is no longer available.',
@@ -4581,3 +4629,133 @@ def decline_invite_view(request, token):
     invite.status = RideInvite.STATUS_DECLINED
 
     return render(request, 'invite-declined.html', {'invite': invite})
+
+
+# ──────────────────────────────────────────────────────────────────
+# REPORT AND BLOCK (ISSUES.md A1)
+# ──────────────────────────────────────────────────────────────────
+
+REPORT_DETAILS_MAX_CHARS = 2000
+
+
+def _safety_target(request):
+    """The other user a report or block is about, and the booking it came
+    from. Named by a booking the signed-in user is part of (`booking`), or by
+    a ride they can view (`ride`, meaning its driver), never by a raw user
+    ID. Returns (None, None) if neither names someone else."""
+    me = request.user
+    booking_key = request.POST.get('booking', '').strip()
+    ride_key = request.POST.get('ride', '').strip()
+    if booking_key:
+        booking_id = decode_id(booking_key)
+        booking = booking_id and (
+            RideBooking.objects.select_related('ride__driver', 'passenger').filter(id=booking_id).first()
+        )
+        if not booking:
+            return None, None
+        if me == booking.passenger:
+            return booking.ride.driver, booking
+        if me == booking.ride.driver:
+            return booking.passenger, booking
+        return None, None
+    if ride_key:
+        ride_id = decode_id(ride_key)
+        ride = ride_id and Rides.objects.select_related('driver').filter(id=ride_id).first()
+        if not ride or ride.driver == me:
+            return None, None
+        booking = RideBooking.objects.filter(ride=ride, passenger=me).order_by('-booked_at').first()
+        return ride.driver, booking
+    return None, None
+
+
+def _send_report_admin_email(request, report):
+    """Tell staff a report came in. The report is saved either way."""
+    admin_url = request.build_absolute_uri(reverse('admin:komute_userreport_change', args=[report.id]))
+    booking = report.booking
+    lines = [
+        f"New user report #{report.id}",
+        '─' * 45,
+        '',
+        f"Reported:  {report.reported.full_name} <{report.reported.email}> (user {report.reported_id})",
+        f"Reporter:  {report.reporter.full_name} <{report.reporter.email}> (user {report.reporter_id})",
+        f"Reason:    {report.get_reason_display()}",
+    ]
+    if booking:
+        lines.append(f"Booking:   #{booking.id} ({booking.status}), ride {booking.ride.origin} → {booking.ride.destination}")
+    lines += ['', 'Details:', report.details or '(none)', '', f"Review it in the admin: {admin_url}"]
+    try:
+        EmailMultiAlternatives(
+            subject=f"[Komüte Report] {report.get_reason_display()} — report #{report.id}",
+            body='\n'.join(lines),
+            from_email=settings.DEFAULT_FROM_EMAIL,
+            to=[settings.ADMIN_EMAIL],
+        ).send(fail_silently=False)
+    except Exception:
+        logger.exception('Could not email ADMIN_EMAIL about report %s', report.id)
+
+
+@login_required
+@require_POST
+def report_user_view(request):
+    if _rate_limited(request, 'report-user', extra_key=str(request.user.id)):
+        return JsonResponse({'error': 'Too many reports sent. Please try again later.'}, status=429)
+
+    reported, booking = _safety_target(request)
+    if reported is None:
+        return JsonResponse({'error': 'User not found.'}, status=404)
+
+    reason = request.POST.get('reason', '').strip()
+    if reason not in dict(UserReport.REASON_CHOICES):
+        return JsonResponse({'error': 'Please choose a reason.'}, status=400)
+    details = request.POST.get('details', '').strip()
+    if len(details) > REPORT_DETAILS_MAX_CHARS:
+        return JsonResponse({'error': f'Please keep the details under {REPORT_DETAILS_MAX_CHARS} characters.'}, status=400)
+    if reason == UserReport.REASON_OTHER and not details:
+        return JsonResponse({'error': 'Please tell us what happened.'}, status=400)
+
+    report = UserReport.objects.create(
+        reporter=request.user,
+        reported=reported,
+        booking=booking,
+        reason=reason,
+        details=details,
+    )
+    _send_report_admin_email(request, report)
+    return JsonResponse({'ok': True})
+
+
+def _close_chats_between(user_a, user_b):
+    """Lock any open chat page between two users who are now blocked."""
+    bookings = (
+        RideBooking.objects
+        .filter(Q(ride__driver=user_a, passenger=user_b) | Q(ride__driver=user_b, passenger=user_a))
+        .filter(status__in=(RideBooking.STATUS_DRAFT, RideBooking.STATUS_REQUESTED, RideBooking.STATUS_CONFIRMED))
+        .select_related('ride')
+    )
+    for booking in bookings:
+        _notify_booking_status(booking)
+
+
+@login_required
+@require_POST
+def block_user_view(request):
+    target, _ = _safety_target(request)
+    if target is None:
+        return JsonResponse({'error': 'User not found.'}, status=404)
+
+    _, created = UserBlock.objects.get_or_create(blocker=request.user, blocked=target)
+    if created:
+        _close_chats_between(request.user, target)
+    return JsonResponse({'ok': True})
+
+
+@login_required
+@require_POST
+def unblock_user_view(request, user_id):
+    real_id = decode_id(user_id)
+    deleted = 0
+    if real_id:
+        deleted, _ = UserBlock.objects.filter(blocker=request.user, blocked_id=real_id).delete()
+    if deleted:
+        messages.success(request, "User unblocked.")
+    return redirect('profile')
