@@ -1,4 +1,5 @@
 from django.urls import path,include
+from django.views.generic import RedirectView
 from .views import (
     home_view, signup_view, login_view, profile_view, about_view,
     role_select_view, post_ride_view, how_it_works_view,
@@ -41,6 +42,16 @@ urlpatterns = [
     path('change-password/', change_password_view, name='change-password'),
     path('chat/<str:token>/', chat_view, name='chat'),
     path('accounts/confirm-email/<key>/', CustomConfirmEmailView.as_view(), name='account_confirm_email'),
+    # allauth is only here for email confirmation. Its own signup, login,
+    # password and email pages skipped the app's checks (terms, rate
+    # limits, required fields), so send them to the app's versions. The
+    # named allauth routes below stay registered for reverse().
+    path('accounts/signup/', RedirectView.as_view(pattern_name='signup')),
+    path('accounts/login/', RedirectView.as_view(pattern_name='login', query_string=True)),
+    path('accounts/password/reset/', RedirectView.as_view(pattern_name='forgot-password')),
+    path('accounts/password/change/', RedirectView.as_view(pattern_name='profile')),
+    path('accounts/password/set/', RedirectView.as_view(pattern_name='profile')),
+    path('accounts/email/', RedirectView.as_view(pattern_name='profile')),
     # the upper line overrides the default allauth confirm email view to redirect to the home page after email confirmation
     path('accounts/', include('allauth.urls')),
     path('profile/send-verification/', send_verification_email, name='send_verification_email'),

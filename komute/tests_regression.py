@@ -3474,3 +3474,12 @@ class AuditRecurringRideTests(TestCase):
                 Client().post(reverse('forgot-password'), {'email': 'au_rider@example.com'},
                               HTTP_X_FORWARDED_FOR=f'10.0.0.{i}, 203.0.113.7')
         self.assertEqual(len(mail.outbox), 2)
+
+    def test_allauth_pages_go_to_the_apps_own(self):
+        c = Client()
+        for path, name in (('/accounts/signup/', 'signup'), ('/accounts/login/', 'login'),
+                           ('/accounts/password/reset/', 'forgot-password')):
+            self.assertRedirects(c.get(path), reverse(name), status_code=301, fetch_redirect_response=False)
+        resp = c.post('/accounts/signup/', {'email': 'sneaky@example.com', 'password1': 'Xx1!aaaaaaaa', 'password2': 'Xx1!aaaaaaaa'})
+        self.assertEqual(resp.status_code, 301)
+        self.assertFalse(CustomUser.objects.filter(email='sneaky@example.com').exists())
