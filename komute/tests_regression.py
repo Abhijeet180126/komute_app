@@ -3479,6 +3479,14 @@ class AuditFixTests(TestCase):
             'vehicle': str(self.driver.vehicles.first().id),
         })
         self.assertIn(resp.status_code, (200, 302))
+    def test_zero_fee_adds_nothing_and_shows_no_fee_line(self):
+        with override_settings(SERVICE_FEE_CENTS=0):
+            page = self._client('au_rider@example.com').get(reverse('create-ride-booking', args=[encode_id(self.ride.id)]))
+            self.assertNotContains(page, 'Service fee')
+            self._client('au_rider@example.com').post(
+                reverse('create-ride-booking', args=[encode_id(self.ride.id)]), {'seats': '2'})
+        booking = RideBooking.objects.get(ride=self.ride, passenger=self.rider)
+        self.assertEqual(booking.agreed_price_cents, 2 * self.ride.price_cents)
 
 class AuditChatFixTests(TransactionTestCase):
     """Socket-side fixes from the full security audit."""

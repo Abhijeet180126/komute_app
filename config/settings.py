@@ -267,7 +267,10 @@ DL_VERIFICATION_API_KEY = config('DL_VERIFICATION_API_KEY', default='')
 
 # Application tuning (overridable per deployment)
 SEARCH_RADIUS_KM    = config('SEARCH_RADIUS_KM',    default=15,  cast=int)
-SERVICE_FEE_CENTS   = config('SERVICE_FEE_CENTS',   default=100, cast=int)
+# Komüte is free: no fee unless .env sets one. A non-zero fee is added to
+# every booking total and shown on the booking page, so the Terms ("no
+# fees"), Community Guidelines and About page must change first.
+SERVICE_FEE_CENTS   = config('SERVICE_FEE_CENTS',   default=0,   cast=int)
 INVITE_EXPIRY_HOURS       = config('INVITE_EXPIRY_HOURS',       default=48,  cast=int)
 MESSAGE_RETENTION_DAYS    = config('MESSAGE_RETENTION_DAYS',    default=365, cast=int)
 FACE_SCORE_RETENTION_DAYS = config('FACE_SCORE_RETENTION_DAYS', default=30,  cast=int)
