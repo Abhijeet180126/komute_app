@@ -45,7 +45,7 @@ from komute.hashid_utils import decode_id, encode_id
 from komute.models import (
     CustomUser, Vehicle, Rides, RideStop, RideBooking, Message,
     RideSearch, VerificationLog, Review, RideInvite, PriceOffer,
-    UserBlock, UserReport,
+    UserBlock, UserReport, BiometricConsent,
 )
 
 
@@ -409,6 +409,15 @@ class PurgeDeactivatedAccountsCommandTests(TestCase):
         self.assertEqual(self.booking.passenger_id, self.other_rider.id)
         self.ride.refresh_from_db()
         self.assertEqual(self.ride.driver_id, self.leaver.id)
+
+    def test_purge_keeps_consent_proof_but_drops_network_details(self):
+        BiometricConsent.objects.create(user=self.leaver, notice_version='2026-10-18',
+                                        ip_address='203.0.113.7', user_agent='TestBrowser/1.0')
+        call_command('purge_deactivated_accounts')
+        consent = BiometricConsent.objects.get(user=self.leaver)
+        self.assertEqual(consent.notice_version, '2026-10-18')
+        self.assertIsNone(consent.ip_address)
+        self.assertEqual(consent.user_agent, '')
 
     def test_not_yet_eligible_account_untouched(self):
         call_command('purge_deactivated_accounts')
@@ -2492,7 +2501,8 @@ class VerifyDriverViewGateTests(TestCase):
 
     def _selfie_file(self):
         # A real image: the view decodes and resizes the selfie (H2).
-        return {'selfie': SimpleUploadedFile('s.jpg', _jpeg_bytes(), content_type='image/jpeg')}
+        return {'selfie': SimpleUploadedFile('s.jpg', _jpeg_bytes(), content_type='image/jpeg'),
+                **_consent_fields()}
 
     def test_get_method_not_allowed(self):
         c = Client()
@@ -2508,7 +2518,7 @@ class VerifyDriverViewGateTests(TestCase):
     def test_missing_license_rejected(self):
         c = Client()
         c.login(username='vd_driver@example.com', password='TestPass123')
-        resp = c.post(reverse('verify-driver'))
+        resp = c.post(reverse('verify-driver'), _consent_fields())
         self.assertEqual(resp.status_code, 400)
         self.assertIn('license', json.loads(resp.content)['error'].lower())
 
@@ -2520,7 +2530,7 @@ class VerifyDriverViewGateTests(TestCase):
         # License read is mocked out so the request reaches the selfie check
         # without touching real disk storage.
         with patch('komute.views.open_stored_file', mock_open(read_data=b'fake-bytes')):
-            resp = c.post(reverse('verify-driver'))
+            resp = c.post(reverse('verify-driver'), _consent_fields())
         self.assertEqual(resp.status_code, 400)
         self.assertIn('selfie', json.loads(resp.content)['error'].lower())
 
@@ -2605,7 +2615,7 @@ class VerifyDriverViewGateTests(TestCase):
         c.login(username='vd_driver@example.com', password='TestPass123')
         with patch('komute.views.open_stored_file', mock_open(read_data=b'fake-bytes')), \
              patch('requests.post') as mock_post:
-            resp = c.post(reverse('verify-driver'))
+            resp = c.post(reverse('verify-driver'), _consent_fields())
         self.assertEqual(resp.status_code, 400)
         self.assertIn('selfie', json.loads(resp.content)['error'].lower())
         mock_post.assert_not_called()
@@ -2638,6 +2648,11 @@ class VerifyDriverViewGateTests(TestCase):
         vehicle.refresh_from_db()
         self.assertFalse(self.driver.driver_verified)
         self.assertFalse(vehicle.vehicle_verified)
+
+
+def _consent_fields():
+    """The biometric consent the verification modal sends with the selfie."""
+    return {'biometric_consent': '1', 'notice_version': settings.BIOMETRIC_NOTICE_VERSION}
 
 
 def _jpeg_bytes():
@@ -2876,7 +2891,7 @@ class ImageUploadTests(TestCase):
         with patch('komute.views.open_stored_file', mock_open(read_data=b'fake-bytes')), \
              patch('requests.post', return_value=mock_resp) as mock_post, \
              self.assertLogs('komute.uploads', 'INFO') as logs:
-            resp = self.client.post(reverse('verify-driver'), {'selfie': selfie})
+            resp = self.client.post(reverse('verify-driver'), {'selfie': selfie, **_consent_fields()})
         self.assertEqual(resp.status_code, 200)
         sent = base64.b64decode(mock_post.call_args.kwargs['json']['images']['selfie_base64'])
         with Image.open(io.BytesIO(sent)) as img:
@@ -2891,7 +2906,8 @@ class ImageUploadTests(TestCase):
         with patch('komute.views.open_stored_file', mock_open(read_data=b'fake-bytes')), \
              patch('requests.post') as mock_post:
             resp = self.client.post(reverse('verify-driver'), {
-                'selfie': SimpleUploadedFile('s.jpg', b'garbage', content_type='image/jpeg')})
+                'selfie': SimpleUploadedFile('s.jpg', b'garbage', content_type='image/jpeg'),
+                **_consent_fields()})
         self.assertEqual(resp.status_code, 400)
         self.assertIn('Selfie', json.loads(resp.content)['error'])
         mock_post.assert_not_called()
@@ -3238,6 +3254,130 @@ class VerifiedDetailsChangeTests(TestCase):
         self.assertEqual(resp.status_code, 200)
         self.assertIn('vehicle', resp.context['errors'])
         self.assertFalse(Rides.objects.filter(vehicle=unverified).exists())
+
+
+class BiometricConsentTests(TestCase):
+    """Audit P-2 / D-2: the verification selfie needs the driver's consent to
+    the biometric notice on every attempt, and each acceptance is recorded
+    before any image is sent to the verification service."""
+
+    setUp = VerifyDriverViewGateTests.setUp
+    _make_verifiable = VerifyDriverViewGateTests._make_verifiable
+
+    _APPROVED = {
+        "decision": "APPROVED",
+        "stages": {"license_ocr": {"passed": True},
+                   "face_biometrics": {"passed": True, "vlm_confidence": 0.9},
+                   "vehicle_verification": {"passed": True}},
+        "rejection_reasons": [],
+    }
+
+    def _client(self):
+        c = Client(HTTP_USER_AGENT='TestBrowser/1.0')
+        c.login(username='vd_driver@example.com', password='TestPass123')
+        return c
+
+    def _selfie(self):
+        return {'selfie': SimpleUploadedFile('s.jpg', _jpeg_bytes(), content_type='image/jpeg')}
+
+    def _post(self, data, on_call=None):
+        mock_resp = MagicMock()
+        mock_resp.raise_for_status.return_value = None
+        mock_resp.json.return_value = self._APPROVED
+
+        def fake_post(*args, **kwargs):
+            if on_call:
+                on_call()
+            return mock_resp
+
+        with patch('komute.views.open_stored_file', mock_open(read_data=b'fake-bytes')) as mock_file, \
+             patch('requests.post', side_effect=fake_post) as mock_post:
+            resp = self._client().post(reverse('verify-driver'), data, REMOTE_ADDR='203.0.113.7')
+        return resp, mock_post, mock_file
+
+    def test_without_consent_nothing_is_read_or_sent(self):
+        self._make_verifiable()
+        resp, mock_post, mock_file = self._post(self._selfie())
+        self.assertEqual(resp.status_code, 400)
+        self.assertIn('biometric notice', json.loads(resp.content)['error'])
+        mock_post.assert_not_called()
+        mock_file.assert_not_called()
+        self.assertFalse(BiometricConsent.objects.exists())
+        self.driver.refresh_from_db()
+        self.assertFalse(self.driver.driver_verified)
+
+    def test_consent_must_be_exactly_ticked(self):
+        self._make_verifiable()
+        resp, mock_post, _ = self._post({**self._selfie(), **_consent_fields(), 'biometric_consent': 'on'})
+        self.assertEqual(resp.status_code, 400)
+        mock_post.assert_not_called()
+
+    def test_outdated_notice_version_rejected(self):
+        self._make_verifiable()
+        resp, mock_post, _ = self._post({**self._selfie(), **_consent_fields(), 'notice_version': '2000-01-01'})
+        self.assertEqual(resp.status_code, 400)
+        self.assertIn('reload', json.loads(resp.content)['error'])
+        mock_post.assert_not_called()
+        self.assertFalse(BiometricConsent.objects.exists())
+
+    def test_consent_recorded_before_images_are_sent(self):
+        self._make_verifiable()
+        counts_at_call = []
+        resp, mock_post, _ = self._post(
+            {**self._selfie(), **_consent_fields()},
+            on_call=lambda: counts_at_call.append(BiometricConsent.objects.filter(user=self.driver).count()),
+        )
+        self.assertEqual(resp.status_code, 200)
+        mock_post.assert_called_once()
+        self.assertEqual(counts_at_call, [1])
+        consent = BiometricConsent.objects.get(user=self.driver)
+        self.assertEqual(consent.notice_version, settings.BIOMETRIC_NOTICE_VERSION)
+        self.assertEqual(consent.ip_address, '203.0.113.7')
+        self.assertEqual(consent.user_agent, 'TestBrowser/1.0')
+        self.assertLess(timezone.now() - consent.accepted_at, timedelta(minutes=1))
+
+    def test_each_attempt_records_its_own_consent(self):
+        # Re-verification every DRIVER_REVERIFY_DAYS asks again.
+        self._make_verifiable()
+        self._post({**self._selfie(), **_consent_fields()})
+        self._post({**self._selfie(), **_consent_fields()})
+        self.assertEqual(BiometricConsent.objects.filter(user=self.driver).count(), 2)
+
+    def test_no_record_when_request_fails_before_the_call(self):
+        # No vehicle: rejected before anything is sent, so nothing to record.
+        self.driver.license_front_url = '/media/licenses/license_1.jpg'
+        self.driver.save(update_fields=['license_front_url'])
+        resp, mock_post, _ = self._post({**self._selfie(), **_consent_fields()})
+        self.assertEqual(resp.status_code, 400)
+        mock_post.assert_not_called()
+        self.assertFalse(BiometricConsent.objects.exists())
+
+    def test_unparseable_client_address_stored_as_null(self):
+        self._make_verifiable()
+        with patch('komute.views._client_ip', return_value='unknown'):
+            self._post({**self._selfie(), **_consent_fields()})
+        self.assertIsNone(BiometricConsent.objects.get(user=self.driver).ip_address)
+
+    def test_profile_shows_notice_before_the_camera(self):
+        html = self._client().get(reverse('profile')).content.decode()
+        self.assertIn('id="verifyConsentStep"', html)
+        self.assertIn('id="verifyCaptureStep" style="display:none;"', html)
+        self.assertIn('id="vsConsentAgreeBtn" class="btn-verify-identity" disabled', html)
+        self.assertIn('Notice version ' + settings.BIOMETRIC_NOTICE_VERSION, html)
+        self.assertIn("fd.append('notice_version', '" + settings.BIOMETRIC_NOTICE_VERSION + "')", html)
+        self.assertIn("fd.append('biometric_consent', '1')", html)
+        self.assertIn('within 30 days of the verification decision', html)
+        # The consent step comes before the camera button in the modal.
+        self.assertLess(html.index('id="verifyConsentStep"'), html.index('onclick="openCameraForVerify()"'))
+
+    def test_admin_cannot_add_or_edit_consent_records(self):
+        from django.contrib.admin.sites import site
+        from django.test import RequestFactory
+        model_admin = site._registry[BiometricConsent]
+        request = RequestFactory().get('/')
+        request.user = make_user('bc_admin@example.com', is_staff=True, is_superuser=True)
+        self.assertFalse(model_admin.has_add_permission(request))
+        self.assertFalse(model_admin.has_change_permission(request))
 
 
 class VerificationResultStorageTests(TestCase):

@@ -1,6 +1,7 @@
 import base64
 import calendar
 import io
+import ipaddress
 import json
 import logging
 import math
@@ -41,7 +42,7 @@ from django.utils.http import url_has_allowed_host_and_scheme
 from django.template.loader import render_to_string
 from django.urls import reverse
 
-from .models import Rides, RideStop, Vehicle, RideBooking, PriceOffer, Message, RideSearch, VerificationLog, Review, RideInvite, UserBlock, UserReport
+from .models import Rides, RideStop, Vehicle, RideBooking, PriceOffer, Message, RideSearch, VerificationLog, Review, RideInvite, UserBlock, UserReport, BiometricConsent
 from .hashid_utils import encode_id, decode_id
 from .notifications import booking_fingerprint, notify_bookings_changed
 from . import private_media
@@ -999,6 +1000,7 @@ def profile_view(request):
         # convenience only; in production the selfie must come from the
         # live camera.
         "allow_verify_selfie_upload": settings.DEBUG,
+        "biometric_notice_version": settings.BIOMETRIC_NOTICE_VERSION,
         "image_upload_max_mb": settings.IMAGE_UPLOAD_MAX_MB,
         "upload_request_max_mb": settings.UPLOAD_REQUEST_MAX_MB,
         # Was verified, and that verification has run out.
@@ -4058,6 +4060,21 @@ def _reason_codes(reasons):
     return codes
 
 
+def _record_biometric_consent(request, user):
+    """Stores proof that `user` accepted the current biometric notice."""
+    ip = _client_ip(request)
+    try:
+        ipaddress.ip_address(ip)
+    except ValueError:
+        ip = None
+    BiometricConsent.objects.create(
+        user=user,
+        notice_version=settings.BIOMETRIC_NOTICE_VERSION,
+        ip_address=ip,
+        user_agent=request.META.get("HTTP_USER_AGENT", "")[:300],
+    )
+
+
 def verify_driver_view(request):
     """POST /profile/verify-driver/ - calls DL-Verification Node API and updates driver_verified."""
     try:
@@ -4077,6 +4094,15 @@ def verify_driver_view(request):
 
     if _rate_limited(request, 'verify-driver', extra_key=str(user.id)):
         return JsonResponse({"error": "Too many verification attempts. Please try again later."}, status=429)
+
+    # Biometric consent (privacy policy s.12): the driver must accept the
+    # current notice on this attempt, before any image is read or sent. An
+    # old version means the page predates a wording change, so the driver
+    # hasn't seen the text now in force.
+    if request.POST.get("biometric_consent") != "1":
+        return JsonResponse({"error": "Please read the biometric notice and tick the box to agree before verifying."}, status=400)
+    if request.POST.get("notice_version") != settings.BIOMETRIC_NOTICE_VERSION:
+        return JsonResponse({"error": "The biometric notice has changed. Please reload the page and review it again."}, status=400)
 
     if not user.license_front_url:
         return JsonResponse({"error": "Please upload your driving license image first and save your profile."}, status=400)
@@ -4140,6 +4166,9 @@ def verify_driver_view(request):
             "vehicle_photo_base64": base64.b64encode(vehicle_bytes).decode("utf-8"),
         },
     }
+
+    # The consent record is written before the images leave the server.
+    _record_biometric_consent(request, user)
 
     resp = None
     try:

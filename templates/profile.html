@@ -1630,6 +1630,36 @@ body.role-rider .driver-only { display: none; }
   <!-- ── Verification Selfie Step Modal ── -->
   <div id="verifySelfieModal" style="display:none;position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,.6);align-items:center;justify-content:center;">
     <div class="verify-modal-box" style="max-width:420px;">
+      <!-- Step 1: biometric notice and consent (privacy policy s.12). The
+           camera can't open until the box is ticked; the server records the
+           acceptance (BiometricConsent) before sending anything out. Change
+           BIOMETRIC_NOTICE_VERSION in settings.py whenever this text changes. -->
+      <div id="verifyConsentStep" style="text-align:left;">
+        <p class="verify-modal-title" style="font-size:18px;text-align:center;">Identity check with your face</p>
+        <div class="verify-consent-text" style="max-height:46vh;overflow-y:auto;font-size:13px;line-height:1.5;color:#334155;">
+          <p style="margin:0 0 8px;">To confirm you are the person on your driver's licence, Komüte compares a selfie you take now with the photo on your licence.</p>
+          <ul style="margin:0 0 8px;padding-left:18px;">
+            <li><strong>What we collect:</strong> a selfie from your camera, the licence photo you uploaded, and a face-match score worked out from them. The score is a measurement of your facial geometry, which some laws treat as biometric information.</li>
+            <li><strong>Why:</strong> only to confirm your identity before you can offer rides. We don't use it for anything else, and we never sell it.</li>
+            <li><strong>Who processes it:</strong> our identity verification service, which processes the images on our behalf under a written contract, only to produce this result.</li>
+            <li><strong>How long we keep it:</strong> Komüte doesn't store the selfie. The face-match score is permanently deleted within 30 days of the verification decision. We keep only a pass or fail result, for up to 1 year. Your licence photo stays on your profile until you replace it or delete your account.</li>
+            <li><strong>Your choice:</strong> you don't have to agree. If you don't, you can still use Komüte as a rider, but you can't be verified as a driver. You can withdraw consent at any time by writing to <a href="mailto:privacy@komute.net">privacy@komute.net</a>; we then delete any biometric data we still hold.</li>
+            <li><strong>A person can review the result:</strong> if the automated check rejects you, you can ask for a person to review it at <a href="mailto:privacy@komute.net">privacy@komute.net</a>.</li>
+          </ul>
+          <p style="margin:0;">More detail: <a href="{% url 'privacy-policy' %}" target="_blank" rel="noopener">Privacy Policy, section 12</a>.</p>
+        </div>
+        <label style="display:flex;gap:8px;align-items:flex-start;margin:12px 0 4px;font-size:13px;cursor:pointer;">
+          <input type="checkbox" id="vsConsentCheck" onchange="document.getElementById('vsConsentAgreeBtn').disabled = !this.checked" style="margin-top:3px;">
+          <span>I have read this notice and I agree to Komüte and its verification service collecting and using my biometric information as described above.</span>
+        </label>
+        <p style="margin:0 0 10px;font-size:11px;color:#64748b;">Notice version {{ biometric_notice_version }}</p>
+        <div style="display:flex;justify-content:center;">
+          <button type="button" id="vsConsentAgreeBtn" class="btn-verify-identity" disabled onclick="acceptBiometricConsent()">I agree</button>
+        </div>
+      </div>
+
+      <!-- Step 2: selfie capture -->
+      <div id="verifyCaptureStep" style="display:none;">
       <div class="verify-modal-icon">🤳</div>
       <p class="verify-modal-title" style="font-size:18px;">Verification Selfie</p>
       <p class="verify-modal-score" style="text-align:left;font-size:13px;">
@@ -1666,6 +1696,7 @@ body.role-rider .driver-only { display: none; }
           <span id="vsVerifyBtnLabel">Verify Identity</span>
         </button>
         <button type="button" class="btn-verify-modal-close" onclick="retakeVerifySelfie()">Retake</button>
+      </div>
       </div>
 
       <button type="button" class="btn-verify-modal-close" style="margin-top:4px;" onclick="closeVerifySelfieModal()">Cancel</button>
@@ -2578,9 +2609,17 @@ body.role-rider .driver-only { display: none; }
   let _camMode = 'profile';
   let _verifySelfieBlob = null;
   let _verifyModalHiddenForCamera = false;
+  // Consent is asked on every attempt, so a driver re-verifying after
+  // DRIVER_REVERIFY_DAYS agrees again and gets a fresh consent record.
+  let _biometricConsent = false;
 
   function runDriverVerification() {
-    // Open the selfie-capture step instead of going straight to the API.
+    // Biometric notice first; the selfie step opens only after "I agree".
+    _biometricConsent = false;
+    document.getElementById('vsConsentCheck').checked = false;
+    document.getElementById('vsConsentAgreeBtn').disabled = true;
+    document.getElementById('verifyConsentStep').style.display = 'block';
+    document.getElementById('verifyCaptureStep').style.display = 'none';
     _verifySelfieBlob = null;
     document.getElementById('vsCameraError').style.display = 'none';
     document.getElementById('vsPreviewWrap').style.display  = 'none';
@@ -2593,13 +2632,22 @@ body.role-rider .driver-only { display: none; }
     document.getElementById('verifySelfieModal').style.display = 'flex';
   }
 
+  function acceptBiometricConsent() {
+    if (!document.getElementById('vsConsentCheck').checked) return;
+    _biometricConsent = true;
+    document.getElementById('verifyConsentStep').style.display = 'none';
+    document.getElementById('verifyCaptureStep').style.display = 'block';
+  }
+
   function closeVerifySelfieModal() {
     document.getElementById('verifySelfieModal').style.display = 'none';
     _verifySelfieBlob = null;
+    _biometricConsent = false;
     _camMode = 'profile';
   }
 
   function openCameraForVerify() {
+    if (!_biometricConsent) return;
     _camMode = 'verify';
     _verifyModalHiddenForCamera = true;
     document.getElementById('vsCameraError').style.display = 'none';
@@ -2634,7 +2682,7 @@ body.role-rider .driver-only { display: none; }
   }
 
   function submitVerificationWithSelfie() {
-    if (!_verifySelfieBlob) return;
+    if (!_verifySelfieBlob || !_biometricConsent) return;
 
     const vBtn = document.getElementById('vsVerifyBtn');
     const lbl  = document.getElementById('vsVerifyBtnLabel');
@@ -2645,6 +2693,8 @@ body.role-rider .driver-only { display: none; }
     .then(selfie => {
       const fd = new FormData();
       fd.append('selfie', selfie, 'verify_selfie.jpg');
+      fd.append('biometric_consent', '1');
+      fd.append('notice_version', '{{ biometric_notice_version }}');
       return fetch('/profile/verify-driver/', {
         method: 'POST',
         headers: { 'X-CSRFToken': getCsrfToken() },

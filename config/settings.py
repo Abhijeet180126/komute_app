@@ -264,6 +264,10 @@ REPLY_TO_EMAIL_SUPPORT_CONTACT       = config('REPLY_TO_EMAIL_SUPPORT_CONTACT', 
 # DL-Verification Node (external driver/vehicle verification microservice)
 DL_VERIFICATION_API_URL = config('DL_VERIFICATION_API_URL', default='http://127.0.0.1:8080/api/v1/verify')
 DL_VERIFICATION_API_KEY = config('DL_VERIFICATION_API_KEY', default='')
+# Version of the biometric notice shown before the verification selfie
+# (profile.html, #verifyConsentStep). Change it whenever that text changes,
+# so each BiometricConsent row records which wording the driver agreed to.
+BIOMETRIC_NOTICE_VERSION = '2026-10-18'
 
 # Application tuning (overridable per deployment)
 SEARCH_RADIUS_KM    = config('SEARCH_RADIUS_KM',    default=15,  cast=int)

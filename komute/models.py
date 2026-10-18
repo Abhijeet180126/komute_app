@@ -661,6 +661,32 @@ class VerificationLog(models.Model):
         return f"VerificationLog #{self.id} — {self.user_id} ({self.result})"
 
 
+class BiometricConsent(models.Model):
+    """One row each time a driver accepts the biometric notice shown before
+    the verification selfie (privacy policy s.12, Terms s.9; BIPA written
+    release, Texas CUBI, Washington RCW 19.375, Quebec Law 25 express
+    consent). Holds no biometric data, only proof of what was agreed and
+    when, so it is kept for the life of the account."""
+
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="biometric_consents",
+    )
+    # settings.BIOMETRIC_NOTICE_VERSION at the time of acceptance.
+    notice_version = models.CharField(max_length=32)
+    ip_address = models.GenericIPAddressField(null=True, blank=True)
+    user_agent = models.CharField(max_length=300, blank=True, default="")
+    accepted_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = "biometric_consent"
+        ordering = ["-accepted_at"]
+
+    def __str__(self):
+        return f"BiometricConsent #{self.id} — {self.user_id} (v{self.notice_version})"
+
+
 class Review(models.Model):
     booking = models.ForeignKey(
         "RideBooking",

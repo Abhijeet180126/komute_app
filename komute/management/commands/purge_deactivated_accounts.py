@@ -9,7 +9,9 @@ from django.db.models import Q
 from allauth.account.models import EmailAddress
 from django.utils import timezone
 
-from komute.models import CustomUser, Message, RideSearch, UserBlock, Vehicle, VerificationLog
+from komute.models import (
+    BiometricConsent, CustomUser, Message, RideSearch, UserBlock, Vehicle, VerificationLog,
+)
 from komute.private_media import delete_stored_file as _delete_stored_file
 
 logger = logging.getLogger(__name__)
@@ -71,6 +73,10 @@ class Command(BaseCommand):
                     # allauth's copy of the address (and any old ones) would
                     # otherwise outlive the anonymized user row.
                     EmailAddress.objects.filter(user=user).delete()
+                    # Consent records stay as proof of what was agreed and
+                    # when (against the anonymized row); the network details
+                    # that could identify the person go.
+                    BiometricConsent.objects.filter(user=user).update(ip_address=None, user_agent='')
 
                     vehicles = Vehicle.objects.filter(owner=user)
                     for vehicle in vehicles:
