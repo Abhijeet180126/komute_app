@@ -45,16 +45,22 @@ from komute.hashid_utils import decode_id, encode_id
 from komute.models import (
     CustomUser, Vehicle, Rides, RideStop, RideBooking, Message,
     RideSearch, VerificationLog, Review, RideInvite, PriceOffer,
-    UserBlock, UserReport, BiometricConsent,
+    UserBlock, UserReport, BiometricConsent, LegalAcceptance,
 )
 
 
-def make_user(email, role='rider', **kwargs):
+def make_user(email, role='rider', accepted_terms=True, **kwargs):
     defaults = dict(full_name=f'Test {email}', dob=date(1995, 1, 1), phone=None)
     defaults.update(kwargs)
     user = CustomUser.objects.create_user(
         username=email, email=email, password='TestPass123', role=role, **defaults
     )
+    if accepted_terms:
+        # As signup does; otherwise LegalAcceptanceMiddleware sends every
+        # request to the accept-terms page.
+        LegalAcceptance.objects.create(
+            user=user, terms_version=settings.TERMS_VERSION,
+            privacy_version=settings.PRIVACY_VERSION, source=LegalAcceptance.SOURCE_SIGNUP)
     return user
 
 
@@ -95,6 +101,36 @@ class AuthFlowTests(TestCase):
 
         resp = c.get(reverse('logout'))
         self.assertRedirects(resp, reverse('login'))
+
+    def test_signup_records_terms_and_privacy_acceptance(self):
+        Client(HTTP_USER_AGENT='TestBrowser/1.0').post(reverse('signup'), {
+            'full_name': 'Jane Doe', 'email': 'jane@example.com',
+            'country_code': '+1', 'phone_number': '4155552671', 'password': 'GoodPassword1!',
+            'confirm_password': 'GoodPassword1!', 'agreed_to_terms': '1',
+        }, REMOTE_ADDR='203.0.113.9')
+        acceptance = LegalAcceptance.objects.get(user__email='jane@example.com')
+        self.assertEqual(acceptance.terms_version, settings.TERMS_VERSION)
+        self.assertEqual(acceptance.privacy_version, settings.PRIVACY_VERSION)
+        self.assertEqual(acceptance.source, LegalAcceptance.SOURCE_SIGNUP)
+        self.assertEqual(acceptance.ip_address, '203.0.113.9')
+        self.assertEqual(acceptance.user_agent, 'TestBrowser/1.0')
+        self.assertLess(timezone.now() - acceptance.accepted_at, timedelta(minutes=1))
+
+    def test_signup_without_acceptance_creates_nothing(self):
+        for value in ('', 'on'):
+            resp = Client().post(reverse('signup'), {
+                'full_name': 'Jane Doe', 'email': 'jane@example.com',
+                'country_code': '+1', 'phone_number': '4155552671', 'password': 'GoodPassword1!',
+                'confirm_password': 'GoodPassword1!', 'agreed_to_terms': value,
+            })
+            self.assertEqual(resp.status_code, 200)
+            self.assertIn('Privacy Policy', resp.context['errors']['agreed_to_terms'])
+        self.assertFalse(CustomUser.objects.filter(email='jane@example.com').exists())
+        self.assertFalse(LegalAcceptance.objects.exists())
+
+    def test_signup_checkbox_names_the_privacy_policy(self):
+        resp = Client().get(reverse('signup'))
+        self.assertContains(resp, f'href="{reverse("privacy-policy")}" target="_blank" rel="noopener">Privacy Policy</a>')
 
     def test_login_wrong_password_rejected(self):
         make_user('bob@example.com')
@@ -418,6 +454,14 @@ class PurgeDeactivatedAccountsCommandTests(TestCase):
         self.assertEqual(consent.notice_version, '2026-10-18')
         self.assertIsNone(consent.ip_address)
         self.assertEqual(consent.user_agent, '')
+
+    def test_purge_keeps_legal_acceptance_but_drops_network_details(self):
+        LegalAcceptance.objects.filter(user=self.leaver).update(ip_address='203.0.113.7', user_agent='TestBrowser/1.0')
+        call_command('purge_deactivated_accounts')
+        acceptance = LegalAcceptance.objects.get(user=self.leaver)
+        self.assertEqual(acceptance.terms_version, settings.TERMS_VERSION)
+        self.assertIsNone(acceptance.ip_address)
+        self.assertEqual(acceptance.user_agent, '')
 
     def test_not_yet_eligible_account_untouched(self):
         call_command('purge_deactivated_accounts')
@@ -3254,6 +3298,93 @@ class VerifiedDetailsChangeTests(TestCase):
         self.assertEqual(resp.status_code, 200)
         self.assertIn('vehicle', resp.context['errors'])
         self.assertFalse(Rides.objects.filter(vehicle=unverified).exists())
+
+
+class LegalAcceptanceGateTests(TestCase):
+    """Audit P-4: signed-in users without an acceptance of the current Terms
+    and Privacy Policy are sent to /accept-terms/, which records one."""
+
+    def setUp(self):
+        self.user = make_user('la_user@example.com', accepted_terms=False)
+        self.client = Client(HTTP_USER_AGENT='TestBrowser/1.0')
+        self.client.login(username='la_user@example.com', password='TestPass123')
+
+    def test_page_redirects_to_accept_terms_with_next(self):
+        resp = self.client.get(reverse('my-rides') + '?tab=past')
+        self.assertRedirects(resp, reverse('accept-terms') + '?next=%2Fmy-rides%2F%3Ftab%3Dpast',
+                             fetch_redirect_response=False)
+
+    def test_post_is_blocked_too(self):
+        resp = self.client.post(reverse('report-user'), {'reported_id': '1', 'reason': 'spam'})
+        self.assertRedirects(resp, reverse('accept-terms'), fetch_redirect_response=False)
+        self.assertFalse(UserReport.objects.exists())
+
+    def test_legal_logout_and_deletion_pages_stay_open(self):
+        for name in ('terms-condition', 'privacy-policy', 'community-guidelines', 'delete-account', 'accept-terms'):
+            self.assertEqual(self.client.get(reverse(name)).status_code, 200, name)
+        self.assertRedirects(self.client.get(reverse('logout')), reverse('login'))
+
+    def test_signed_out_visitors_are_not_affected(self):
+        self.assertEqual(Client().get(reverse('home')).status_code, 200)
+
+    def test_accepting_records_and_continues_to_next(self):
+        resp = self.client.post(reverse('accept-terms'), {'agreed_to_terms': '1', 'next': '/my-rides/'},
+                                REMOTE_ADDR='203.0.113.9')
+        self.assertRedirects(resp, '/my-rides/', fetch_redirect_response=False)
+        acceptance = LegalAcceptance.objects.get(user=self.user)
+        self.assertEqual(acceptance.source, LegalAcceptance.SOURCE_REACCEPT)
+        self.assertEqual(acceptance.terms_version, settings.TERMS_VERSION)
+        self.assertEqual(acceptance.privacy_version, settings.PRIVACY_VERSION)
+        self.assertEqual(acceptance.ip_address, '203.0.113.9')
+        self.assertEqual(acceptance.user_agent, 'TestBrowser/1.0')
+        self.assertEqual(self.client.get(reverse('my-rides')).status_code, 200)
+
+    def test_accepting_needs_the_box_ticked(self):
+        resp = self.client.post(reverse('accept-terms'), {'next': '/my-rides/'})
+        self.assertEqual(resp.status_code, 200)
+        self.assertContains(resp, 'Please tick the box')
+        self.assertFalse(LegalAcceptance.objects.exists())
+
+    def test_offsite_next_ignored(self):
+        resp = self.client.post(reverse('accept-terms'), {'agreed_to_terms': '1', 'next': 'https://evil.example/'})
+        self.assertRedirects(resp, reverse('profile'), fetch_redirect_response=False)
+
+    def test_page_shows_current_versions(self):
+        resp = self.client.get(reverse('accept-terms'))
+        self.assertContains(resp, f'(version {settings.TERMS_VERSION})')
+        self.assertContains(resp, 'Accept the terms to continue')
+
+    def test_new_version_asks_again(self):
+        self.client.post(reverse('accept-terms'), {'agreed_to_terms': '1'})
+        self.assertEqual(self.client.get(reverse('my-rides')).status_code, 200)  # session now remembers it
+        with override_settings(TERMS_VERSION='2099-01-01'):
+            resp = self.client.get(reverse('my-rides'))
+            self.assertRedirects(resp, reverse('accept-terms') + '?next=%2Fmy-rides%2F',
+                                 fetch_redirect_response=False)
+            self.assertContains(self.client.get(reverse('accept-terms')), "We've updated our terms")
+            self.client.post(reverse('accept-terms'), {'agreed_to_terms': '1'})
+            self.assertEqual(self.client.get(reverse('my-rides')).status_code, 200)
+        self.assertEqual(
+            list(LegalAcceptance.objects.filter(user=self.user).order_by('accepted_at', 'id')
+                 .values_list('terms_version', flat=True)),
+            [settings.TERMS_VERSION, '2099-01-01'])
+
+    def test_already_accepted_user_skips_the_page(self):
+        accepted = make_user('la_ok@example.com')
+        c = Client()
+        c.force_login(accepted)
+        self.assertEqual(c.get(reverse('my-rides')).status_code, 200)
+        self.assertRedirects(c.get(reverse('accept-terms') + '?next=/my-rides/'), '/my-rides/',
+                             fetch_redirect_response=False)
+
+    def test_admin_cannot_add_or_edit_acceptance_records(self):
+        from django.contrib.admin.sites import site
+        from django.test import RequestFactory
+        model_admin = site._registry[LegalAcceptance]
+        request = RequestFactory().get('/')
+        request.user = make_user('la_admin@example.com', is_staff=True, is_superuser=True)
+        self.assertFalse(model_admin.has_add_permission(request))
+        self.assertFalse(model_admin.has_change_permission(request))
 
 
 class BiometricConsentTests(TestCase):

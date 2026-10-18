@@ -10,7 +10,8 @@ from allauth.account.models import EmailAddress
 from django.utils import timezone
 
 from komute.models import (
-    BiometricConsent, CustomUser, Message, RideSearch, UserBlock, Vehicle, VerificationLog,
+    BiometricConsent, CustomUser, LegalAcceptance, Message, RideSearch, UserBlock, Vehicle,
+    VerificationLog,
 )
 from komute.private_media import delete_stored_file as _delete_stored_file
 
@@ -77,6 +78,7 @@ class Command(BaseCommand):
                     # when (against the anonymized row); the network details
                     # that could identify the person go.
                     BiometricConsent.objects.filter(user=user).update(ip_address=None, user_agent='')
+                    LegalAcceptance.objects.filter(user=user).update(ip_address=None, user_agent='')
 
                     vehicles = Vehicle.objects.filter(owner=user)
                     for vehicle in vehicles:

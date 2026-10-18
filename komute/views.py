@@ -42,7 +42,8 @@ from django.utils.http import url_has_allowed_host_and_scheme
 from django.template.loader import render_to_string
 from django.urls import reverse
 
-from .models import Rides, RideStop, Vehicle, RideBooking, PriceOffer, Message, RideSearch, VerificationLog, Review, RideInvite, UserBlock, UserReport, BiometricConsent
+from .models import Rides, RideStop, Vehicle, RideBooking, PriceOffer, Message, RideSearch, VerificationLog, Review, RideInvite, UserBlock, UserReport, BiometricConsent, LegalAcceptance
+from .middleware import LegalAcceptanceMiddleware, legal_versions_key
 from .hashid_utils import encode_id, decode_id
 from .notifications import booking_fingerprint, notify_bookings_changed
 from . import private_media
@@ -69,6 +70,31 @@ def _client_ip(request):
     if xff:
         return xff.rsplit(',', 1)[-1].strip()
     return request.META.get('REMOTE_ADDR', 'unknown')
+
+
+def _consent_request_details(request):
+    """IP address and user agent stored with a consent or acceptance record.
+    An address that doesn't parse is stored as null."""
+    ip = _client_ip(request)
+    try:
+        ipaddress.ip_address(ip)
+    except ValueError:
+        ip = None
+    return {"ip_address": ip, "user_agent": request.META.get("HTTP_USER_AGENT", "")[:300]}
+
+
+def _record_legal_acceptance(request, user, source):
+    """Stores that `user` accepted the current Terms and Privacy Policy, and
+    remembers it in the session so LegalAcceptanceMiddleware lets them on."""
+    LegalAcceptance.objects.create(
+        user=user,
+        terms_version=settings.TERMS_VERSION,
+        privacy_version=settings.PRIVACY_VERSION,
+        source=source,
+        **_consent_request_details(request),
+    )
+    if request.user.is_authenticated and request.user.pk == user.pk:
+        request.session[LegalAcceptanceMiddleware.SESSION_KEY] = legal_versions_key()
 
 
 def _rate_limited(request, name, extra_key=''):
@@ -594,17 +620,19 @@ def signup_view(request):
         if password != confirm_password:
             errors["confirm_password"] = "Passwords do not match."
 
-        if not agreed_to_terms:
-            errors["agreed_to_terms"] = "You must accept the Terms & Conditions to sign up."
+        if agreed_to_terms != "1":
+            errors["agreed_to_terms"] = "You must accept the Terms & Conditions and the Privacy Policy to sign up."
 
         if not errors:
-            new_user = User.objects.create_user(
-                username=email,
-                email=email,
-                password=password,
-                full_name=full_name,
-                phone=phone or None,
-            )
+            with transaction.atomic():
+                new_user = User.objects.create_user(
+                    username=email,
+                    email=email,
+                    password=password,
+                    full_name=full_name,
+                    phone=phone or None,
+                )
+                _record_legal_acceptance(request, new_user, LegalAcceptance.SOURCE_SIGNUP)
             _send_welcome_email(request, new_user)
             messages.success(request, "You have successfully signed up. Now Login to the account.")
             return redirect("login")
@@ -2289,6 +2317,39 @@ def terms_view(request):
 
 def communityguide_view(request):
     return render(request, 'community-guidelines.html')
+
+
+@login_required
+def accept_terms_view(request):
+    """GET/POST /accept-terms/ - where LegalAcceptanceMiddleware sends a
+    signed-in user who hasn't accepted the current Terms and Privacy Policy
+    (audit P-4)."""
+    user = request.user
+    next_url = request.POST.get("next") or request.GET.get("next") or ""
+    if not url_has_allowed_host_and_scheme(next_url, allowed_hosts={request.get_host()},
+                                           require_https=request.is_secure()):
+        next_url = ""
+
+    already = LegalAcceptance.objects.filter(
+        user=user, terms_version=settings.TERMS_VERSION,
+        privacy_version=settings.PRIVACY_VERSION).exists()
+    if already:
+        return redirect(next_url or "profile")
+
+    error = None
+    if request.method == "POST":
+        if request.POST.get("agreed_to_terms") == "1":
+            _record_legal_acceptance(request, user, LegalAcceptance.SOURCE_REACCEPT)
+            return redirect(next_url or "profile")
+        error = "Please tick the box to accept the Terms & Conditions and the Privacy Policy."
+
+    return render(request, "accept-terms.html", {
+        "next": next_url,
+        "error": error,
+        "is_update": user.legal_acceptances.exists(),
+        "terms_version": settings.TERMS_VERSION,
+        "privacy_version": settings.PRIVACY_VERSION,
+    })
 
 
 
@@ -4062,16 +4123,10 @@ def _reason_codes(reasons):
 
 def _record_biometric_consent(request, user):
     """Stores proof that `user` accepted the current biometric notice."""
-    ip = _client_ip(request)
-    try:
-        ipaddress.ip_address(ip)
-    except ValueError:
-        ip = None
     BiometricConsent.objects.create(
         user=user,
         notice_version=settings.BIOMETRIC_NOTICE_VERSION,
-        ip_address=ip,
-        user_agent=request.META.get("HTTP_USER_AGENT", "")[:300],
+        **_consent_request_details(request),
     )
 
 

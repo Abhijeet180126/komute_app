@@ -687,6 +687,42 @@ class BiometricConsent(models.Model):
         return f"BiometricConsent #{self.id} — {self.user_id} (v{self.notice_version})"
 
 
+class LegalAcceptance(models.Model):
+    """One row each time a user accepts the Terms & Conditions and the
+    Privacy Policy: at signup, and again whenever settings.TERMS_VERSION or
+    PRIVACY_VERSION changes (LegalAcceptanceMiddleware asks). The first row
+    starts the Terms' 30-day arbitration opt-out window (s.12). Kept for the
+    life of the account."""
+
+    SOURCE_SIGNUP = "signup"
+    SOURCE_REACCEPT = "reaccept"
+    SOURCE_CHOICES = [
+        (SOURCE_SIGNUP, "Signup"),
+        (SOURCE_REACCEPT, "Accepted updated versions"),
+    ]
+
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="legal_acceptances",
+    )
+    terms_version = models.CharField(max_length=32)
+    privacy_version = models.CharField(max_length=32)
+    source = models.CharField(max_length=16, choices=SOURCE_CHOICES)
+    ip_address = models.GenericIPAddressField(null=True, blank=True)
+    user_agent = models.CharField(max_length=300, blank=True, default="")
+    accepted_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = "legal_acceptance"
+        ordering = ["-accepted_at"]
+        indexes = [models.Index(fields=["user", "terms_version", "privacy_version"])]
+
+    def __str__(self):
+        return (f"LegalAcceptance #{self.id} — {self.user_id} "
+                f"(terms {self.terms_version}, privacy {self.privacy_version})")
+
+
 class Review(models.Model):
     booking = models.ForeignKey(
         "RideBooking",

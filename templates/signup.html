@@ -674,7 +674,9 @@ select.form-input {
         <input type="checkbox" id="tncCheckbox" name="agreed_to_terms" value="1"
                {% if form.agreed_to_terms %}checked{% endif %}>
         <span>I have read and agree to the
-          <button type="button" class="tnc-link" onclick="openTncModal()">Terms &amp; Conditions</button>
+          <button type="button" class="tnc-link" onclick="openTncModal()">Terms &amp; Conditions</button>,
+          and I have read the
+          <a class="tnc-link" href="{% url 'privacy-policy' %}" target="_blank" rel="noopener">Privacy Policy</a>
         </span>
       </label>
       {% if errors.agreed_to_terms %}

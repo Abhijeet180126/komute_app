@@ -18,6 +18,7 @@ from .views import (
     forgot_password_view, reset_password_view,
     private_media_view, upload_too_large_view,
     report_user_view, block_user_view, unblock_user_view,
+    accept_terms_view,
 )
 
 urlpatterns = [
@@ -67,6 +68,7 @@ urlpatterns = [
     path('deactivate/<str:token>/', confirm_delete_account_view),
     path('contact-us/', contact_view, name='contact-us'),
     path('terms-condition/', terms_view, name='terms-condition'),
+    path('accept-terms/', accept_terms_view, name='accept-terms'),
     path('community-guidelines/', communityguide_view, name='community-guidelines'),
     path('driver-inbox/', driver_inbox_view, name='driver-inbox'),
     path('rider-inbox/', rider_inbox_view, name='rider-inbox'),

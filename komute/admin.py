@@ -10,7 +10,7 @@ from django.utils import timezone
 from komute.models import (
     Vehicle, Rides, RideStop, RideBooking, Message, PriceOffer,
     RideSearch, VerificationLog, Review, RideInvite, UserReport, UserBlock,
-    BiometricConsent,
+    BiometricConsent, LegalAcceptance,
 )
 
 User = get_user_model()
@@ -91,6 +91,22 @@ class BiometricConsentAdmin(admin.ModelAdmin):
     list_filter = ('notice_version',)
     search_fields = ('user__email',)
     readonly_fields = ('user', 'notice_version', 'ip_address', 'user_agent', 'accepted_at')
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False
+
+
+@admin.register(LegalAcceptance)
+class LegalAcceptanceAdmin(admin.ModelAdmin):
+    # Evidence of acceptance: viewable, never edited or added by hand.
+    list_display = ('id', 'user', 'terms_version', 'privacy_version', 'source', 'accepted_at', 'ip_address')
+    list_filter = ('source', 'terms_version', 'privacy_version')
+    search_fields = ('user__email',)
+    readonly_fields = ('user', 'terms_version', 'privacy_version', 'source',
+                       'ip_address', 'user_agent', 'accepted_at')
 
     def has_add_permission(self, request):
         return False

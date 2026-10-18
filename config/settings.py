@@ -117,6 +117,7 @@ MIDDLEWARE = [
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
     'allauth.account.middleware.AccountMiddleware',
     'axes.middleware.AxesMiddleware',
+    'komute.middleware.LegalAcceptanceMiddleware',
     'komute.middleware.NoStoreForSignedInUsersMiddleware',
 ]
 
@@ -268,6 +269,12 @@ DL_VERIFICATION_API_KEY = config('DL_VERIFICATION_API_KEY', default='')
 # (profile.html, #verifyConsentStep). Change it whenever that text changes,
 # so each BiometricConsent row records which wording the driver agreed to.
 BIOMETRIC_NOTICE_VERSION = '2026-10-18'
+# Versions of the Terms & Conditions and the Privacy Policy, matching their
+# "Last updated" dates. Change one whenever that page changes: signed-in
+# users are then asked to accept again (LegalAcceptanceMiddleware), and each
+# acceptance is stored as a LegalAcceptance row.
+TERMS_VERSION   = '2026-07-09'
+PRIVACY_VERSION = '2026-07-09'
 
 # Application tuning (overridable per deployment)
 SEARCH_RADIUS_KM    = config('SEARCH_RADIUS_KM',    default=15,  cast=int)

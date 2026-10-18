@@ -1,0 +1,190 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<link rel="icon" type="image/png" href="{% static 'images/icon_white.png' %}">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Komüte – {% if is_update %}Updated Terms{% else %}Accept the Terms{% endif %}</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800&family=DM+Sans:wght@400;500;600&family=Montserrat:wght@600;700;800&display=swap" rel="stylesheet">
+
+<style>
+/* ── KOMÜTE BRAND TOKENS ── */
+:root {
+  --light-bg:    #E9F7EE;
+  --contrast-lt: #D5FBE5;
+  --brand-green: #0D7810;
+  --white:       #ffffff;
+  --text-dark:   #121212;
+  --text-muted:  #4a6350;
+}
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  font-family: 'DM Sans', sans-serif;
+  min-height: 100vh;
+  background: var(--light-bg);
+  display: flex;
+  flex-direction: column;
+}
+
+.page-content {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+}
+
+.card {
+  background: var(--white);
+  border-radius: 20px;
+  padding: 32px 32px 24px;
+  width: 100%;
+  max-width: 460px;
+  box-shadow: 0 8px 40px rgba(12, 99, 180, 0.10);
+  text-align: center;
+}
+
+.icon-badge {
+  width: 56px; height: 56px;
+  border-radius: 50%;
+  background: var(--light-bg);
+  border: 2px solid var(--contrast-lt);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0 auto 18px;
+}
+.icon-badge svg {
+  width: 26px; height: 26px;
+  stroke: var(--brand-green);
+  fill: none;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.card h1 {
+  font-family: 'Poppins', sans-serif;
+  font-size: 1.45rem;
+  font-weight: 800;
+  color: var(--brand-green);
+  margin-bottom: 6px;
+}
+
+.subtitle {
+  font-size: 0.9rem;
+  color: var(--text-muted);
+  margin-bottom: 22px;
+  line-height: 1.5;
+}
+
+.docs {
+  text-align: left;
+  background: var(--light-bg);
+  border-radius: 10px;
+  padding: 14px 16px 14px 32px;
+  margin-bottom: 20px;
+  font-size: 0.9rem;
+  color: var(--text-muted);
+  line-height: 1.55;
+}
+.docs li + li { margin-top: 6px; }
+.docs a { color: var(--brand-green); font-weight: 700; }
+
+.agree {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  text-align: left;
+  font-size: 0.9rem;
+  color: var(--text-dark);
+  line-height: 1.45;
+  margin-bottom: 16px;
+  cursor: pointer;
+}
+.agree input { margin-top: 3px; width: 16px; height: 16px; flex-shrink: 0; accent-color: var(--brand-green); }
+
+.msg-error {
+  border-radius: 8px;
+  padding: 11px 14px;
+  font-size: 0.875rem;
+  font-weight: 500;
+  margin-bottom: 18px;
+  text-align: left;
+  background: #fee2e2; border: 1.5px solid #dc2626; color: #991b1b;
+}
+
+.btn-submit {
+  width: 100%;
+  padding: 13px;
+  background: var(--brand-green);
+  color: var(--white);
+  border: none;
+  border-radius: 8px;
+  font-family: 'Poppins', sans-serif;
+  font-weight: 700;
+  font-size: 1rem;
+  cursor: pointer;
+  transition: opacity 0.2s;
+}
+.btn-submit:hover { opacity: 0.88; }
+
+.other-row {
+  margin-top: 20px;
+  padding-top: 16px;
+  border-top: 1.5px solid var(--contrast-lt);
+  font-size: 0.85rem;
+  color: var(--text-muted);
+  line-height: 1.6;
+}
+.other-row a { color: var(--brand-green); font-weight: 700; text-decoration: none; }
+</style>
+</head>
+<body>
+{% include 'header.html' %}
+<div class="page-content">
+<div class="card">
+
+  <div class="icon-badge">
+    <svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><polyline points="9 15 11 17 15 13"/></svg>
+  </div>
+
+  {% if is_update %}
+  <h1>We've updated our terms</h1>
+  <div class="subtitle">Please read the current versions and accept them to keep using Komüte.</div>
+  {% else %}
+  <h1>Accept the terms to continue</h1>
+  <div class="subtitle">Before you keep using Komüte, please read and accept our Terms &amp; Conditions and Privacy Policy.</div>
+  {% endif %}
+
+  {% if error %}<div class="msg-error">{{ error }}</div>{% endif %}
+
+  <ul class="docs">
+    <li><a href="{% url 'terms-condition' %}" target="_blank" rel="noopener">Terms &amp; Conditions</a> (version {{ terms_version }})</li>
+    <li><a href="{% url 'privacy-policy' %}" target="_blank" rel="noopener">Privacy Policy</a> (version {{ privacy_version }})</li>
+  </ul>
+
+  <form method="post">
+    {% csrf_token %}
+    <input type="hidden" name="next" value="{{ next }}">
+    <label class="agree">
+      <input type="checkbox" name="agreed_to_terms" value="1" required>
+      <span>I have read and agree to the Terms &amp; Conditions, and I have read the Privacy Policy.</span>
+    </label>
+    <button class="btn-submit" type="submit">Accept and Continue</button>
+  </form>
+
+  <div class="other-row">
+    Don't agree? You can <a href="{% url 'logout' %}">log out</a> or <a href="{% url 'delete-account' %}">delete your account</a>.
+  </div>
+
+</div>
+</div><!-- /page-content -->
+{% include 'footer.html' %}
+</body>
+</html>

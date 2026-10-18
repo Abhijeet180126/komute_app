@@ -1,3 +1,8 @@
+from urllib.parse import urlencode
+
+from django.conf import settings
+from django.shortcuts import redirect
+from django.urls import reverse
 from django.utils.cache import add_never_cache_headers
 
 
@@ -33,6 +38,60 @@ class PermissionsPolicyMiddleware:
         response = self.get_response(request)
         response.setdefault('Permissions-Policy', PERMISSIONS_POLICY)
         return response
+
+
+def legal_versions_key():
+    """The current Terms and Privacy Policy versions, as kept in the session
+    once the signed-in user is known to have accepted them."""
+    return f'{settings.TERMS_VERSION}|{settings.PRIVACY_VERSION}'
+
+
+class LegalAcceptanceMiddleware:
+    """Sends a signed-in user who hasn't accepted the current Terms and
+    Privacy Policy (audit P-4) to the accept-terms page before anything else.
+    That covers accounts created before acceptance was recorded, and every
+    user after TERMS_VERSION or PRIVACY_VERSION changes.
+
+    Left open: the legal pages themselves, logout, account deletion, contact,
+    email confirmation, private media and the admin. Unnamed routes are
+    either redirects to named ones or the old deactivate link. Websocket chat
+    isn't covered, but the chat page that opens it is."""
+
+    SESSION_KEY = 'legal_accepted_versions'
+    EXEMPT_URL_NAMES = {
+        'accept-terms', 'logout', 'terms-condition', 'privacy-policy',
+        'community-guidelines', 'contact-us', 'request-delete-account',
+        'delete-account', 'confirm-delete-account', 'account_confirm_email',
+        'private-media', 'upload-too-large',
+    }
+
+    def __init__(self, get_response):
+        self.get_response = get_response
+
+    def __call__(self, request):
+        return self.get_response(request)
+
+    def process_view(self, request, view_func, view_args, view_kwargs):
+        user = getattr(request, 'user', None)
+        if user is None or not user.is_authenticated:
+            return None
+        match = request.resolver_match
+        if (match is None or match.url_name is None
+                or match.url_name in self.EXEMPT_URL_NAMES or 'admin' in match.namespaces):
+            return None
+        current = legal_versions_key()
+        if request.session.get(self.SESSION_KEY) == current:
+            return None
+        from komute.models import LegalAcceptance
+        if LegalAcceptance.objects.filter(
+                user=user, terms_version=settings.TERMS_VERSION,
+                privacy_version=settings.PRIVACY_VERSION).exists():
+            request.session[self.SESSION_KEY] = current
+            return None
+        url = reverse('accept-terms')
+        if request.method == 'GET':
+            url += '?' + urlencode({'next': request.get_full_path()})
+        return redirect(url)
 
 
 class NoStoreForSignedInUsersMiddleware:
