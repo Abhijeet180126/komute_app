@@ -50,7 +50,7 @@ from komute.models import (
 
 
 def make_user(email, role='rider', accepted_terms=True, **kwargs):
-    defaults = dict(full_name=f'Test {email}', dob=date(1995, 1, 1), phone=None)
+    defaults = dict(full_name=f'Test {email}', dob=date(1995, 1, 1), phone=None, email_verified=True)
     defaults.update(kwargs)
     user = CustomUser.objects.create_user(
         username=email, email=email, password='TestPass123', role=role, **defaults
@@ -3662,6 +3662,43 @@ class AuditFixTests(TestCase):
         resp = self._client('au_rider@example.com').post(reverse('accept-invite', args=[_make_invite_token(invite.id)]))
         self.assertContains(resp, 'no longer available')
         self.assertFalse(RideBooking.objects.filter(passenger=self.rider).exists())
+
+    def test_unverified_email_cannot_post_book_or_accept_invite(self):
+        # S-10: the app's own login admits unverified emails, so posting,
+        # booking, chat drafts and invite acceptance check it themselves.
+        from komute.views import _make_invite_token
+        CustomUser.objects.filter(pk__in=[self.driver.pk, self.rider.pk]).update(email_verified=False)
+
+        driver = self._client('au_driver@example.com')
+        resp = driver.get(reverse('post-ride'))
+        self.assertRedirects(resp, reverse('profile'), fetch_redirect_response=False)
+        rides_before = Rides.objects.count()
+        resp = driver.post(reverse('post-ride'), {'origin': 'A', 'destination': 'B', 'seats': '2'})
+        self.assertRedirects(resp, reverse('profile'), fetch_redirect_response=False)
+        self.assertEqual(Rides.objects.count(), rides_before)
+
+        rider = self._client('au_rider@example.com')
+        for intent in ('book', 'chat'):
+            resp = rider.post(reverse('create-ride-booking', args=[encode_id(self.ride.id)]),
+                              {'seats': '1', 'intent': intent})
+            self.assertEqual(resp.status_code, 403, intent)
+            self.assertIn('verify your email', resp.json()['error'])
+
+        invite = RideInvite.objects.create(driver=self.driver, passenger=self.rider, ride=self.ride)
+        resp = rider.post(reverse('accept-invite', args=[_make_invite_token(invite.id)]))
+        self.assertContains(resp, 'verify your email')
+        invite.refresh_from_db()
+        self.assertNotEqual(invite.status, RideInvite.STATUS_ACCEPTED)
+        self.assertFalse(RideBooking.objects.filter(passenger=self.rider).exists())
+        self.ride.refresh_from_db()
+        self.assertEqual(self.ride.seats_available, self.ride.seats_total)
+
+    def test_verified_email_can_book(self):
+        resp = self._client('au_rider@example.com').post(
+            reverse('create-ride-booking', args=[encode_id(self.ride.id)]), {'seats': '1'})
+        self.assertEqual(resp.status_code, 200)
+        self.assertTrue(RideBooking.objects.filter(passenger=self.rider,
+                                                   status=RideBooking.STATUS_REQUESTED).exists())
 
 
     def test_accept_does_not_overwrite_a_concurrent_cancel(self):
