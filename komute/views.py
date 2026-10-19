@@ -97,7 +97,7 @@ def _record_legal_acceptance(request, user, source):
         request.session[LegalAcceptanceMiddleware.SESSION_KEY] = legal_versions_key()
 
 
-def _rate_limited(request, name, extra_key=''):
+def _rate_limited(request, name, extra_key='', per_ip=True):
     """Fixed-window throttle backed by the shared cache (Redis in production
     — see CACHES in settings.py — so the count holds across worker
     processes). `name` must be a key in settings.RATE_LIMITS, which supplies
@@ -107,17 +107,23 @@ def _rate_limited(request, name, extra_key=''):
 
     `extra_key` narrows the bucket beyond client IP — e.g. the submitted
     email on a login attempt, or a user ID for an authenticated endpoint.
+    per_ip=False drops the IP from the bucket, so the limit follows
+    `extra_key` (a user or a target address) across networks.
 
     Fails open (never blocks) if the cache backend itself is unreachable —
     a Redis blip shouldn't turn into a login/signup outage on top of it."""
     limit, window_seconds = settings.RATE_LIMITS[name]
-    bucket = f'ratelimit:{name}:{_client_ip(request)}:{extra_key}'
+    ip = _client_ip(request) if per_ip else '*'
+    bucket = f'ratelimit:{name}:{ip}:{extra_key}'
     try:
         cache.add(bucket, 0, window_seconds)
         count = cache.incr(bucket)
     except Exception:
         return False
     return count > limit
+
+
+_TOO_MANY_ATTEMPTS_MSG = "Too many attempts. Please try again later."
 
 
 def _fmt_ride_local(ride):
@@ -3261,6 +3267,11 @@ def change_password_view(request):
     new_pwd  = request.POST.get('new_password', '')
     confirm  = request.POST.get('confirm_password', '')
 
+    # Counted before the check, so an open session can't be used to guess
+    # the current password (audit S-15).
+    if _rate_limited(request, 'change-password', extra_key=str(request.user.id), per_ip=False):
+        return JsonResponse({'error': _TOO_MANY_ATTEMPTS_MSG}, status=429)
+
     if not request.user.check_password(current):
         return JsonResponse({'error': 'Current password is incorrect.'}, status=400)
 
@@ -3428,6 +3439,10 @@ def send_verification_email(request):
         # and raises IntegrityError.
         target_email = user.pending_email or user.email
 
+        if (_rate_limited(request, 'send-verification', extra_key=str(user.id), per_ip=False)
+                or _rate_limited(request, 'email-confirm-target', extra_key=target_email.lower(), per_ip=False)):
+            return JsonResponse({"error": _TOO_MANY_ATTEMPTS_MSG}, status=429)
+
         email_address, _ = EmailAddress.objects.get_or_create(
             user=user,
             email=target_email,
@@ -3468,6 +3483,10 @@ def change_email_view(request):
     if not new_email or not password:
         return JsonResponse({'error': 'Email and password are required.'}, status=400)
 
+    # Before the password check, which this form also exposes (audit S-15).
+    if _rate_limited(request, 'change-email', extra_key=str(user.id), per_ip=False):
+        return JsonResponse({'error': _TOO_MANY_ATTEMPTS_MSG}, status=429)
+
     try:
         validate_email(new_email)
     except ValidationError:
@@ -3481,6 +3500,10 @@ def change_email_view(request):
 
     if User.objects.filter(email=new_email).exclude(pk=user.pk).exists():
         return JsonResponse({'error': 'This email is already in use.'}, status=400)
+
+    # Caps mail to one address however many accounts send it.
+    if _rate_limited(request, 'email-confirm-target', extra_key=new_email, per_ip=False):
+        return JsonResponse({'error': _TOO_MANY_ATTEMPTS_MSG}, status=429)
 
     try:
         # Replace existing EmailAddress records for this user
@@ -3618,6 +3641,9 @@ def _send_delete_account_email(request, user):
 @require_POST
 def request_delete_account_view(request):
     user = request.user
+    # Same limit as the public delete-account page, per account (audit S-15).
+    if _rate_limited(request, 'delete-account-email', extra_key=user.email.lower(), per_ip=False):
+        return JsonResponse({'error': _TOO_MANY_ATTEMPTS_MSG}, status=429)
     try:
         _send_delete_account_email(request, user)
     except Exception:

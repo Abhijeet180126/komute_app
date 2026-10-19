@@ -338,6 +338,19 @@ RATE_LIMITS = {
                                config('RATE_LIMIT_DELETE_ACCOUNT_EMAIL_WINDOW', default=3600, cast=int)),
     'report-user':           (config('RATE_LIMIT_REPORT_USER_MAX',           default=10,  cast=int),
                                config('RATE_LIMIT_REPORT_USER_WINDOW',        default=3600, cast=int)),
+    # Signed-in account actions (audit S-15). change-email and
+    # send-verification email an address the user typed, so besides the
+    # per-user buckets, email-confirm-target caps mail to any one address
+    # across all accounts. The profile's delete link uses the
+    # delete-account-email limit, counted per account.
+    'change-email':          (config('RATE_LIMIT_CHANGE_EMAIL_MAX',          default=5,   cast=int),
+                               config('RATE_LIMIT_CHANGE_EMAIL_WINDOW',       default=3600, cast=int)),
+    'send-verification':     (config('RATE_LIMIT_SEND_VERIFICATION_MAX',     default=5,   cast=int),
+                               config('RATE_LIMIT_SEND_VERIFICATION_WINDOW',  default=3600, cast=int)),
+    'email-confirm-target':  (config('RATE_LIMIT_EMAIL_CONFIRM_TARGET_MAX',  default=5,   cast=int),
+                               config('RATE_LIMIT_EMAIL_CONFIRM_TARGET_WINDOW', default=3600, cast=int)),
+    'change-password':       (config('RATE_LIMIT_CHANGE_PASSWORD_MAX',       default=5,   cast=int),
+                               config('RATE_LIMIT_CHANGE_PASSWORD_WINDOW',    default=900,  cast=int)),
 }
 
 # Field-level encryption for biometric scores and sensitive OCR data

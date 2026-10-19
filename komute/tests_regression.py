@@ -3824,3 +3824,68 @@ class AuditRecurringRideTests(TestCase):
         resp = c.post(reverse('post-ride'), {**base, 'recurring_end_date': (first + timedelta(days=366)).isoformat()})
         self.assertEqual(resp.status_code, 302)
         self.assertEqual(Rides.objects.filter(driver=driver).count(), 367)
+
+
+class AccountActionThrottleTests(TestCase):
+    """Audit S-15: signed-in actions that email an address or check the
+    password are throttled per account (not per IP), and mail to any one
+    address is capped across accounts."""
+
+    def setUp(self):
+        cache.clear()
+        self.user = make_user('th_user@example.com')
+        self.other = make_user('th_other@example.com')
+
+    def _client(self, email):
+        c = Client()
+        c.login(username=email, password='TestPass123')
+        return c
+
+    def test_change_password_limited_across_ips(self):
+        c = self._client('th_user@example.com')
+        wrong = {'current_password': 'nope', 'new_password': 'NewPassword12!', 'confirm_password': 'NewPassword12!'}
+        for i in range(5):
+            resp = c.post(reverse('change-password'), wrong, REMOTE_ADDR=f'203.0.113.{i}')
+            self.assertEqual(resp.status_code, 400)
+        # Right password, new network: still blocked.
+        resp = c.post(reverse('change-password'), {**wrong, 'current_password': 'TestPass123'},
+                      REMOTE_ADDR='198.51.100.1')
+        self.assertEqual(resp.status_code, 429)
+        self.user.refresh_from_db()
+        self.assertTrue(self.user.check_password('TestPass123'))
+
+    def test_change_email_limited_per_account(self):
+        c = self._client('th_user@example.com')
+        for i in range(5):
+            resp = c.post(reverse('change-email'), {'new_email': 'x@example.com', 'password': 'wrong'},
+                          REMOTE_ADDR=f'203.0.113.{i}')
+            self.assertEqual(resp.status_code, 400)
+        resp = c.post(reverse('change-email'), {'new_email': 'x@example.com', 'password': 'TestPass123'})
+        self.assertEqual(resp.status_code, 429)
+        self.assertEqual(len(mail.outbox), 0)
+
+    def test_mail_to_one_address_capped_across_accounts(self):
+        victim = {'new_email': 'victim@example.com', 'password': 'TestPass123'}
+        a, b = self._client('th_user@example.com'), self._client('th_other@example.com')
+        for c in (a, a, a, b, b):
+            self.assertEqual(c.post(reverse('change-email'), victim).status_code, 200)
+        self.assertEqual(b.post(reverse('change-email'), victim).status_code, 429)
+        # Resending to the pending address counts against the same cap.
+        self.assertEqual(a.post(reverse('send_verification_email')).status_code, 429)
+        self.assertEqual(len([m for m in mail.outbox if m.to == ['victim@example.com']]), 5)
+
+    def test_send_verification_limited(self):
+        c = self._client('th_user@example.com')
+        for _ in range(5):
+            self.assertEqual(c.post(reverse('send_verification_email')).status_code, 200)
+        resp = c.post(reverse('send_verification_email'))
+        self.assertEqual(resp.status_code, 429)
+        self.assertEqual(resp.json()['error'], 'Too many attempts. Please try again later.')
+        self.assertEqual(len(mail.outbox), 5)
+
+    def test_profile_delete_request_limited(self):
+        c = self._client('th_user@example.com')
+        for _ in range(3):
+            self.assertEqual(c.post(reverse('request-delete-account')).status_code, 200)
+        self.assertEqual(c.post(reverse('request-delete-account')).status_code, 429)
+        self.assertEqual(len(mail.outbox), 3)

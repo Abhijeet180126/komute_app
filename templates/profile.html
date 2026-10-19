@@ -2792,13 +2792,18 @@ body.role-rider .driver-only { display: none; }
           }
       })
       .then(res => {
+          if (res.status === 429) {
+              return res.json().then(data => ({ limited: data.error }));
+          }
           if (!res.ok) {
               throw new Error(`HTTP error! status: ${res.status}`);
           }
           return res.json();
       })
       .then(data => {
-          if (data.error) {
+          if (data.limited) {
+              alert(data.limited);
+          } else if (data.error) {
               alert("Unable to send verification email. Please try again later or contact support if the issue persists.");
           } else {
               alert(data.message);
