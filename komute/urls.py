@@ -18,7 +18,7 @@ from .views import (
     forgot_password_view, reset_password_view,
     private_media_view, upload_too_large_view,
     report_user_view, block_user_view, unblock_user_view,
-    accept_terms_view,
+    accept_terms_view, csp_report_view,
 )
 
 urlpatterns = [
@@ -75,6 +75,7 @@ urlpatterns = [
     path('profile/verify-driver/', verify_driver_view, name='verify-driver'),
     path('private-media/<path:path>', private_media_view, name='private-media'),
     path('upload-too-large/', upload_too_large_view, name='upload-too-large'),
+    path('csp-report/', csp_report_view, name='csp-report'),
     path('bookings/<str:booking_id>/cancel/', cancel_booking_view, name='cancel-booking'),
     path('bookings/<str:booking_id>/accept/', accept_booking_view, name='accept-booking'),
     path('bookings/<str:booking_id>/reject/', reject_booking_view, name='reject-booking'),

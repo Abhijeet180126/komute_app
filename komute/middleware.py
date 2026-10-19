@@ -40,6 +40,45 @@ class PermissionsPolicyMiddleware:
         return response
 
 
+# Where pages may load scripts, styles, fonts, images and connections from
+# (audit S-8). Every outside host here is one a template or static/js file
+# uses: Google Fonts, Leaflet from unpkg, OSM tiles, Unsplash photos on the
+# about/how-it-works pages, Photon place search and OSRM routing. 'self'
+# also covers the chat and notification websockets on the same host.
+# 'unsafe-inline' stays until the inline <script> blocks and onclick=
+# handlers are gone (patch 01, step 3). Add a host here before using it.
+CONTENT_SECURITY_POLICY = '; '.join([
+    "default-src 'self'",
+    "script-src 'self' 'unsafe-inline' https://unpkg.com",
+    "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://unpkg.com",
+    "font-src 'self' https://fonts.gstatic.com",
+    "img-src 'self' data: blob: https://tile.openstreetmap.org https://*.tile.openstreetmap.org "
+    "https://images.unsplash.com https://unpkg.com",
+    "connect-src 'self' https://photon.komoot.io https://router.project-osrm.org",
+    "media-src 'self' blob:",
+    "frame-ancestors 'none'",
+    "base-uri 'self'",
+    "form-action 'self'",
+    "object-src 'none'",
+    "report-uri /csp-report/",
+])
+
+
+class ContentSecurityPolicyMiddleware:
+    """Adds the policy above to every response. Report-only (browsers send
+    violations to /csp-report/ and block nothing) until CSP_ENFORCE is set."""
+
+    def __init__(self, get_response):
+        self.get_response = get_response
+
+    def __call__(self, request):
+        response = self.get_response(request)
+        header = ('Content-Security-Policy' if settings.CSP_ENFORCE
+                  else 'Content-Security-Policy-Report-Only')
+        response.setdefault(header, CONTENT_SECURITY_POLICY)
+        return response
+
+
 def legal_versions_key():
     """The current Terms and Privacy Policy versions, as kept in the session
     once the signed-in user is known to have accepted them."""
@@ -62,7 +101,7 @@ class LegalAcceptanceMiddleware:
         'accept-terms', 'logout', 'terms-condition', 'privacy-policy',
         'community-guidelines', 'contact-us', 'request-delete-account',
         'delete-account', 'confirm-delete-account', 'account_confirm_email',
-        'private-media', 'upload-too-large',
+        'private-media', 'upload-too-large', 'csp-report',
     }
 
     def __init__(self, get_response):

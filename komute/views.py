@@ -11,6 +11,7 @@ import threading
 import uuid
 from datetime import date, datetime, timedelta
 from email.utils import formataddr
+from urllib.parse import urlsplit
 
 
 from django.conf import settings
@@ -30,6 +31,7 @@ from django.utils import timezone
 from django.core.paginator import Paginator
 from django.views.decorators.cache import never_cache
 from django.views.decorators.http import require_POST
+from django.views.decorators.csrf import csrf_exempt
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth.password_validation import validate_password
 from allauth.account.models import EmailAddress
@@ -40,7 +42,7 @@ from django.core import signing
 from django.utils.crypto import salted_hmac, constant_time_compare
 from django.utils.http import url_has_allowed_host_and_scheme
 from django.template.loader import render_to_string
-from django.urls import reverse
+from django.urls import Resolver404, resolve, reverse
 
 from .models import Rides, RideStop, Vehicle, RideBooking, PriceOffer, Message, RideSearch, VerificationLog, Review, RideInvite, UserBlock, UserReport, BiometricConsent, LegalAcceptance
 from .middleware import LegalAcceptanceMiddleware, legal_versions_key
@@ -3250,6 +3252,65 @@ def upload_too_large_view(request):
     client_max_body_size, so it never reached Django (ISSUES.md H2)."""
     return render(request, 'upload-too-large.html',
                   {"upload_request_max_mb": settings.UPLOAD_REQUEST_MAX_MB}, status=413)
+
+
+csp_logger = logging.getLogger("komute.csp")
+CSP_REPORT_MAX_BYTES = 8192
+
+
+def _csp_page(url):
+    """The route name of the page a report came from. Never the URL itself:
+    reset-password, chat and invite URLs carry tokens."""
+    try:
+        return resolve(urlsplit(str(url)).path).url_name or '?'
+    except (Resolver404, ValueError):
+        return '?'
+
+
+def _csp_source(value):
+    """What was blocked, without paths or query strings: an origin
+    ('https://evil.example'), a scheme ('data') or a keyword ('inline',
+    'eval'). Static files keep their path, since that is where to look."""
+    value = str(value or '')[:500]
+    parts = urlsplit(value)
+    if parts.path.startswith(settings.STATIC_URL) and parts.scheme in ('', 'http', 'https'):
+        return parts.path
+    if parts.scheme and parts.netloc:
+        return f'{parts.scheme}://{parts.netloc}'
+    return (parts.scheme or value)[:40]
+
+
+@csrf_exempt
+@require_POST
+def csp_report_view(request):
+    """Browsers POST Content-Security-Policy violations here (the policy's
+    report-uri; audit S-8). Logs one line per report to komute.csp and always
+    answers 204: browsers ignore the reply, and an error would only tell a
+    prober something. Oversized, malformed and rate-limited reports are
+    dropped."""
+    if _rate_limited(request, 'csp-report'):
+        return HttpResponse(status=204)
+    try:
+        length = int(request.META.get('CONTENT_LENGTH') or 0)
+    except ValueError:
+        length = 0
+    if not 0 < length <= CSP_REPORT_MAX_BYTES:
+        return HttpResponse(status=204)
+    try:
+        report = json.loads(request.body)['csp-report']
+    except (ValueError, KeyError, TypeError):
+        return HttpResponse(status=204)
+    if not isinstance(report, dict):
+        return HttpResponse(status=204)
+    csp_logger.warning(
+        'CSP violation: directive=%r blocked=%r page=%r source=%r line=%r',
+        str(report.get('effective-directive') or report.get('violated-directive') or '')[:60],
+        _csp_source(report.get('blocked-uri')),
+        _csp_page(report.get('document-uri')),
+        _csp_source(report.get('source-file')),
+        report.get('line-number') if isinstance(report.get('line-number'), int) else None,
+    )
+    return HttpResponse(status=204)
 
 
 @login_required

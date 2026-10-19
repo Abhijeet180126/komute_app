@@ -109,6 +109,7 @@ CACHES = {
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
     'komute.middleware.PermissionsPolicyMiddleware',
+    'komute.middleware.ContentSecurityPolicyMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
@@ -275,6 +276,11 @@ BIOMETRIC_NOTICE_VERSION = '2026-10-18'
 # acceptance is stored as a LegalAcceptance row.
 TERMS_VERSION   = '2026-07-09'
 PRIVACY_VERSION = '2026-07-09'
+# Content-Security-Policy (komute/middleware.py, audit S-8). False sends it
+# as Report-Only: violations are logged by /csp-report/ (logger komute.csp)
+# and nothing is blocked. Set True in .env once the log shows no
+# violations from the site's own pages.
+CSP_ENFORCE = config('CSP_ENFORCE', default=False, cast=bool)
 
 # Application tuning (overridable per deployment)
 SEARCH_RADIUS_KM    = config('SEARCH_RADIUS_KM',    default=15,  cast=int)
@@ -338,6 +344,10 @@ RATE_LIMITS = {
                                config('RATE_LIMIT_DELETE_ACCOUNT_EMAIL_WINDOW', default=3600, cast=int)),
     'report-user':           (config('RATE_LIMIT_REPORT_USER_MAX',           default=10,  cast=int),
                                config('RATE_LIMIT_REPORT_USER_WINDOW',        default=3600, cast=int)),
+    # CSP violation reports (/csp-report/). One page view can send several;
+    # past the cap they're dropped, so the log can't be flooded.
+    'csp-report':            (config('RATE_LIMIT_CSP_REPORT_MAX',            default=60,  cast=int),
+                               config('RATE_LIMIT_CSP_REPORT_WINDOW',         default=600, cast=int)),
 }
 
 # Field-level encryption for biometric scores and sensitive OCR data
@@ -424,6 +434,12 @@ LOGGING = {
         'komute.chat': {
             'handlers': ['console'],
             'level': 'INFO',
+            'propagate': False,
+        },
+        # One line per Content-Security-Policy violation (audit S-8).
+        'komute.csp': {
+            'handlers': ['console'],
+            'level': 'WARNING',
             'propagate': False,
         },
     },

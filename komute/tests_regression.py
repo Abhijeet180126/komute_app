@@ -3824,3 +3824,80 @@ class AuditRecurringRideTests(TestCase):
         resp = c.post(reverse('post-ride'), {**base, 'recurring_end_date': (first + timedelta(days=366)).isoformat()})
         self.assertEqual(resp.status_code, 302)
         self.assertEqual(Rides.objects.filter(driver=driver).count(), 367)
+
+
+class ContentSecurityPolicyTests(TestCase):
+    """Audit S-8: a CSP on every page, report-only until CSP_ENFORCE, with
+    violations logged by /csp-report/."""
+
+    def setUp(self):
+        cache.clear()
+
+    def _report(self, client=None, **fields):
+        body = {'csp-report': {
+            'document-uri': 'https://komute.example/reset-password/secret-token-123/',
+            'effective-directive': 'script-src-elem',
+            'blocked-uri': 'https://evil.example/x.js?session=abc',
+            'source-file': 'https://komute.example/reset-password/secret-token-123/',
+            'line-number': 42,
+            **fields,
+        }}
+        return (client or Client()).post(reverse('csp-report'), json.dumps(body),
+                                         content_type='application/csp-report')
+
+    def test_report_only_header_by_default(self):
+        resp = Client().get(reverse('home'))
+        self.assertFalse(resp.has_header('Content-Security-Policy'))
+        policy = resp['Content-Security-Policy-Report-Only']
+        for part in ("default-src 'self'", "object-src 'none'", "frame-ancestors 'none'",
+                     'https://unpkg.com', 'https://fonts.gstatic.com', 'https://tile.openstreetmap.org',
+                     'https://photon.komoot.io', 'https://router.project-osrm.org', 'report-uri /csp-report/'):
+            self.assertIn(part, policy)
+
+    @override_settings(CSP_ENFORCE=True)
+    def test_enforced_when_setting_is_on(self):
+        resp = Client().get(reverse('home'))
+        self.assertIn("default-src 'self'", resp['Content-Security-Policy'])
+        self.assertFalse(resp.has_header('Content-Security-Policy-Report-Only'))
+
+    def test_report_is_logged_without_tokens_or_query_strings(self):
+        with self.assertLogs('komute.csp', level='WARNING') as logs:
+            resp = self._report()
+        self.assertEqual(resp.status_code, 204)
+        line = logs.output[0]
+        self.assertIn("directive='script-src-elem'", line)
+        self.assertIn("blocked='https://evil.example'", line)
+        self.assertIn("page='reset-password'", line)
+        self.assertIn('line=42', line)
+        self.assertNotIn('secret-token-123', line)
+        self.assertNotIn('session=abc', line)
+
+    def test_inline_and_static_sources(self):
+        with self.assertLogs('komute.csp', level='WARNING') as logs:
+            self._report(**{'blocked-uri': 'inline', 'source-file': f'https://komute.example{settings.STATIC_URL}js/place-autocomplete.js'})
+        self.assertIn("blocked='inline'", logs.output[0])
+        self.assertIn(f"source='{settings.STATIC_URL}js/place-autocomplete.js'", logs.output[0])
+
+    def test_signed_in_user_without_accepted_terms_is_not_redirected(self):
+        user = CustomUser.objects.create_user(email='csp_user@example.com', password='TestPass123', full_name='Csp User')
+        c = Client()
+        c.force_login(user)
+        with self.assertLogs('komute.csp', level='WARNING'):
+            resp = self._report(client=c)
+        self.assertEqual(resp.status_code, 204)
+
+    def test_bad_reports_are_dropped(self):
+        url = reverse('csp-report')
+        self.assertEqual(Client().get(url).status_code, 405)
+        with self.assertNoLogs('komute.csp', level='WARNING'):
+            for body in ('not json', '[]', '{"other": 1}', '{"csp-report": "x"}',
+                         json.dumps({'csp-report': {'blocked-uri': 'x' * 10000}})):
+                resp = Client().post(url, body, content_type='application/csp-report')
+                self.assertEqual(resp.status_code, 204)
+
+    def test_rate_limited(self):
+        limits = {**settings.RATE_LIMITS, 'csp-report': (2, 600)}
+        with override_settings(RATE_LIMITS=limits), self.assertLogs('komute.csp', level='WARNING') as logs:
+            for _ in range(5):
+                self.assertEqual(self._report().status_code, 204)
+        self.assertEqual(len(logs.output), 2)

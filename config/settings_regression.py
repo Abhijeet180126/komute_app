@@ -69,3 +69,4 @@ PRIVATE_MEDIA_USE_ACCEL = False
 # The per-upload log lines would flood the test output; tests that check
 # them use assertLogs, which lowers the level itself.
 LOGGING['loggers']['komute.uploads']['level'] = 'ERROR'  # noqa: F405
+LOGGING['loggers']['komute.csp']['level'] = 'ERROR'  # noqa: F405
