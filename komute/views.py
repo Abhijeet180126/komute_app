@@ -42,6 +42,7 @@ from django.utils.http import url_has_allowed_host_and_scheme
 from django.template.loader import render_to_string
 from django.urls import reverse
 
+from .client_ip import client_ip as _client_ip
 from .models import Rides, RideStop, Vehicle, RideBooking, PriceOffer, Message, RideSearch, VerificationLog, Review, RideInvite, UserBlock, UserReport, BiometricConsent, LegalAcceptance
 from .middleware import LegalAcceptanceMiddleware, legal_versions_key
 from .hashid_utils import encode_id, decode_id
@@ -62,14 +63,6 @@ def _display_name(user):
     return (user.full_name or '').strip().title() or _UNNAMED_USER
 
 
-def _client_ip(request):
-    """The address Nginx saw. Nginx appends it to X-Forwarded-For
-    ($proxy_add_x_forwarded_for), so it is the last entry; earlier entries
-    come from the client and can be anything."""
-    xff = request.META.get('HTTP_X_FORWARDED_FOR', '')
-    if xff:
-        return xff.rsplit(',', 1)[-1].strip()
-    return request.META.get('REMOTE_ADDR', 'unknown')
 
 
 def _consent_request_details(request):
