@@ -3938,3 +3938,40 @@ class ContentSecurityPolicyTests(TestCase):
             for _ in range(5):
                 self.assertEqual(self._report().status_code, 204)
         self.assertEqual(len(logs.output), 2)
+
+
+@override_settings(AXES_ENABLED=True)
+class AxesClientIpTests(TestCase):
+    """Audit S-16: axes must see the address Nginx saw (the last
+    X-Forwarded-For entry), not Daphne's REMOTE_ADDR, which is 127.0.0.1
+    for everyone in production."""
+
+    def setUp(self):
+        from axes.models import AccessAttempt
+        cache.clear()
+        AccessAttempt.objects.all().delete()
+        self.user = make_user('ax_user@example.com')
+
+    def _login(self, email, password, ip):
+        return Client().post(reverse('login'), {'email': email, 'password': password},
+                             REMOTE_ADDR='127.0.0.1', HTTP_X_FORWARDED_FOR=ip)
+
+    def test_failures_recorded_against_forwarded_ip(self):
+        from axes.models import AccessAttempt
+        self._login('nobody@example.com', 'wrong', '203.0.113.5')
+        attempt = AccessAttempt.objects.get()
+        self.assertEqual(attempt.ip_address, '203.0.113.5')
+        self.assertEqual(attempt.username, 'nobody@example.com')
+
+    def test_one_ip_failing_does_not_lock_out_others(self):
+        for i in range(6):
+            self._login(f'nobody{i}@example.com', 'wrong', '203.0.113.5')
+        resp = self._login('ax_user@example.com', 'TestPass123', '198.51.100.7')
+        self.assertRedirects(resp, reverse('role-select'), fetch_redirect_response=False)
+
+    def test_account_locked_after_failures_from_many_ips(self):
+        for i in range(5):
+            self._login('ax_user@example.com', 'wrong', f'203.0.113.{i}')
+        resp = self._login('ax_user@example.com', 'TestPass123', '198.51.100.7')
+        self.assertEqual(resp.status_code, 429)
+        self.assertNotIn('_auth_user_id', resp.client.session)

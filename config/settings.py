@@ -216,13 +216,20 @@ AUTHENTICATION_BACKENDS = [
 
 SITE_ID = 1
 
-# django-axes: lock out repeated failed logins (admin included) by
-# username+IP combined, so a botnet can't credential-stuff one account from
+# django-axes: lock out repeated failed logins (admin included) by username
+# and, separately, by IP, so a botnet can't credential-stuff one account from
 # many IPs, nor sweep many accounts from one IP, without tripping this.
 AXES_FAILURE_LIMIT = 5
 AXES_COOLOFF_TIME = timedelta(minutes=30)
 AXES_LOCKOUT_PARAMETERS = ['username', 'ip_address']
 AXES_RESET_ON_SUCCESS = True
+# Behind Nginx, REMOTE_ADDR is 127.0.0.1 for everyone, so the IP lockout
+# locked out every visitor at once (audit S-16). Use the address Nginx saw.
+AXES_CLIENT_IP_CALLABLE = 'komute.client_ip.client_ip'
+# Axes defaults to USERNAME_FIELD ("email"), but login_view and the admin
+# pass the address to authenticate() as username=, so every failure was
+# stored with username None and the per-account lockout never fired.
+AXES_USERNAME_FORM_FIELD = 'username'
 
 # Admin URL path -- override ADMIN_URL in production's .env to a
 # non-guessable value (e.g. "mgmt-x7k2p9/"). Keep the trailing slash.
