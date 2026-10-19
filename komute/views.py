@@ -386,6 +386,11 @@ def _send_welcome_email(request, user):
         pass
 
 
+_EMAIL_UNVERIFIED_MSG = (
+    "Please verify your email address first: click \"Verify Now\" next to "
+    "your email on your profile page."
+)
+
 _PHONE_RE = re.compile(r'^\+?[1-9]\d{6,14}$')
 _PHONE_NUMBER_RE = re.compile(r'^\d{4,14}$')
 
@@ -1062,6 +1067,11 @@ def post_ride_view(request):
         messages.error(request, "Only drivers can post rides.")
         return redirect("profile")
 
+    # Ride emails go to this address (audit S-10).
+    if not user.email_verified:
+        messages.error(request, _EMAIL_UNVERIFIED_MSG)
+        return redirect("profile")
+
     if not user.dob:
         messages.error(request, "Please add your date of birth in your profile before posting a ride.")
         return redirect("profile")
@@ -1566,8 +1576,11 @@ def create_ride_booking(request, ride_id):
         raise Http404
 
     if request.method == "POST":
-        # Covers "Chat with driver" too: a draft on a finished ride could
-        # later be confirmed in chat or used to leave a review.
+        # Both checks cover "Chat with driver" too: a draft can later be
+        # confirmed in chat or used to leave a review. Booking emails go to
+        # the rider's address, so it must be verified (audit S-10).
+        if not request.user.email_verified:
+            return JsonResponse({'ok': False, 'error': _EMAIL_UNVERIFIED_MSG}, status=403)
         if ride.status not in ('posted', 'full') or ride.depart_at <= timezone.now():
             return JsonResponse({'ok': False, 'error': 'This ride is no longer available.'}, status=400)
         intent = request.POST.get("intent", "book")
@@ -4790,6 +4803,11 @@ def accept_invite_view(request, token):
         return render(request, 'invite-detail.html', {
             'invite': invite, 'token': token,
             'error':  'This ride is no longer available.',
+        })
+
+    if not request.user.email_verified:
+        return render(request, 'invite-detail.html', {
+            'invite': invite, 'token': token, 'error': _EMAIL_UNVERIFIED_MSG,
         })
 
     # Accepting an invite confirms a booking, so the driver's verification
