@@ -531,6 +531,7 @@ select.form-input {
     
     <!-- DJANGO CSRF TOKEN -->
     {% csrf_token %}
+    {% if next %}<input type="hidden" name="next" value="{{ next }}">{% endif %}
 
     {% if errors.rate_limit %}
       <div class="error-text">{{ errors.rate_limit }}</div>
@@ -731,7 +732,7 @@ select.form-input {
 <!-- Login link -->
 <div class="login-row" style="margin-top:20px">
   Already have an account?
-  <a href="{% url 'login' %}">Login</a>
+  <a href="{% url 'login' %}{% if next %}?next={{ next|urlencode }}{% endif %}">Login</a>
 </div>
 </div><!-- /page-content -->
 <!-- ══ T&C Full-screen Modal ══ -->

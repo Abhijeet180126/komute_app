@@ -897,7 +897,7 @@ nav {
             <label class="form-label">Price per Seat (CAD) <span class="required">*</span></label>
             <div class="input-wrap price-wrap">
               <span class="price-prefix">$</span>
-              <input type="number" name="price" class="form-input" placeholder="0.00" min="0.01" step="0.01" oninput="updateProgress()" value="{{ form.price }}">
+              <input type="number" name="price" class="form-input" placeholder="0.00" min="0.01" max="1000" step="0.01" oninput="updateProgress()" value="{{ form.price }}">
             </div>
             {% if errors.price %}<small style="color:#ef4444;font-size:0.78rem;">{{ errors.price }}</small>{% endif %}
           </div>

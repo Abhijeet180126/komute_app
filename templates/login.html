@@ -437,7 +437,7 @@ body {
 
   <!-- Sign up link -->
   <div class="signup-row">
-    Don't have an account? <a href="{% url 'signup' %}">Sign Up</a>
+    Don't have an account? <a href="{% url 'signup' %}{% if next %}?next={{ next|urlencode }}{% endif %}">Sign Up</a>
   </div>
 
 </div>

@@ -286,7 +286,7 @@ nav {
   display: inline-flex; align-items: center; gap: 6px;
   padding: 8px 18px; border-radius: 10px;
   background: linear-gradient(90deg, #0C63B4, #0CB439);
-  color: white; border: none;
+  color: white; border: none; text-decoration: none;
   font-family: 'Poppins', sans-serif; font-size: 0.84rem; font-weight: 700;
   cursor: pointer; transition: opacity 0.2s, transform 0.15s;
   box-shadow: 0 3px 10px rgba(12,99,180,0.22);
@@ -578,10 +578,10 @@ nav {
               Invite All ({{ demand.search_count }})
             </button>
             {% else %}
-            <button class="btn-invite-all" onclick="showToast('Opening Post a Ride...')">
+            <a href="{% url 'post-ride' %}" class="btn-invite-all">
               <svg viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
               Post a Ride for This Route
-            </button>
+            </a>
             {% endif %}
           </div>
         </div>
