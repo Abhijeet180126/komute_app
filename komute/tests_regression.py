@@ -3700,6 +3700,228 @@ class AuditFixTests(TestCase):
         self.assertTrue(RideBooking.objects.filter(passenger=self.rider,
                                                    status=RideBooking.STATUS_REQUESTED).exists())
 
+    def _accept_invite(self):
+        from komute.views import _make_invite_token
+        invite = RideInvite.objects.create(driver=self.driver, passenger=self.rider, ride=self.ride)
+        resp = self._client('au_rider@example.com').post(
+            reverse('accept-invite', args=[_make_invite_token(invite.id)]))
+        invite.refresh_from_db()
+        self.ride.refresh_from_db()
+        return resp, invite
+
+    def test_gender_preference_enforced_at_booking_and_invites(self):
+        # L-8: search hid the ride, but a direct link could still book it.
+        Rides.objects.filter(pk=self.ride.pk).update(passenger_gender_pref='women_only')
+        CustomUser.objects.filter(pk=self.rider.pk).update(gender='male')
+        rider = self._client('au_rider@example.com')
+        for intent in ('book', 'chat'):
+            resp = rider.post(reverse('create-ride-booking', args=[encode_id(self.ride.id)]),
+                              {'seats': '1', 'intent': intent})
+            self.assertEqual(resp.status_code, 403, intent)
+        self.assertFalse(RideBooking.objects.filter(passenger=self.rider).exists())
+
+        RideSearch.objects.create(
+            user=self.rider, origin='Toronto, ON', origin_lat=43.65, origin_lng=-79.38,
+            destination='Ottawa, ON', dest_lat=45.42, dest_lng=-75.69,
+            search_date=date.today(), passenger_count=1)
+        driver = self._client('au_driver@example.com')
+        resp = driver.post(reverse('send-invite'), content_type='application/json',
+                           data=json.dumps({'rider_id': self.rider.id, 'ride_id': encode_id(self.ride.id)}))
+        self.assertEqual(resp.status_code, 400)
+        rider_name = 'Test au_rider@example.com'.title()
+        self.assertNotContains(driver.get(reverse('route-demand')), rider_name)
+
+        resp, invite = self._accept_invite()
+        self.assertContains(resp, 'different gender')
+        self.assertNotEqual(invite.status, RideInvite.STATUS_ACCEPTED)
+        self.assertFalse(RideBooking.objects.filter(passenger=self.rider).exists())
+
+        CustomUser.objects.filter(pk=self.rider.pk).update(gender='female')
+        self.assertContains(driver.get(reverse('route-demand')), rider_name)
+        resp = rider.post(reverse('create-ride-booking', args=[encode_id(self.ride.id)]), {'seats': '1'})
+        self.assertEqual(resp.status_code, 200)
+
+    def test_invite_accept_charges_service_fee(self):
+        # L-7: the invite booking used to leave the service fee out.
+        resp, invite = self._accept_invite()
+        self.assertEqual(resp.status_code, 302)
+        booking = RideBooking.objects.get(passenger=self.rider)
+        self.assertEqual(booking.status, RideBooking.STATUS_CONFIRMED)
+        self.assertEqual(booking.agreed_price_cents, self.ride.price_cents + settings.SERVICE_FEE_CENTS)
+        self.assertEqual(self.ride.seats_available, self.ride.seats_total - 1)
+
+    def test_invite_accept_refused_with_an_active_booking(self):
+        # L-7: a rider with a pending request got a second, confirmed booking.
+        RideBooking.objects.create(ride=self.ride, passenger=self.rider, seats=1,
+                                   agreed_price_cents=2600, status=RideBooking.STATUS_REQUESTED)
+        Rides.objects.filter(pk=self.ride.pk).update(seats_available=2)
+        resp, invite = self._accept_invite()
+        self.assertContains(resp, 'already have a booking')
+        self.assertNotEqual(invite.status, RideInvite.STATUS_ACCEPTED)
+        self.assertEqual(RideBooking.objects.filter(passenger=self.rider).count(), 1)
+        self.assertEqual(self.ride.seats_available, 2)
+
+    def test_invite_accept_confirms_the_riders_draft(self):
+        # L-7: the draft's seats and negotiated price carry over, and no
+        # second booking is created.
+        draft = RideBooking.objects.create(ride=self.ride, passenger=self.rider, seats=2,
+                                           agreed_price_cents=4100, status=RideBooking.STATUS_DRAFT)
+        resp, invite = self._accept_invite()
+        self.assertEqual(resp.status_code, 302)
+        self.assertEqual(invite.status, RideInvite.STATUS_ACCEPTED)
+        draft.refresh_from_db()
+        self.assertEqual(draft.status, RideBooking.STATUS_CONFIRMED)
+        self.assertEqual(draft.agreed_price_cents, 4100)
+        self.assertEqual(RideBooking.objects.filter(passenger=self.rider).count(), 1)
+        self.assertEqual(self.ride.seats_available, self.ride.seats_total - 2)
+
+    def test_invite_accept_needs_seats_for_the_draft(self):
+        RideBooking.objects.create(ride=self.ride, passenger=self.rider, seats=2,
+                                   agreed_price_cents=5100, status=RideBooking.STATUS_DRAFT)
+        Rides.objects.filter(pk=self.ride.pk).update(seats_available=1)
+        resp, invite = self._accept_invite()
+        self.assertContains(resp, 'enough seats')
+        self.assertNotEqual(invite.status, RideInvite.STATUS_ACCEPTED)
+        self.assertEqual(self.ride.seats_available, 1)
+
+    def _ride_form(self, **overrides):
+        depart_dt = timezone.now() + timedelta(days=2)
+        payload = {
+            'origin': 'Toronto, ON', 'destination': 'Ottawa, ON',
+            'date': depart_dt.date().isoformat(), 'depart_time': '10:00',
+            'depart_utc': depart_dt.isoformat().replace('+00:00', 'Z'),
+            'seats': '3', 'vehicle': str(self.driver.vehicles.first().id), 'price': '25.00',
+            'origin_lat': '43.65', 'origin_lng': '-79.38',
+            'destination_lat': '45.42', 'destination_lng': '-75.69',
+        }
+        payload.update(overrides)
+        return payload
+
+    def test_out_of_range_numbers_are_form_errors_not_500s(self):
+        # L-10: "inf" and huge numbers raised OverflowError or overflowed
+        # integer columns.
+        driver = self._client('au_driver@example.com')
+        rides_before = Rides.objects.count()
+        for price in ('inf', 'nan', '1e30', '1000.01'):
+            resp = driver.post(reverse('post-ride'), self._ride_form(price=price))
+            self.assertEqual(resp.status_code, 200, price)
+            self.assertIn('price', resp.context['errors'], price)
+        self.assertEqual(Rides.objects.count(), rides_before)
+
+        resp = driver.post(reverse('post-ride'), self._ride_form(duration_seconds='9' * 20))
+        self.assertEqual(resp.status_code, 302)
+        ride = Rides.objects.latest('id')
+        self.assertIsNone(ride.arrive_at)
+        self.assertIsNone(ride.expected_duration_seconds)
+
+        edit_url = reverse('edit-ride', args=[encode_id(self.ride.id)])
+        resp = driver.post(edit_url, self._ride_form(price='inf'))
+        self.assertIn('price', resp.context['errors'])
+        resp = driver.post(edit_url, self._ride_form(depart_utc='', timezone_offset='9' * 20))
+        self.assertIn('depart_time', resp.context['errors'])
+        resp = driver.post(edit_url, self._ride_form(
+            depart_utc='', date='9999-12-31', depart_time='23:59', timezone_offset='840'))
+        self.assertIn('depart_time', resp.context['errors'])
+        resp = driver.post(edit_url, self._ride_form(duration_seconds='9' * 20))
+        self.assertRedirects(resp, reverse('my-rides'), fetch_redirect_response=False)
+
+        rider = self._client('au_rider@example.com')
+        resp = rider.post(reverse('search-rides'), {
+            'from': 'Toronto, ON', 'to': 'Ottawa, ON',
+            'date': self.ride.depart_at.date().isoformat(),
+            'origin_lat': '43.65', 'origin_lng': '-79.38', 'dest_lat': '45.42', 'dest_lng': '-75.69',
+            'seats': '9' * 20, 'max_price': 'inf',
+        })
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(RideSearch.objects.get(user=self.rider).passenger_count, 8)
+
+        booking = RideBooking.objects.create(ride=self.ride, passenger=self.rider, seats=1,
+                                             agreed_price_cents=2600, status=RideBooking.STATUS_CONFIRMED)
+        resp = rider.post(reverse('create-price-offer', args=[encode_id(booking.id)]), {'price_cents': 'inf'})
+        self.assertEqual(resp.status_code, 400)
+
+    def test_ride_summary_report_uses_the_report_flow(self):
+        # L-11: "Report issue" showed a made-up ticket number and sent nothing.
+        booking = RideBooking.objects.create(ride=self.ride, passenger=self.rider, seats=1,
+                                             agreed_price_cents=2600, status=RideBooking.STATUS_COMPLETED)
+        Rides.objects.filter(pk=self.ride.pk).update(status='completed')
+        url = reverse('ride-summary', args=[encode_id(self.ride.id)])
+        report_button = f'data-safety="report" data-booking="{encode_id(booking.id)}"'
+        for email in ('au_rider@example.com', 'au_driver@example.com'):
+            resp = self._client(email).get(url)
+            self.assertContains(resp, report_button, msg_prefix=email)
+            self.assertContains(resp, 'id="rbRoot"', msg_prefix=email)
+            self.assertNotContains(resp, 'SR-', msg_prefix=email)
+
+    def test_ride_success_copy_link_shares_the_booking_page(self):
+        # L-13: "copied" showed even when the copy failed, and the link was
+        # this driver-only page.
+        resp = self._client('au_driver@example.com').get(
+            reverse('ride-success', args=[encode_id(self.ride.id)]))
+        self.assertEqual(resp.status_code, 200)
+        booking_url = reverse('create-ride-booking', args=[encode_id(self.ride.id)])
+        self.assertEqual(resp.context['share']['url'], 'http://testserver' + booking_url)
+        self.assertNotContains(resp, 'writeText(window.location.href)')
+        # The Share row is live and its data is JSON, not markup.
+        self.assertContains(resp, 'id="shareWhatsApp"')
+        self.assertContains(resp, '<script id="shareData" type="application/json">')
+
+    def test_shared_ride_link_survives_signup(self):
+        # Someone without an account opens a shared ride link: signup, first
+        # login and role selection all carry them back to the ride.
+        booking_url = reverse('create-ride-booking', args=[encode_id(self.ride.id)])
+        c = Client()
+        resp = c.get(booking_url)
+        login_url = f"{reverse('login')}?next={booking_url}"
+        self.assertRedirects(resp, login_url, fetch_redirect_response=False)
+        self.assertContains(c.get(login_url), f"{reverse('signup')}?next={booking_url}")
+
+        resp = c.post(reverse('signup'), {
+            'full_name': 'Sam Share', 'email': 'sam@example.com',
+            'country_code': '+1', 'phone_number': '4155552672', 'password': 'GoodPassword1!',
+            'confirm_password': 'GoodPassword1!', 'agreed_to_terms': '1', 'next': booking_url,
+        })
+        self.assertRedirects(resp, login_url, fetch_redirect_response=False)
+        resp = c.post(reverse('login'), {'email': 'sam@example.com', 'password': 'GoodPassword1!',
+                                         'next': booking_url})
+        role_url = f"{reverse('role-select')}?next={booking_url}"
+        self.assertRedirects(resp, role_url, fetch_redirect_response=False)
+        self.assertContains(c.get(role_url), f'name="next" value="{booking_url}"')
+        resp = c.post(reverse('role-select'), {'role': 'rider', 'next': booking_url})
+        self.assertRedirects(resp, booking_url, fetch_redirect_response=False)
+
+        # Off-site targets are dropped.
+        resp = c.post(reverse('role-select'), {'role': 'rider', 'next': 'https://evil.example/'})
+        self.assertRedirects(resp, reverse('profile'), fetch_redirect_response=False)
+
+    def test_deleted_account_searches_go_at_once_and_it_cant_be_invited(self):
+        # P-14: the privacy policy says search logs are deleted immediately;
+        # they used to wait for the 45-day purge, and kept the closed account
+        # on drivers' Route Demand lists.
+        from komute.views import _make_deactivate_token
+        RideSearch.objects.create(
+            user=self.rider, origin='Toronto, ON', origin_lat=43.65, origin_lng=-79.38,
+            destination='Ottawa, ON', dest_lat=45.42, dest_lng=-75.69,
+            search_date=date.today(), passenger_count=1)
+        # A prior booking with this driver also makes a rider inviteable.
+        RideBooking.objects.create(ride=make_ride(self.driver), passenger=self.rider, seats=1,
+                                   agreed_price_cents=2600, status=RideBooking.STATUS_COMPLETED)
+        driver = self._client('au_driver@example.com')
+        rider_name = 'Test au_rider@example.com'.title()
+        self.assertContains(driver.get(reverse('route-demand')), rider_name)
+
+        resp = Client().get(reverse('confirm-delete-account', args=[_make_deactivate_token(self.rider)]))
+        self.assertRedirects(resp, reverse('login'), fetch_redirect_response=False)
+        self.assertFalse(RideSearch.objects.filter(user=self.rider).exists())
+        self.assertTrue(CustomUser.objects.filter(pk=self.rider.pk).exists())  # rest waits for the purge
+
+        self.assertNotContains(driver.get(reverse('route-demand')), rider_name)
+        resp = driver.post(reverse('send-invite'), content_type='application/json',
+                           data=json.dumps({'rider_id': self.rider.id, 'ride_id': encode_id(self.ride.id)}))
+        self.assertEqual(resp.status_code, 400)
+        self.assertFalse(RideInvite.objects.filter(passenger=self.rider).exists())
+        self.assertEqual(len(mail.outbox), 0)
+
 
     def test_accept_does_not_overwrite_a_concurrent_cancel(self):
         from komute import views

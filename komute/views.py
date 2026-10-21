@@ -11,7 +11,7 @@ import threading
 import uuid
 from datetime import date, datetime, timedelta
 from email.utils import formataddr
-from urllib.parse import urlsplit
+from urllib.parse import quote, urlsplit
 
 
 from django.conf import settings
@@ -449,6 +449,33 @@ def _max_ride_date(today=None):
     return today.replace(year=y, month=m, day=day)
 
 
+# Bounds on numbers posted by forms and scripts (audit L-10): without them
+# "inf" or a huge value raised OverflowError (a 500) in float/timedelta maths
+# or overflowed the database's integer columns.
+_MAX_PRICE_CENTS = 100_000                 # $1,000 a seat, the price-offer cap too
+_MAX_DURATION_SECONDS = 7 * 24 * 3600      # longer than any US/Canada drive
+_MAX_TZ_OFFSET_MINUTES = 14 * 60           # real UTC offsets run -12:00..+14:00
+
+
+def _parse_dollars_to_cents(value):
+    """Dollar string → whole cents. Raises ValueError for text, NaN or
+    infinity; the caller checks the range."""
+    amount = float(value)
+    if not math.isfinite(amount):
+        raise ValueError('price must be a finite number')
+    return int(round(amount * 100))
+
+
+def _parse_duration_seconds(value):
+    """The route duration a page script posts, or 0 (unknown) when it's
+    missing, malformed or out of range."""
+    try:
+        seconds = int(value or 0)
+    except (ValueError, TypeError):
+        return 0
+    return seconds if 0 < seconds <= _MAX_DURATION_SECONDS else 0
+
+
 def _has_valid_vehicle_row(post):
     """True if the submitted vehicle rows contain at least one complete
     (make + plate + year) entry. Used to stop a driver's vehicles from
@@ -553,6 +580,23 @@ def _resize_image(file_obj, max_dim=1200, quality=85, label="image"):
     return ContentFile(buf.getvalue(), name='image.jpg')
 
 
+def _safe_next(request):
+    """The `next` page to return to after signup, login or role selection,
+    if it's on this site; otherwise "". Carried through all three so someone
+    opening a shared ride link without an account lands back on that ride."""
+    next_url = request.POST.get("next") or request.GET.get("next") or ""
+    if url_has_allowed_host_and_scheme(next_url, allowed_hosts={request.get_host()},
+                                       require_https=request.is_secure()):
+        return next_url
+    return ""
+
+
+def _with_next(url_name, next_url):
+    url = reverse(url_name)
+    # safe='/', as Django's own login redirect and the |urlencode filter do.
+    return f"{url}?next={quote(next_url, safe='/')}" if next_url else url
+
+
 @never_cache
 def signup_view(request):
     if request.user.is_authenticated:
@@ -561,6 +605,7 @@ def signup_view(request):
 
     form_data = {}
     errors = {}
+    next_url = _safe_next(request)
 
     if request.method == "POST":
 
@@ -641,10 +686,10 @@ def signup_view(request):
                 _record_legal_acceptance(request, new_user, LegalAcceptance.SOURCE_SIGNUP)
             _send_welcome_email(request, new_user)
             messages.success(request, "You have successfully signed up. Now Login to the account.")
-            return redirect("login")
+            return redirect(_with_next("login", next_url))
 
     priority_countries, countries = _dropdown_countries()
-    return render(request, "signup.html", {"form": form_data, "errors": errors,
+    return render(request, "signup.html", {"form": form_data, "errors": errors, "next": next_url,
                                              "priority_countries": priority_countries, "countries": countries})
 
 @never_cache
@@ -652,7 +697,7 @@ def login_view(request):
     if request.user.is_authenticated:
         messages.info(request, "You are already logged in.")
         return redirect("profile")
-    next_url = request.GET.get("next") or request.POST.get("next") or ""
+    next_url = _safe_next(request)
     if request.method == "POST":
         email = request.POST.get("email")
         password = request.POST.get("password")
@@ -686,12 +731,8 @@ def login_view(request):
             is_first_login = user.last_login is None
             login(request, user)
             if is_first_login:
-                return redirect("role-select")
-            if next_url and url_has_allowed_host_and_scheme(
-                next_url, allowed_hosts={request.get_host()}, require_https=request.is_secure()
-            ):
-                return redirect(next_url)
-            return redirect("profile")
+                return redirect(_with_next("role-select", next_url))
+            return redirect(next_url or "profile")
         else:
             messages.error(request, "Invalid email or password")
     return render(request, "login.html", {"next": next_url})
@@ -704,14 +745,15 @@ def role_select_view(request):
     if not user.is_authenticated:
         return redirect("login")
 
+    next_url = _safe_next(request)
     if request.method == "POST":
         role = request.POST.get("role")
         if role in ["rider", "driver"]:
             user.role = role
             user.save(update_fields=["role"])
-            return redirect("profile")
+            return redirect(next_url or "profile")
 
-    return render(request, "role-select.html", {"role": user.role})
+    return render(request, "role-select.html", {"role": user.role, "next": next_url})
 
 
 def home_view(request):
@@ -1196,9 +1238,11 @@ def post_ride_view(request):
             errors["price"] = "Price per seat is required."
         else:
             try:
-                price_cents = int(round(float(price_str) * 100))
+                price_cents = _parse_dollars_to_cents(price_str)
                 if price_cents <= 0:
                     errors["price"] = "Price per seat must be greater than 0."
+                elif price_cents > _MAX_PRICE_CENTS:
+                    errors["price"] = "Price per seat cannot exceed $1,000."
             except ValueError:
                 errors["price"] = "Invalid price."
 
@@ -1263,10 +1307,7 @@ def post_ride_view(request):
                 errors["recurring_days"] = "Select at least one day of the week."
 
         if not errors:
-            try:
-                duration_seconds = int(request.POST.get("duration_seconds") or 0)
-            except (ValueError, TypeError):
-                duration_seconds = 0
+            duration_seconds = _parse_duration_seconds(request.POST.get("duration_seconds"))
 
             def _create_ride(depart_dt, group_id=None):
                 arrive_dt = depart_dt + timedelta(seconds=duration_seconds) if duration_seconds > 0 else None
@@ -1356,6 +1397,12 @@ def search_rides_view(request):
     filter_max_price  = request.POST.get('max_price', '').strip()
     filter_time_slot  = request.POST.get('depart_time_slot', '').strip()
     filter_preference = request.POST.get('preference', '').strip()
+    # Clamped so a huge value can't overflow an integer column in the query
+    # or the RideSearch row (audit L-10); no ride has more than 8 seats.
+    try:
+        seats_needed = min(max(int(filter_seats), 1), 8) if filter_seats else None
+    except ValueError:
+        seats_needed = None
 
     search_performed = bool(search_from or search_to or search_date)
     rides_data = []
@@ -1400,7 +1447,7 @@ def search_rides_view(request):
                     dest_lat=s_dest_lat,
                     dest_lng=s_dest_lng,
                     search_date=parsed_search_date,
-                    passenger_count=int(filter_seats) if filter_seats else 1,
+                    passenger_count=seats_needed or 1,
                 )
             except (ValueError, TypeError):
                 pass
@@ -1465,14 +1512,13 @@ def search_rides_view(request):
             day_start, day_end = _local_day_bounds(parsed_search_date, rider_tz)
             qs = qs.filter(depart_at__gte=day_start, depart_at__lt=day_end)
 
-        if filter_seats:
-            try:
-                qs = qs.filter(seats_available__gte=int(filter_seats))
-            except ValueError:
-                pass
+        if seats_needed:
+            qs = qs.filter(seats_available__gte=seats_needed)
+        # Clamped like seats_needed: no ride costs over $1,000 a seat.
         if filter_max_price:
             try:
-                qs = qs.filter(price_cents__lte=int(float(filter_max_price) * 100))
+                max_cents = _parse_dollars_to_cents(filter_max_price)
+                qs = qs.filter(price_cents__lte=min(max(max_cents, 0), _MAX_PRICE_CENTS))
             except ValueError:
                 pass
         if filter_time_slot in _TIME_SLOT_HOURS:
@@ -1548,6 +1594,20 @@ def how_it_works_view(request):
     return render(request, "how-it-works.html")
 
 
+def _gender_pref_allows(ride, user):
+    """Whether `user` may join `ride` under its passenger gender preference.
+    Same rule as the search filter in search_rides_view, which only hides
+    the ride; booking and invites check it here (audit L-8)."""
+    if ride.passenger_gender_pref == 'women_only':
+        return user.gender == 'female'
+    if ride.passenger_gender_pref == 'men_only':
+        return user.gender == 'male'
+    return True
+
+
+_GENDER_PREF_MSG = "This ride is limited to passengers of a different gender."
+
+
 @login_required
 def create_ride_booking(request, ride_id):
     real_ride_id = decode_id(ride_id)
@@ -1582,6 +1642,8 @@ def create_ride_booking(request, ride_id):
             return JsonResponse({'ok': False, 'error': _EMAIL_UNVERIFIED_MSG}, status=403)
         if ride.status not in ('posted', 'full') or ride.depart_at <= timezone.now():
             return JsonResponse({'ok': False, 'error': 'This ride is no longer available.'}, status=400)
+        if not _gender_pref_allows(ride, request.user):
+            return JsonResponse({'ok': False, 'error': _GENDER_PREF_MSG}, status=403)
         intent = request.POST.get("intent", "book")
         try:
             seats = int(request.POST.get("seats", 1))
@@ -2339,10 +2401,7 @@ def accept_terms_view(request):
     signed-in user who hasn't accepted the current Terms and Privacy Policy
     (audit P-4)."""
     user = request.user
-    next_url = request.POST.get("next") or request.GET.get("next") or ""
-    if not url_has_allowed_host_and_scheme(next_url, allowed_hosts={request.get_host()},
-                                           require_https=request.is_secure()):
-        next_url = ""
+    next_url = _safe_next(request)
 
     already = LegalAcceptance.objects.filter(
         user=user, terms_version=settings.TERMS_VERSION,
@@ -2459,9 +2518,11 @@ def edit_ride_view(request, ride_id):
             errors['price'] = 'Price per seat is required.'
         else:
             try:
-                price_cents = int(round(float(price_str) * 100))
+                price_cents = _parse_dollars_to_cents(price_str)
                 if price_cents <= 0:
                     errors['price'] = 'Price must be greater than 0.'
+                elif price_cents > _MAX_PRICE_CENTS:
+                    errors['price'] = 'Price per seat cannot exceed $1,000.'
             except ValueError:
                 errors['price'] = 'Invalid price.'
 
@@ -2484,19 +2545,18 @@ def edit_ride_view(request, ride_id):
         elif date_str and time_str and 'date' not in errors and 'depart_time' not in errors:
             try:
                 tz_offset = int(request.POST.get('timezone_offset', 0))
+                if abs(tz_offset) > _MAX_TZ_OFFSET_MINUTES:
+                    raise ValueError('timezone offset out of range')
                 depart_at = timezone.make_aware(datetime.fromisoformat(f'{date_str}T{time_str}')) + timedelta(minutes=tz_offset)
                 if depart_at < timezone.now() + timedelta(minutes=30):
                     errors['depart_time'] = 'Departure must be at least 30 minutes from now.'
                 elif depart_at.date() > _max_ride_date():
                     errors['date'] = 'Rides can only be scheduled up to 4 months in advance.'
-            except ValueError:
+            except (ValueError, OverflowError):  # OverflowError: a date near year 9999
                 errors['depart_time'] = 'Invalid departure date or time.'
 
         if not errors:
-            try:
-                duration_seconds = int(request.POST.get('duration_seconds') or 0)
-            except (ValueError, TypeError):
-                duration_seconds = 0
+            duration_seconds = _parse_duration_seconds(request.POST.get('duration_seconds'))
 
             if duration_seconds > 0:
                 arrive_at = depart_at + timedelta(seconds=duration_seconds)
@@ -2578,6 +2638,15 @@ def ride_success_view(request, ride_id):
         'ride':          ride,
         'price_display': price_display,
         'co2_estimate':  co2_estimate,
+        # For the Share row. The link is the page riders book from: this
+        # page's own URL is the driver's alone, so it 404s for anyone else.
+        'share': {
+            'url':         request.build_absolute_uri(reverse('create-ride-booking', args=[encode_id(ride.id)])),
+            'origin':      ride.origin,
+            'destination': ride.destination,
+            'depart_utc':  ride.depart_at.isoformat(),
+            'price':       price_display,
+        },
     })
 
 
@@ -3379,7 +3448,7 @@ def create_price_offer_view(request, booking_id):
 
     try:
         price_cents = int(round(float(request.POST.get('price_cents', 0))))
-    except (ValueError, TypeError):
+    except (ValueError, TypeError, OverflowError):
         return JsonResponse({'error': 'Invalid price.'}, status=400)
 
     if price_cents <= 0:
@@ -3460,7 +3529,7 @@ def respond_price_offer_view(request, offer_id):
     elif action == 'counter':
         try:
             counter_cents = int(round(float(request.POST.get('price_cents', 0))))
-        except (ValueError, TypeError):
+        except (ValueError, TypeError, OverflowError):
             return JsonResponse({'error': 'Invalid counter price.'}, status=400)
 
         if counter_cents <= 0:
@@ -3778,6 +3847,10 @@ def confirm_delete_account_view(request, token):
     user.is_active = False
     user.deactivated_at = timezone.now()
     user.save(update_fields=['is_active', 'deactivated_at'])
+    # The privacy policy promises search logs go at once, not with the rest
+    # of the account at the 45-day purge (audit P-14). It also takes the
+    # user off drivers' Route Demand lists, which are built from searches.
+    RideSearch.objects.filter(user=user).delete()
 
     if request.user.is_authenticated and request.user.id == user.id:
         logout(request)
@@ -4425,7 +4498,7 @@ def route_demand_view(request):
     # All searches by logged-in users in the past 7 days
     recent_searches = list(
         RideSearch.objects
-        .filter(created_at__gte=week_ago, user__isnull=False)
+        .filter(created_at__gte=week_ago, user__isnull=False, user__is_active=True)
         .exclude(user=driver)
         # Blocked riders can't be invited, so don't list them (ISSUES.md A1).
         .exclude(user_id__in=UserBlock.objects.hidden_ids(driver.id))
@@ -4500,6 +4573,9 @@ def route_demand_view(request):
                 continue
             seen_users.add(uid)
             u    = s.user
+            # Not invitable under the ride's gender preference (audit L-8).
+            if not _gender_pref_allows(ride, u):
+                continue
             name = _display_name(u)
             initials = ''.join(w[0].upper() for w in name.split()[:2])
             avatar_color = AVATAR_COLORS[uid % len(AVATAR_COLORS)]
@@ -4709,7 +4785,10 @@ def send_invite_view(request):
     if not driver.driver_verification_current:
         return JsonResponse({'error': 'Please verify your identity on your profile page before inviting riders.'}, status=403)
 
-    rider  = User.objects.filter(id=rider_id).first()
+    # Closed accounts can't be invited (audit P-14): they stay in the
+    # database until the 45-day purge, and a prior booking would still
+    # make them inviteable below.
+    rider  = User.objects.filter(id=rider_id, is_active=True).first()
 
     if rider and rider == driver:
         return JsonResponse({'error': 'Cannot invite yourself.'}, status=400)
@@ -4719,6 +4798,7 @@ def send_invite_view(request):
     # code/message becomes an oracle for enumerating real user IDs. The same
     # goes for a block either way (ISSUES.md A1): the driver isn't told.
     if (rider is None or UserBlock.objects.between(driver.id, rider.id)
+            or not _gender_pref_allows(ride, rider)
             or not _rider_is_inviteable(driver, ride, rider)):
         return JsonResponse({'error': 'This rider is not eligible to be invited to this ride.'}, status=400)
 
@@ -4829,6 +4909,24 @@ def accept_invite_view(request, token):
             'invite': invite, 'token': token, 'error': _EMAIL_UNVERIFIED_MSG,
         })
 
+    # The rules a normal booking follows (audit L-7/L-8): the gender
+    # preference, and one active booking per rider per ride.
+    if not _gender_pref_allows(ride, request.user):
+        return render(request, 'invite-detail.html', {
+            'invite': invite, 'token': token, 'error': _GENDER_PREF_MSG,
+        })
+    existing = RideBooking.objects.filter(
+        ride=ride,
+        passenger=request.user,
+        status__in=[RideBooking.STATUS_DRAFT, RideBooking.STATUS_REQUESTED, RideBooking.STATUS_CONFIRMED],
+    ).first()
+    if existing and existing.status != RideBooking.STATUS_DRAFT:
+        return render(request, 'invite-detail.html', {
+            'invite': invite, 'token': token,
+            'error':  'You already have a booking on this ride.',
+        })
+    seats = existing.seats if existing else 1
+
     # Accepting an invite confirms a booking, so the driver's verification
     # must be current (same rule as accept_booking_view).
     if not ride.driver.driver_verification_current:
@@ -4850,26 +4948,49 @@ def accept_invite_view(request, token):
         })
 
     updated = Rides.objects.filter(
-        id=ride.id, seats_available__gte=1
-    ).update(seats_available=F('seats_available') - 1)
+        id=ride.id, seats_available__gte=seats
+    ).update(seats_available=F('seats_available') - seats)
     if not updated:
         # Couldn't complete the acceptance — release the claim so the invite
         # stays actionable instead of being stuck "accepted" with no booking.
         RideInvite.objects.filter(id=invite.id).update(status=prior_status, responded_at=None)
         return render(request, 'invite-detail.html', {
             'invite': invite, 'token': token,
-            'error':  'Sorry, this ride is now full.',
+            'error':  'Sorry, this ride is now full.' if seats == 1
+                      else 'Sorry, this ride no longer has enough seats.',
         })
     Rides.objects.filter(id=ride.id, seats_available=0).update(status='full')
 
-    booking = RideBooking.objects.create(
-        ride=ride,
-        passenger=invite.passenger,
-        seats=1,
-        agreed_price_cents=ride.price_cents,
-        status=RideBooking.STATUS_CONFIRMED,
-        confirmed_at=timezone.now(),
-    )
+    if existing:
+        # Confirm the rider's draft in place, as create_ride_booking promotes
+        # it: keeps its chat history, seat count and any price agreed there.
+        # Conditional, so a draft booked or dropped meanwhile isn't overwritten.
+        confirmed_at = timezone.now()
+        promoted = RideBooking.objects.filter(
+            id=existing.id, status=RideBooking.STATUS_DRAFT,
+        ).update(status=RideBooking.STATUS_CONFIRMED, confirmed_at=confirmed_at)
+        if not promoted:
+            Rides.objects.filter(id=ride.id).update(
+                seats_available=Least(F('seats_available') + seats, ride.seats_total))
+            Rides.objects.filter(id=ride.id, status='full').update(status='posted')
+            RideInvite.objects.filter(id=invite.id).update(status=prior_status, responded_at=None)
+            return render(request, 'invite-detail.html', {
+                'invite': invite, 'token': token,
+                'error':  'Your booking on this ride changed meanwhile. Please reload and try again.',
+            })
+        booking = existing
+        booking.status       = RideBooking.STATUS_CONFIRMED
+        booking.confirmed_at = confirmed_at
+        _notify_booking_status(booking)
+    else:
+        booking = RideBooking.objects.create(
+            ride=ride,
+            passenger=invite.passenger,
+            seats=seats,
+            agreed_price_cents=ride.price_cents * seats + settings.SERVICE_FEE_CENTS,
+            status=RideBooking.STATUS_CONFIRMED,
+            confirmed_at=timezone.now(),
+        )
     notify_bookings_changed([ride.driver_id], 'A passenger accepted your ride invite.')
 
     _send_booking_confirmation_emails(booking)

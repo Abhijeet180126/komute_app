@@ -271,6 +271,7 @@ body {
 <div class="cards-grid">
   <form action="{% url 'role-select' %}" method="POST">
     {% csrf_token %}
+    {% if next %}<input type="hidden" name="next" value="{{ next }}">{% endif %}
       <!-- Driver -->
       <div class="role-card" onclick="this.classList.toggle('selected')">
         <div class="icon-box">
@@ -315,6 +316,7 @@ body {
   <!-- Rider -->
   <form action="{% url 'role-select' %}" method="POST">
     {% csrf_token %}
+    {% if next %}<input type="hidden" name="next" value="{{ next }}">{% endif %}
     <div class="role-card" onclick="this.classList.toggle('selected')">
       <div class="icon-box">
         <svg viewBox="0 0 24 24">

@@ -287,7 +287,7 @@ body{font-family:'DM Sans',sans-serif;background:var(--light-bg);min-height:100v
           <label class="form-label">Price per Seat (CAD) <span class="required">*</span></label>
           <div class="input-wrap price-wrap">
             <span class="price-prefix">$</span>
-            <input type="number" name="price" class="form-input" value="{{ price_display }}" placeholder="0.00" min="0.01" step="0.5">
+            <input type="number" name="price" class="form-input" value="{{ price_display }}" placeholder="0.00" min="0.01" max="1000" step="0.5">
           </div>
           {% if errors.price %}<span class="form-error">{{ errors.price }}</span>{% endif %}
         </div>
