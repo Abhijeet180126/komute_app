@@ -1548,6 +1548,20 @@ def how_it_works_view(request):
     return render(request, "how-it-works.html")
 
 
+def _gender_pref_allows(ride, user):
+    """Whether `user` may join `ride` under its passenger gender preference.
+    Same rule as the search filter in search_rides_view, which only hides
+    the ride; booking and invites check it here (audit L-8)."""
+    if ride.passenger_gender_pref == 'women_only':
+        return user.gender == 'female'
+    if ride.passenger_gender_pref == 'men_only':
+        return user.gender == 'male'
+    return True
+
+
+_GENDER_PREF_MSG = "This ride is limited to passengers of a different gender."
+
+
 @login_required
 def create_ride_booking(request, ride_id):
     real_ride_id = decode_id(ride_id)
@@ -1582,6 +1596,8 @@ def create_ride_booking(request, ride_id):
             return JsonResponse({'ok': False, 'error': _EMAIL_UNVERIFIED_MSG}, status=403)
         if ride.status not in ('posted', 'full') or ride.depart_at <= timezone.now():
             return JsonResponse({'ok': False, 'error': 'This ride is no longer available.'}, status=400)
+        if not _gender_pref_allows(ride, request.user):
+            return JsonResponse({'ok': False, 'error': _GENDER_PREF_MSG}, status=403)
         intent = request.POST.get("intent", "book")
         try:
             seats = int(request.POST.get("seats", 1))
@@ -4500,6 +4516,9 @@ def route_demand_view(request):
                 continue
             seen_users.add(uid)
             u    = s.user
+            # Not invitable under the ride's gender preference (audit L-8).
+            if not _gender_pref_allows(ride, u):
+                continue
             name = _display_name(u)
             initials = ''.join(w[0].upper() for w in name.split()[:2])
             avatar_color = AVATAR_COLORS[uid % len(AVATAR_COLORS)]
@@ -4719,6 +4738,7 @@ def send_invite_view(request):
     # code/message becomes an oracle for enumerating real user IDs. The same
     # goes for a block either way (ISSUES.md A1): the driver isn't told.
     if (rider is None or UserBlock.objects.between(driver.id, rider.id)
+            or not _gender_pref_allows(ride, rider)
             or not _rider_is_inviteable(driver, ride, rider)):
         return JsonResponse({'error': 'This rider is not eligible to be invited to this ride.'}, status=400)
 
@@ -4829,6 +4849,24 @@ def accept_invite_view(request, token):
             'invite': invite, 'token': token, 'error': _EMAIL_UNVERIFIED_MSG,
         })
 
+    # The rules a normal booking follows (audit L-7/L-8): the gender
+    # preference, and one active booking per rider per ride.
+    if not _gender_pref_allows(ride, request.user):
+        return render(request, 'invite-detail.html', {
+            'invite': invite, 'token': token, 'error': _GENDER_PREF_MSG,
+        })
+    existing = RideBooking.objects.filter(
+        ride=ride,
+        passenger=request.user,
+        status__in=[RideBooking.STATUS_DRAFT, RideBooking.STATUS_REQUESTED, RideBooking.STATUS_CONFIRMED],
+    ).first()
+    if existing and existing.status != RideBooking.STATUS_DRAFT:
+        return render(request, 'invite-detail.html', {
+            'invite': invite, 'token': token,
+            'error':  'You already have a booking on this ride.',
+        })
+    seats = existing.seats if existing else 1
+
     # Accepting an invite confirms a booking, so the driver's verification
     # must be current (same rule as accept_booking_view).
     if not ride.driver.driver_verification_current:
@@ -4850,26 +4888,49 @@ def accept_invite_view(request, token):
         })
 
     updated = Rides.objects.filter(
-        id=ride.id, seats_available__gte=1
-    ).update(seats_available=F('seats_available') - 1)
+        id=ride.id, seats_available__gte=seats
+    ).update(seats_available=F('seats_available') - seats)
     if not updated:
         # Couldn't complete the acceptance — release the claim so the invite
         # stays actionable instead of being stuck "accepted" with no booking.
         RideInvite.objects.filter(id=invite.id).update(status=prior_status, responded_at=None)
         return render(request, 'invite-detail.html', {
             'invite': invite, 'token': token,
-            'error':  'Sorry, this ride is now full.',
+            'error':  'Sorry, this ride is now full.' if seats == 1
+                      else 'Sorry, this ride no longer has enough seats.',
         })
     Rides.objects.filter(id=ride.id, seats_available=0).update(status='full')
 
-    booking = RideBooking.objects.create(
-        ride=ride,
-        passenger=invite.passenger,
-        seats=1,
-        agreed_price_cents=ride.price_cents,
-        status=RideBooking.STATUS_CONFIRMED,
-        confirmed_at=timezone.now(),
-    )
+    if existing:
+        # Confirm the rider's draft in place, as create_ride_booking promotes
+        # it: keeps its chat history, seat count and any price agreed there.
+        # Conditional, so a draft booked or dropped meanwhile isn't overwritten.
+        confirmed_at = timezone.now()
+        promoted = RideBooking.objects.filter(
+            id=existing.id, status=RideBooking.STATUS_DRAFT,
+        ).update(status=RideBooking.STATUS_CONFIRMED, confirmed_at=confirmed_at)
+        if not promoted:
+            Rides.objects.filter(id=ride.id).update(
+                seats_available=Least(F('seats_available') + seats, ride.seats_total))
+            Rides.objects.filter(id=ride.id, status='full').update(status='posted')
+            RideInvite.objects.filter(id=invite.id).update(status=prior_status, responded_at=None)
+            return render(request, 'invite-detail.html', {
+                'invite': invite, 'token': token,
+                'error':  'Your booking on this ride changed meanwhile. Please reload and try again.',
+            })
+        booking = existing
+        booking.status       = RideBooking.STATUS_CONFIRMED
+        booking.confirmed_at = confirmed_at
+        _notify_booking_status(booking)
+    else:
+        booking = RideBooking.objects.create(
+            ride=ride,
+            passenger=invite.passenger,
+            seats=seats,
+            agreed_price_cents=ride.price_cents * seats + settings.SERVICE_FEE_CENTS,
+            status=RideBooking.STATUS_CONFIRMED,
+            confirmed_at=timezone.now(),
+        )
     notify_bookings_changed([ride.driver_id], 'A passenger accepted your ride invite.')
 
     _send_booking_confirmation_emails(booking)
