@@ -43,6 +43,12 @@ SECURE_SSL_REDIRECT = False
 SESSION_COOKIE_SECURE = False
 CSRF_COOKIE_SECURE = False
 
+# No qcluster worker in tests: queued jobs run inline, so emails land in
+# mail.outbox straight away. Inline, a failed send raises out of async_task,
+# so tasks.send_later logs it and tries once more in the request; the real
+# queue instead keeps the job and retries it (EmailQueueTests).
+Q_CLUSTER = {**Q_CLUSTER, 'sync': True}  # noqa: F405
+
 # django.core.cache's Redis backend isn't reachable in this throwaway
 # environment either (see CACHES in settings.py) — request throttling
 # (komute.views._rate_limited) fails open on a cache error, so this doesn't

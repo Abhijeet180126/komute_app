@@ -10,7 +10,7 @@ from django.utils import timezone
 from komute.models import (
     Vehicle, Rides, RideStop, RideBooking, Message, PriceOffer,
     RideSearch, VerificationLog, Review, RideInvite, UserReport, UserBlock,
-    BiometricConsent, LegalAcceptance,
+    BiometricConsent, LegalAcceptance, EmailLog,
 )
 
 User = get_user_model()
@@ -107,6 +107,26 @@ class LegalAcceptanceAdmin(admin.ModelAdmin):
     search_fields = ('user__email',)
     readonly_fields = ('user', 'terms_version', 'privacy_version', 'source',
                        'ip_address', 'user_agent', 'accepted_at')
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False
+
+
+@admin.register(EmailLog)
+class EmailLogAdmin(admin.ModelAdmin):
+    # Did a queued email go out (audit F-6)? Written by komute.tasks only.
+    # "Sent" means SES accepted it; delivery is in the SES console, found
+    # by message_id.
+    list_display = ('created_at', 'kind', 'to_masked', 'user', 'subject', 'status', 'attempts', 'sent_at')
+    list_filter = ('status', 'kind', 'created_at')
+    search_fields = ('user__email', 'user__full_name', 'to_masked', 'subject', 'message_id')
+    date_hierarchy = 'created_at'
+    list_select_related = ('user',)
+    readonly_fields = ('kind', 'user', 'to_masked', 'subject', 'status', 'attempts',
+                       'last_error', 'message_id', 'created_at', 'sent_at')
 
     def has_add_permission(self, request):
         return False

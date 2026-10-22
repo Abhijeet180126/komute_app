@@ -23,17 +23,27 @@ def user_group_name(user_id):
 def booking_fingerprint(user):
     """Short hash of what the inboxes and my-rides show about the user's
     bookings. Changes whenever a booking's status or price, a ride's status
-    or its free seats change."""
+    or its free seats change.
+
+    Completed and cancelled rides are left out: nothing on them changes
+    again, so only rides still open are hashed and the cost stays flat as a
+    user's history grows (audit F-4). A ride closing drops its rows, which
+    changes the hash once. updated_at can't stand in for this: RideBooking
+    has none, and the booking flows change rows with queryset .update(),
+    which skips auto_now."""
     from .models import RideBooking, Rides
 
+    closed = ('completed', 'cancelled')
     bookings = (
         RideBooking.objects
         .filter(Q(passenger=user) | (Q(ride__driver=user) & ~Q(status=RideBooking.STATUS_DRAFT)))
+        .exclude(ride__status__in=closed)
         .order_by('id')
         .values_list('id', 'status', 'agreed_price_cents', 'ride__status')
     )
     rides = (
         Rides.objects.filter(driver=user)
+        .exclude(status__in=closed)
         .order_by('id')
         .values_list('id', 'status', 'seats_available')
     )
