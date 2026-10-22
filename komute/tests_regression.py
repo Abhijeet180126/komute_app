@@ -45,7 +45,7 @@ from komute.hashid_utils import decode_id, encode_id
 from komute.models import (
     CustomUser, Vehicle, Rides, RideStop, RideBooking, Message,
     RideSearch, VerificationLog, Review, RideInvite, PriceOffer,
-    UserBlock, UserReport, BiometricConsent, LegalAcceptance,
+    UserBlock, UserReport, BiometricConsent, LegalAcceptance, EmailLog,
 )
 
 
@@ -1047,6 +1047,60 @@ class SearchRidesViewTests(TestCase):
         self.assertEqual(resp.status_code, 200)
         self.assertEqual(resp.context['total_count'], 1)
 
+    # ── audit F-2: SQL bounding-box prefilter ──
+
+    def test_ride_found_through_stop_near_search_origin(self):
+        # Searching from Kingston: far from Toronto, but the ride stops there.
+        RideStop.objects.create(ride=self.ride, stop_order=1, location='Kingston, ON',
+                                lat=44.23, lng=-76.48)
+        resp = self._search(self._rider(), origin_lat='44.23', origin_lng='-76.48')
+        self.assertEqual(resp.context['total_count'], 1)
+        RideStop.objects.filter(ride=self.ride).delete()
+        resp = self._search(self._rider(), origin_lat='44.23', origin_lng='-76.48')
+        self.assertEqual(resp.context['total_count'], 0)
+
+    def test_box_keeps_rides_just_inside_radius(self):
+        # Due east of the ride's origin at 99% of the radius, where the box's
+        # longitude edge is tightest.
+        from komute.views import _haversine_km
+        r = settings.SEARCH_RADIUS_KM
+        lat, lng = 43.65, -79.38
+        east = lng
+        while _haversine_km(lat, lng, lat, east) < 0.99 * r:
+            east += 0.001
+        resp = self._search(self._rider(), origin_lat=str(lat), origin_lng=f'{east:.4f}')
+        self.assertEqual(resp.context['total_count'], 1)
+
+    def test_corner_of_box_outside_radius_excluded(self):
+        # Inside the lat/lng box on both axes but outside the circle.
+        from komute.views import _geo_box_q
+        r = settings.SEARCH_RADIUS_KM
+        lat_off = r / 111.2 * 0.9
+        lng_off = r / (111.2 * 0.72) * 0.9
+        self.assertTrue(Rides.objects.filter(
+            _geo_box_q(43.65 + lat_off, -79.38 + lng_off, r, 'origin_lat', 'origin_lng'),
+            pk=self.ride.pk).exists())
+        resp = self._search(self._rider(), origin_lat=f'{43.65 + lat_off:.4f}',
+                            origin_lng=f'{-79.38 + lng_off:.4f}')
+        self.assertEqual(resp.context['total_count'], 0)
+
+    def test_results_paginated_with_correct_total(self):
+        for _ in range(11):
+            make_ride(self.driver, depart_at=self.ride.depart_at)
+        c = self._rider()
+        resp = self._search(c)
+        self.assertEqual(resp.context['total_count'], 12)
+        self.assertEqual(len(resp.context['rides'].object_list), 10)
+        resp = self._search(c, page='2')
+        self.assertEqual(len(resp.context['rides'].object_list), 2)
+
+    def test_text_only_search_paginates_in_sql(self):
+        for _ in range(11):
+            make_ride(self.driver, depart_at=self.ride.depart_at)
+        resp = self._search(self._rider(), origin_lat='', origin_lng='', dest_lat='', dest_lng='')
+        self.assertEqual(resp.context['total_count'], 12)
+        self.assertEqual(len(resp.context['rides'].object_list), 10)
+
 
 class RecurringRideTimezoneTests(TestCase):
     """ISSUES.md H5: recurring rides repeat on the driver's local weekday and
@@ -1155,6 +1209,52 @@ class RouteDemandViewTests(TestCase):
         resp = c.get(reverse('route-demand'))
         self.assertFalse(resp.context['has_active_rides'])
         self.assertEqual(resp.context['route_demands'], [])
+
+    # ── audit F-3: SQL prefilter, one match pass per route ──
+
+    def _driver_client(self):
+        c = Client()
+        c.login(username='rd_driver@example.com', password='TestPass123')
+        return c
+
+    def test_two_routes_each_get_their_own_searches(self):
+        make_ride(self.driver, origin='Vancouver, BC', origin_lat=49.28, origin_lng=-123.12,
+                  destination='Calgary, AB', dest_lat=51.05, dest_lng=-114.07)
+        make_ride(self.driver)  # second ride on the Toronto route
+        self._searchers_for_ride(2)
+        van = make_user('rd_van@example.com')
+        RideSearch.objects.create(
+            user=van, origin='Vancouver, BC', origin_lat=49.30, origin_lng=-123.10,
+            destination='Calgary, AB', dest_lat=51.04, dest_lng=-114.05,
+            search_date=date.today(), passenger_count=1,
+        )
+        demands = self._driver_client().get(reverse('route-demand')).context['route_demands']
+        counts = sorted(d['search_count'] for d in demands)
+        self.assertEqual(counts, [1, 2, 2])
+
+    def test_origin_match_alone_is_not_demand(self):
+        # Right origin, wrong destination: the box pair must match together.
+        u = make_user('rd_half@example.com')
+        RideSearch.objects.create(
+            user=u, origin='Toronto, ON', origin_lat=43.65, origin_lng=-79.38,
+            destination='Calgary, AB', dest_lat=51.05, dest_lng=-114.07,
+            search_date=date.today(), passenger_count=1,
+        )
+        demands = self._driver_client().get(reverse('route-demand')).context['route_demands']
+        self.assertEqual(demands[0]['search_count'], 0)
+
+    def test_rider_row_uses_latest_search(self):
+        self._searchers_for_ride(1, seats=1)
+        u = CustomUser.objects.get(email='rd_rider0@example.com')
+        RideSearch.objects.create(
+            user=u, origin='Toronto, ON', origin_lat=43.65, origin_lng=-79.38,
+            destination='Ottawa, ON', dest_lat=45.42, dest_lng=-75.69,
+            search_date=date.today(), passenger_count=3,
+        )
+        demand = self._driver_client().get(reverse('route-demand')).context['route_demands'][0]
+        self.assertEqual(demand['search_count'], 2)
+        self.assertEqual(len(demand['riders']), 1)
+        self.assertEqual(demand['riders'][0]['seats_needed'], 3)
 
 
 class CancelBookingAndRideTests(TestCase):
@@ -1616,6 +1716,20 @@ class BookingNotifyTests(TransactionTestCase):
         self.assertNotEqual(booking_fingerprint(self.driver), before_driver)
         self.assertNotEqual(booking_fingerprint(self.rider), before_rider)
 
+    def test_fingerprint_skips_closed_rides(self):
+        # F-4: history on completed/cancelled rides isn't hashed, but a ride
+        # closing still changes the hash.
+        open_fp = booking_fingerprint(self.rider)
+        Rides.objects.filter(pk=self.ride.pk).update(status='completed')
+        closed_fp = booking_fingerprint(self.rider)
+        self.assertNotEqual(closed_fp, open_fp)
+        RideBooking.objects.filter(pk=self.booking.pk).update(status=RideBooking.STATUS_COMPLETED)
+        self.assertEqual(booking_fingerprint(self.rider), closed_fp)
+        old = make_ride(self.driver, status='cancelled')
+        driver_fp = booking_fingerprint(self.driver)
+        Rides.objects.filter(pk=old.pk).update(seats_available=0)
+        self.assertEqual(booking_fingerprint(self.driver), driver_fp)
+
     def test_booking_request_notifies_driver(self):
         RideBooking.objects.filter(pk=self.booking.pk).update(status=RideBooking.STATUS_CANCELLED)
         got = self._notices(self._post_ok('bn_rider@example.com', 'create-ride-booking',
@@ -1789,7 +1903,7 @@ class ReportAndBlockTests(TestCase):
 
     def test_report_saved_even_if_admin_email_fails(self):
         with patch('komute.views.EmailMultiAlternatives.send', side_effect=OSError('SES down')), \
-             self.assertLogs('komute.views', 'ERROR'):
+             self.assertLogs('komute.tasks', 'ERROR'):
             resp = self._report('rb_rider@example.com', booking=encode_id(self.booking.id), reason='no_show')
         self.assertEqual(resp.status_code, 200)
         self.assertEqual(UserReport.objects.count(), 1)
@@ -3853,6 +3967,40 @@ class AuditFixTests(TestCase):
             self.assertContains(resp, 'id="rbRoot"', msg_prefix=email)
             self.assertNotContains(resp, 'SR-', msg_prefix=email)
 
+    def test_ride_summary_review_flags_from_one_query(self):
+        # F-5: already_reviewed came from one Review query per booking.
+        Rides.objects.filter(pk=self.ride.pk).update(status='completed')
+        bookings = []
+        for i in range(3):
+            p = self.rider if i == 0 else make_user(f'au_sum{i}@example.com')
+            bookings.append(RideBooking.objects.create(
+                ride=self.ride, passenger=p, seats=1, agreed_price_cents=2600,
+                status=RideBooking.STATUS_COMPLETED))
+        Review.objects.create(booking=bookings[1], reviewer=self.driver,
+                              reviewee=bookings[1].passenger, rating=5)
+        # Someone else's review of booking 2 doesn't count for the driver.
+        Review.objects.create(booking=bookings[2], reviewer=bookings[2].passenger,
+                              reviewee=self.driver, rating=4)
+        url = reverse('ride-summary', args=[encode_id(self.ride.id)])
+        driver = self._client('au_driver@example.com')
+        resp = driver.get(url)
+        flags = {b['booking_id']: b['already_reviewed'] for b in resp.context['bookings']}
+        self.assertEqual(flags, {encode_id(bookings[0].id): False,
+                                 encode_id(bookings[1].id): True,
+                                 encode_id(bookings[2].id): False})
+        # Adding bookings doesn't add queries.
+        from django.db import connection
+        from django.test.utils import CaptureQueriesContext
+        with CaptureQueriesContext(connection) as three:
+            driver.get(url)
+        for i in range(3, 6):
+            RideBooking.objects.create(ride=self.ride, passenger=make_user(f'au_sum{i}@example.com'),
+                                       seats=1, agreed_price_cents=2600,
+                                       status=RideBooking.STATUS_COMPLETED)
+        with CaptureQueriesContext(connection) as six:
+            driver.get(url)
+        self.assertEqual(len(six), len(three))
+
     def test_ride_success_copy_link_shares_the_booking_page(self):
         # L-13: "copied" showed even when the copy failed, and the link was
         # this driver-only page.
@@ -4109,9 +4257,12 @@ class ContentSecurityPolicyTests(TestCase):
         self.assertFalse(resp.has_header('Content-Security-Policy'))
         policy = resp['Content-Security-Policy-Report-Only']
         for part in ("default-src 'self'", "object-src 'none'", "frame-ancestors 'none'",
-                     'https://unpkg.com', 'https://fonts.gstatic.com', 'https://tile.openstreetmap.org',
+                     'https://unpkg.com', "font-src 'self'", 'https://tile.openstreetmap.org',
                      'https://photon.komoot.io', 'https://router.project-osrm.org', 'report-uri /csp-report/'):
             self.assertIn(part, policy)
+        # Fonts are self-hosted (audit F-7).
+        self.assertNotIn('fonts.googleapis.com', policy)
+        self.assertNotIn('fonts.gstatic.com', policy)
 
     @override_settings(CSP_ENFORCE=True)
     def test_enforced_when_setting_is_on(self):
@@ -4262,3 +4413,154 @@ class AccountActionThrottleTests(TestCase):
             self.assertEqual(c.post(reverse('request-delete-account')).status_code, 200)
         self.assertEqual(c.post(reverse('request-delete-account')).status_code, 429)
         self.assertEqual(len(mail.outbox), 3)
+
+
+class EmailQueueTests(TestCase):
+    """Audit F-6: fire-and-forget emails go through the django-q2 queue."""
+
+    def setUp(self):
+        self.driver = make_driver_with_vehicle('eq_driver@example.com')
+        self.rider = make_user('eq_rider@example.com')
+        self.ride = make_ride(self.driver)
+        self.booking = RideBooking.objects.create(ride=self.ride, passenger=self.rider, seats=1,
+                                                  agreed_price_cents=2500)
+
+    def _queued(self):
+        from django_q.models import OrmQ
+        return [q.task for q in OrmQ.objects.all()]
+
+    def test_email_is_queued_and_worker_sends_it(self):
+        from django_q.conf import Conf
+        from komute.tasks import send_email
+        from komute.views import _send_booking_request_email
+        with patch.object(Conf, 'SYNC', False):
+            _send_booking_request_email(self.booking)
+        self.assertEqual(len(mail.outbox), 0)
+        [job] = self._queued()
+        self.assertEqual(job['func'], 'komute.tasks.send_email')
+        # The pickled message survives the round trip and sends as built.
+        send_email(*job['args'])
+        self.assertEqual(mail.outbox[0].to, ['eq_driver@example.com'])
+        self.assertIn('New booking request', mail.outbox[0].subject)
+
+    def test_rolled_back_request_queues_nothing(self):
+        from django.db import transaction
+        from django_q.conf import Conf
+        from komute.views import _send_booking_request_email
+        with patch.object(Conf, 'SYNC', False):
+            try:
+                with transaction.atomic():
+                    _send_booking_request_email(self.booking)
+                    raise RuntimeError
+            except RuntimeError:
+                pass
+        self.assertEqual(self._queued(), [])
+
+    def test_failed_send_raises_so_the_job_is_retried(self):
+        from django_q.conf import Conf
+        from komute.tasks import send_email, send_later
+        with patch.object(Conf, 'SYNC', False):
+            send_later(mail.EmailMessage('s', 'b', to=['x@example.com']), EmailLog.KIND_WELCOME)
+        [job] = self._queued()
+        log = EmailLog.objects.get()
+        with patch('django.core.mail.EmailMessage.send', side_effect=OSError('SES down')),                 patch.object(Conf, 'SYNC', False), patch.object(Conf, 'MAX_ATTEMPTS', 3):
+            for attempt, status in ((1, 'retrying'), (2, 'retrying'), (3, 'failed')):
+                with self.assertRaises(OSError):
+                    send_email(*job['args'])
+                log.refresh_from_db()
+                self.assertEqual((log.attempts, log.status), (attempt, status))
+        self.assertEqual(log.last_error, 'OSError: SES down')
+
+    def test_queue_unavailable_falls_back_to_sending_now(self):
+        from komute.tasks import send_later
+        with patch('django_q.tasks.async_task', side_effect=RuntimeError('db down')),                 self.assertLogs('komute.tasks', 'ERROR'):
+            send_later(mail.EmailMessage('fallback', 'b', to=['x@example.com']), EmailLog.KIND_WELCOME)
+        self.assertEqual([m.subject for m in mail.outbox], ['fallback'])
+        self.assertEqual(EmailLog.objects.get().status, EmailLog.STATUS_SENT)
+
+    def test_email_log_row_tracks_the_send(self):
+        from komute.views import _send_booking_request_email
+        _send_booking_request_email(self.booking)
+        log = EmailLog.objects.get()
+        self.assertEqual(log.kind, EmailLog.KIND_BOOKING_REQUEST)
+        self.assertEqual(log.user, self.driver)
+        self.assertEqual(log.to_masked, 'eq***@example.com')
+        self.assertIn('New booking request', log.subject)
+        self.assertEqual((log.status, log.attempts, log.last_error), ('sent', 1, ''))
+        self.assertIsNotNone(log.sent_at)
+
+    def test_email_log_admin_is_read_only_and_searchable(self):
+        from komute.views import _send_booking_request_email
+        _send_booking_request_email(self.booking)
+        staff = make_user('eq_staff@example.com', is_staff=True, is_superuser=True)
+        c = Client()
+        c.force_login(staff)
+        url = reverse('admin:komute_emaillog_changelist')
+        resp = c.get(url, {'q': 'eq_driver@example.com'})
+        self.assertContains(resp, 'eq***@example.com')
+        resp = c.get(url, {'q': 'nobody@example.com'})
+        self.assertNotContains(resp, 'eq***@example.com')
+        self.assertEqual(c.get(url, {'status__exact': 'sent'}).status_code, 200)
+        self.assertEqual(c.get(reverse('admin:komute_emaillog_add')).status_code, 403)
+        log = EmailLog.objects.get()
+        resp = c.get(reverse('admin:komute_emaillog_change', args=[log.id]))
+        self.assertNotContains(resp, 'name="status"')
+
+    def test_successful_sends_leave_no_record(self):
+        # The job arguments are the whole email, so successes aren't kept.
+        from django_q.models import Task
+        from komute.views import _send_booking_request_email
+        _send_booking_request_email(self.booking)
+        self.assertEqual(len(mail.outbox), 1)
+        self.assertEqual(Task.objects.count(), 0)
+
+    def test_purge_task_log_drops_old_failures(self):
+        from django_q.models import Task
+        now = timezone.now()
+        old = now - timedelta(days=settings.TASK_LOG_RETENTION_DAYS + 1)
+        for tid, when in (('old', old), ('new', now)):
+            Task.objects.create(id=tid, name=tid, func='komute.tasks.send_email',
+                                started=when, stopped=when, success=False)
+        for subject in ('old', 'new'):
+            EmailLog.objects.create(kind=EmailLog.KIND_WELCOME, to_masked='x***@example.com',
+                                    subject=subject, status=EmailLog.STATUS_SENT)
+        EmailLog.objects.filter(subject='old').update(created_at=old)
+        call_command('purge_task_log', stdout=io.StringIO())
+        self.assertEqual(list(Task.objects.values_list('id', flat=True)), ['new'])
+        self.assertEqual(list(EmailLog.objects.values_list('subject', flat=True)), ['new'])
+
+    def test_accept_queues_confirmation_emails(self):
+        c = Client()
+        c.login(username='eq_driver@example.com', password='TestPass123')
+        resp = c.post(reverse('accept-booking', args=[encode_id(self.booking.id)]))
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(sorted(m.to[0] for m in mail.outbox),
+                         ['eq_driver@example.com', 'eq_rider@example.com'])
+
+
+class SelfHostedFontsTests(TestCase):
+    """Audit F-7: fonts come from static/, not Google."""
+
+    def test_pages_link_local_fonts_not_google(self):
+        for name in ('home', 'login', 'signup', 'about', 'privacy-policy', 'contact-us'):
+            resp = Client().get(reverse(name))
+            self.assertEqual(resp.status_code, 200, name)
+            self.assertContains(resp, 'css/fonts.css', msg_prefix=name)
+            self.assertNotContains(resp, 'fonts.googleapis.com', msg_prefix=name)
+            self.assertNotContains(resp, 'fonts.gstatic.com', msg_prefix=name)
+
+    def test_no_template_uses_google_fonts(self):
+        templates = Path(settings.BASE_DIR) / 'templates'
+        hits = [p.name for p in templates.rglob('*.html')
+                if 'fonts.googleapis.com' in p.read_text(encoding='utf-8')]
+        self.assertEqual(hits, [])
+
+    def test_every_font_file_in_the_stylesheet_exists(self):
+        import re
+        static = Path(settings.BASE_DIR) / 'static'
+        css = (static / 'css' / 'fonts.css').read_text(encoding='utf-8')
+        files = set(re.findall(r'url\(\.\./fonts/([\w-]+\.woff2)\)', css))
+        self.assertEqual(len(files), 14)
+        for name in files:
+            self.assertEqual((static / 'fonts' / name).read_bytes()[:4], b'wOF2', name)
+        self.assertEqual(css.count('font-display: swap;'), css.count('@font-face'))

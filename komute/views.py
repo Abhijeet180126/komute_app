@@ -7,7 +7,6 @@ import logging
 import math
 import os
 import re
-import threading
 import uuid
 from datetime import date, datetime, timedelta
 from email.utils import formataddr
@@ -45,10 +44,11 @@ from django.template.loader import render_to_string
 from django.urls import Resolver404, resolve, reverse
 
 from .client_ip import client_ip as _client_ip
-from .models import Rides, RideStop, Vehicle, RideBooking, PriceOffer, Message, RideSearch, VerificationLog, Review, RideInvite, UserBlock, UserReport, BiometricConsent, LegalAcceptance
+from .models import Rides, RideStop, Vehicle, RideBooking, PriceOffer, Message, RideSearch, VerificationLog, Review, RideInvite, UserBlock, UserReport, BiometricConsent, LegalAcceptance, EmailLog
 from .middleware import LegalAcceptanceMiddleware, legal_versions_key
 from .hashid_utils import encode_id, decode_id
 from .notifications import booking_fingerprint, notify_bookings_changed
+from .tasks import send_later
 from . import private_media
 from .private_media import delete_stored_file, open_stored_file, save_private_image
 
@@ -218,7 +218,7 @@ def _send_booking_confirmation_emails(booking):
             reply_to=[settings.REPLY_TO_EMAIL_BOOKING_CONFIRMATION],
         )
         rider_msg.attach_alternative(rider_html, 'text/html')
-        rider_msg.send(fail_silently=True)
+        send_later(rider_msg, EmailLog.KIND_BOOKING_CONFIRMED, rider)
 
         driver_msg = EmailMultiAlternatives(
             subject=f"You accepted {rider_ctx['rider_name']}'s ride request 🚗",
@@ -228,9 +228,9 @@ def _send_booking_confirmation_emails(booking):
             reply_to=[settings.REPLY_TO_EMAIL_BOOKING_CONFIRMATION],
         )
         driver_msg.attach_alternative(driver_html, 'text/html')
-        driver_msg.send(fail_silently=True)
+        send_later(driver_msg, EmailLog.KIND_BOOKING_CONFIRMED, driver)
     except Exception:
-        pass
+        logger.exception('_send_booking_confirmation_emails could not build or queue an email')
 
 
 def _send_booking_cancelled_emails(booking):
@@ -261,9 +261,9 @@ def _send_booking_cancelled_emails(booking):
             reply_to=[settings.REPLY_TO_EMAIL_BOOKING_CANCELLED],
         )
         msg.attach_alternative(html, 'text/html')
-        msg.send(fail_silently=True)
+        send_later(msg, EmailLog.KIND_BOOKING_CANCELLED, driver)
     except Exception:
-        pass
+        logger.exception('_send_booking_cancelled_emails could not build or queue an email')
 
 
 def _send_booking_request_email(booking):
@@ -294,9 +294,9 @@ def _send_booking_request_email(booking):
             reply_to=[settings.REPLY_TO_EMAIL_BOOKING_REQUEST],
         )
         msg.attach_alternative(html, 'text/html')
-        msg.send(fail_silently=True)
+        send_later(msg, EmailLog.KIND_BOOKING_REQUEST, driver)
     except Exception:
-        pass
+        logger.exception('_send_booking_request_email could not build or queue an email')
 
 
 def _send_booking_rejected_email(booking):
@@ -326,9 +326,9 @@ def _send_booking_rejected_email(booking):
             reply_to=[settings.REPLY_TO_EMAIL_BOOKING_REJECTED],
         )
         msg.attach_alternative(html, 'text/html')
-        msg.send(fail_silently=True)
+        send_later(msg, EmailLog.KIND_BOOKING_REJECTED, rider)
     except Exception:
-        pass
+        logger.exception('_send_booking_rejected_email could not build or queue an email')
 
 
 def _send_ride_cancelled_emails(ride, affected_bookings):
@@ -357,11 +357,11 @@ def _send_ride_cancelled_emails(ride, affected_bookings):
                     reply_to=[settings.REPLY_TO_EMAIL_RIDE_CANCELLED],
                 )
                 msg.attach_alternative(html, 'text/html')
-                msg.send(fail_silently=True)
+                send_later(msg, EmailLog.KIND_RIDE_CANCELLED, rider)
             except Exception:
-                pass
+                logger.exception('_send_ride_cancelled_emails could not build or queue an email')
     except Exception:
-        pass
+        logger.exception('_send_ride_cancelled_emails could not build or queue an email')
 
 
 def _send_welcome_email(request, user):
@@ -380,9 +380,9 @@ def _send_welcome_email(request, user):
             reply_to=[settings.REPLY_TO_EMAIL_ACCOUNT_SIGNUP],
         )
         msg.attach_alternative(html, 'text/html')
-        msg.send(fail_silently=True)
+        send_later(msg, EmailLog.KIND_WELCOME, user)
     except Exception:
-        pass
+        logger.exception('_send_welcome_email could not build or queue an email')
 
 
 _EMAIL_UNVERIFIED_MSG = (
@@ -538,6 +538,22 @@ def _haversine_km(lat1, lng1, lat2, lng2):
          + math.cos(math.radians(lat1)) * math.cos(math.radians(lat2))
          * math.sin(dlng / 2) ** 2)
     return R * 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
+
+
+def _geo_box_q(lat, lng, radius_km, lat_field, lng_field):
+    """Q for the lat/lng box around a circle of radius_km, so SQL can drop
+    far-away rows before _haversine_km checks the rest (audit F-2). The box
+    holds the whole circle, so it never drops a row the haversine test would
+    keep. The longitude half-width is the exact one, asin(sin(r/R)/cos(lat)),
+    not the smaller r/(R*cos(lat))."""
+    ang = radius_km / 6371.0
+    dlat = math.degrees(ang)
+    q = Q(**{f"{lat_field}__gte": lat - dlat, f"{lat_field}__lte": lat + dlat})
+    ratio = math.sin(ang) / max(math.cos(math.radians(lat)), 1e-12)
+    if ratio < 1:  # otherwise the circle reaches a pole: any longitude
+        dlng = math.degrees(math.asin(ratio))
+        q &= Q(**{f"{lng_field}__gte": lng - dlng, f"{lng_field}__lte": lng + dlng})
+    return q
 
 
 upload_logger = logging.getLogger("komute.uploads")
@@ -1484,30 +1500,6 @@ def search_rides_view(request):
                 Q(destination__icontains=search_to) | Q(stops__location__icontains=search_to)
             ).distinct()
 
-        if use_origin_coords or use_dest_coords:
-            filtered_ids = []
-            for ride in qs:
-                stops = list(ride.stops.all())
-                if use_origin_coords:
-                    origin_ok = _haversine_km(s_origin_lat, s_origin_lng, ride.origin_lat, ride.origin_lng) <= settings.SEARCH_RADIUS_KM
-                    if not origin_ok:
-                        origin_ok = any(
-                            _haversine_km(s_origin_lat, s_origin_lng, st.lat, st.lng) <= settings.SEARCH_RADIUS_KM
-                            for st in stops
-                        )
-                    if not origin_ok:
-                        continue
-                if use_dest_coords:
-                    dest_ok = _haversine_km(s_dest_lat, s_dest_lng, ride.dest_lat, ride.dest_lng) <= settings.SEARCH_RADIUS_KM
-                    if not dest_ok:
-                        dest_ok = any(
-                            _haversine_km(s_dest_lat, s_dest_lng, st.lat, st.lng) <= settings.SEARCH_RADIUS_KM
-                            for st in stops
-                        )
-                    if not dest_ok:
-                        continue
-                filtered_ids.append(ride.id)
-            qs = qs.filter(id__in=filtered_ids)
         if parsed_search_date:
             day_start, day_end = _local_day_bounds(parsed_search_date, rider_tz)
             qs = qs.filter(depart_at__gte=day_start, depart_at__lt=day_end)
@@ -1528,47 +1520,83 @@ def search_rides_view(request):
         if filter_preference:
             qs = qs.filter(preferences_json__icontains=filter_preference)
 
-        for ride in qs:
-            name   = (ride.driver.full_name or '').title()
-            parts  = name.split()
-            initials = ''.join(p[0].upper() for p in parts[:2]) if parts else '?'
+        # Proximity: the SQL box drops far-away rides (audit F-2), then the
+        # haversine test below keeps those within the radius of the ride's
+        # endpoint or one of its stops.
+        radius = settings.SEARCH_RADIUS_KM
+        if use_origin_coords:
+            qs = qs.filter(
+                _geo_box_q(s_origin_lat, s_origin_lng, radius, 'origin_lat', 'origin_lng')
+                | _geo_box_q(s_origin_lat, s_origin_lng, radius, 'stops__lat', 'stops__lng')
+            ).distinct()
+        if use_dest_coords:
+            qs = qs.filter(
+                _geo_box_q(s_dest_lat, s_dest_lng, radius, 'dest_lat', 'dest_lng')
+                | _geo_box_q(s_dest_lat, s_dest_lng, radius, 'stops__lat', 'stops__lng')
+            ).distinct()
 
-            rating       = ride.driver.avg_rating or 0.0
-            rating_count = ride.driver.total_rides or 0
-            filled       = round(rating)
-            rating_stars = '★' * filled + '☆' * (5 - filled)
+        def _near(lat, lng, ride_lat, ride_lng, stops):
+            return (_haversine_km(lat, lng, ride_lat, ride_lng) <= radius
+                    or any(_haversine_km(lat, lng, st.lat, st.lng) <= radius for st in stops))
 
-            price_display = f"${ride.price_cents / 100:.2f}" if ride.price_cents else "Free"
+        if use_origin_coords or use_dest_coords:
+            rides = [
+                ride for ride in qs
+                if (not use_origin_coords or _near(s_origin_lat, s_origin_lng,
+                                                   ride.origin_lat, ride.origin_lng, ride.stops.all()))
+                and (not use_dest_coords or _near(s_dest_lat, s_dest_lng,
+                                                  ride.dest_lat, ride.dest_lng, ride.stops.all()))
+            ]
+        else:
+            rides = qs
 
-            prefs = []
-            if ride.preferences_json:
-                prefs = ride.preferences_json if isinstance(ride.preferences_json, list) else []
+    else:
+        rides = []
 
-            v = ride.vehicle
-            rides_data.append({
-                'id':                  encode_id(ride.id),
-                'origin':              ride.origin,
-                'destination':         ride.destination,
-                'depart_at':           ride.depart_at,
-                'price_display':       price_display,
-                'seats_available':     ride.seats_available,
-                'seats_total':         ride.seats_total,
-                'preferences':         prefs,
-                'stops':               list(ride.stops.all()),
-                'driver_name':         name,
-                'driver_initials':     initials,
-                'driver_is_verified':  ride.driver.driver_verified,
-                'driver_rating':       round(rating, 1),
-                'driver_rating_count': rating_count,
-                'driver_rating_stars': rating_stars,
-                'vehicle_color':       v.color or 'silver',
-                'vehicle_display':     f"{v.year} {v.make} {v.model}",
-                'vehicle_plate':       v.plate,
-            })
+    # Only the shown page is turned into cards; the rest stay as rows.
+    paginator = Paginator(rides, 10)
+    page_obj  = paginator.get_page(request.POST.get('page', 1))
+    total_count = paginator.count
 
-    total_count = len(rides_data)
-    paginator   = Paginator(rides_data, 10)
-    page_obj    = paginator.get_page(request.POST.get('page', 1))
+    for ride in page_obj.object_list:
+        name   = (ride.driver.full_name or '').title()
+        parts  = name.split()
+        initials = ''.join(p[0].upper() for p in parts[:2]) if parts else '?'
+
+        rating       = ride.driver.avg_rating or 0.0
+        rating_count = ride.driver.total_rides or 0
+        filled       = round(rating)
+        rating_stars = '★' * filled + '☆' * (5 - filled)
+
+        price_display = f"${ride.price_cents / 100:.2f}" if ride.price_cents else "Free"
+
+        prefs = []
+        if ride.preferences_json:
+            prefs = ride.preferences_json if isinstance(ride.preferences_json, list) else []
+
+        v = ride.vehicle
+        rides_data.append({
+            'id':                  encode_id(ride.id),
+            'origin':              ride.origin,
+            'destination':         ride.destination,
+            'depart_at':           ride.depart_at,
+            'price_display':       price_display,
+            'seats_available':     ride.seats_available,
+            'seats_total':         ride.seats_total,
+            'preferences':         prefs,
+            'stops':               list(ride.stops.all()),
+            'driver_name':         name,
+            'driver_initials':     initials,
+            'driver_is_verified':  ride.driver.driver_verified,
+            'driver_rating':       round(rating, 1),
+            'driver_rating_count': rating_count,
+            'driver_rating_stars': rating_stars,
+            'vehicle_color':       v.color or 'silver',
+            'vehicle_display':     f"{v.year} {v.make} {v.model}",
+            'vehicle_plate':       v.plate,
+        })
+
+    page_obj.object_list = rides_data
 
     return render(request, 'search-rides.html', {
         'rides':             page_obj,
@@ -1713,11 +1741,7 @@ def create_ride_booking(request, ride_id):
 
         token = make_chat_token(booking.id)
         notify_bookings_changed([ride.driver_id], 'You have a new booking request.')
-        threading.Thread(
-            target=_send_booking_request_email,
-            args=(booking,),
-            daemon=True,
-        ).start()
+        _send_booking_request_email(booking)
         return JsonResponse({'ok': True, 'chat_token': token})
 
     # GET — build context
@@ -1894,11 +1918,7 @@ def cancel_booking_view(request, booking_id):
     _notify_booking_status(booking)
     notify_bookings_changed([ride.driver_id], 'A passenger cancelled their booking.')
 
-    threading.Thread(
-        target=_send_booking_cancelled_emails,
-        args=(booking,),
-        daemon=True,
-    ).start()
+    _send_booking_cancelled_emails(booking)
 
     return JsonResponse({"success": True})
 
@@ -1942,11 +1962,7 @@ def accept_booking_view(request, booking_id):
     _notify_booking_status(booking)
     notify_bookings_changed([booking.passenger_id], 'Your booking request was accepted.')
 
-    threading.Thread(
-        target=_send_booking_confirmation_emails,
-        args=(booking,),
-        daemon=True,
-    ).start()
+    _send_booking_confirmation_emails(booking)
 
     return JsonResponse({'ok': True})
 
@@ -1983,11 +1999,7 @@ def reject_booking_view(request, booking_id):
     _notify_booking_status(booking)
     notify_bookings_changed([booking.passenger_id], 'Your booking request was declined.')
 
-    threading.Thread(
-        target=_send_booking_rejected_email,
-        args=(booking,),
-        daemon=True,
-    ).start()
+    _send_booking_rejected_email(booking)
 
     return JsonResponse({'ok': True})
 
@@ -2035,11 +2047,7 @@ def cancel_ride_view(request, ride_id):
         'The driver cancelled a ride you booked or asked about.',
     )
 
-    threading.Thread(
-        target=_send_ride_cancelled_emails,
-        args=(ride, affected_bookings),
-        daemon=True,
-    ).start()
+    _send_ride_cancelled_emails(ride, affected_bookings)
 
     return JsonResponse({"success": True})
 
@@ -2700,7 +2708,8 @@ def ride_summary_view(request, ride_id):
     trees_equiv   = round(co2_saved_kg / 21, 1)
     km_avoided    = passenger_count * distance_km
 
-    stops = list(ride.stops.all().order_by('stop_order'))
+    # Sorted here so the prefetched stops are reused, not queried again.
+    stops = sorted(ride.stops.all(), key=lambda s: s.stop_order)
     stop_pickup_counts = {}
     for b in active_bookings:
         if b.pickup_stop_id:
@@ -2720,6 +2729,13 @@ def ride_summary_view(request, ride_id):
         elif diff < -2:
             arrival_note = f'arrived {abs(diff)} min late'
 
+    # One query for the viewer's reviews, not one per booking (audit F-5).
+    reviewed_ids = set(
+        Review.objects
+        .filter(booking__in=[b.id for b in active_bookings], reviewer=request.user)
+        .values_list('booking_id', flat=True)
+    )
+
     total_cents = 0
     enriched_bookings = []
     for b in active_bookings:
@@ -2736,9 +2752,7 @@ def ride_summary_view(request, ride_id):
         contribution_cents = b.agreed_price_cents
         total_cents += contribution_cents
 
-        already_reviewed = Review.objects.filter(
-            booking=b, reviewer=request.user
-        ).exists()
+        already_reviewed = b.id in reviewed_ids
 
         enriched_bookings.append({
             'booking_id':           encode_id(b.id),
@@ -4495,16 +4509,35 @@ def route_demand_view(request):
         .order_by('depart_at')
     )
 
-    # All searches by logged-in users in the past 7 days
+    # Searches by logged-in users in the past 7 days, narrowed in SQL to the
+    # boxes around the driver's routes (audit F-3). Recurring rides share a
+    # route, so each distinct route adds one box pair.
+    radius = settings.SEARCH_RADIUS_KM
+    routes = {(r.origin_lat, r.origin_lng, r.dest_lat, r.dest_lng) for r in driver_rides}
+    near_routes = Q(pk__in=[])
+    for o_lat, o_lng, d_lat, d_lng in routes:
+        near_routes |= (_geo_box_q(o_lat, o_lng, radius, 'origin_lat', 'origin_lng')
+                        & _geo_box_q(d_lat, d_lng, radius, 'dest_lat', 'dest_lng'))
     recent_searches = list(
         RideSearch.objects
-        .filter(created_at__gte=week_ago, user__isnull=False, user__is_active=True)
+        .filter(near_routes, created_at__gte=week_ago, user__isnull=False, user__is_active=True)
         .exclude(user=driver)
         # Blocked riders can't be invited, so don't list them (ISSUES.md A1).
         .exclude(user_id__in=UserBlock.objects.hidden_ids(driver.id))
         .select_related('user')
         .order_by('-created_at')
-    )
+    ) if routes else []
+
+    # Riders who searched within the radius of a route's origin AND
+    # destination, computed once per route (newest first).
+    route_matches = {
+        key: [
+            s for s in recent_searches
+            if _haversine_km(key[0], key[1], s.origin_lat, s.origin_lng) <= radius
+            and _haversine_km(key[2], key[3], s.dest_lat, s.dest_lng) <= radius
+        ]
+        for key in routes
+    }
 
     AVATAR_COLORS = [
         'linear-gradient(135deg,#7c3aed,#a78bfa)',
@@ -4519,17 +4552,8 @@ def route_demand_view(request):
 
     route_demands = []
     for ride in driver_rides:
-        # Riders who searched within settings.SEARCH_RADIUS_KM of this ride's origin AND destination
-        matching_searches = [
-            s for s in recent_searches
-            if (
-                _haversine_km(ride.origin_lat, ride.origin_lng,
-                              s.origin_lat, s.origin_lng) <= settings.SEARCH_RADIUS_KM
-                and
-                _haversine_km(ride.dest_lat, ride.dest_lng,
-                              s.dest_lat, s.dest_lng) <= settings.SEARCH_RADIUS_KM
-            )
-        ]
+        matching_searches = route_matches[
+            (ride.origin_lat, ride.origin_lng, ride.dest_lat, ride.dest_lng)]
 
         count  = len(matching_searches)
         is_new = any(s.created_at.date() == today for s in matching_searches)
@@ -4558,13 +4582,14 @@ def route_demand_view(request):
                 if avg_raw != avg_seats_n
                 else f'{avg_seats_n} seat{"s" if avg_seats_n != 1 else ""}'
             )
-            latest_search = max(matching_searches, key=lambda x: x.created_at)
+            latest_search = matching_searches[0]
         else:
             most_searched_days = None
             avg_seats          = None
             latest_search      = None
 
-        # Build per-rider rows (one per unique user)
+        # Build per-rider rows (one per unique user). Searches are newest
+        # first, so a user's first one here is their latest.
         seen_users = set()
         riders = []
         for s in matching_searches:
@@ -4579,10 +4604,6 @@ def route_demand_view(request):
             name = _display_name(u)
             initials = ''.join(w[0].upper() for w in name.split()[:2])
             avatar_color = AVATAR_COLORS[uid % len(AVATAR_COLORS)]
-            latest = max(
-                (x for x in matching_searches if x.user_id == uid),
-                key=lambda x: x.created_at,
-            )
             # avg_rating is 0 iff the rider has never received a review --
             # real ratings are 1-5 (Review.rating's MinValueValidator), so a
             # real average can never land on 0.
@@ -4592,7 +4613,7 @@ def route_demand_view(request):
                 'initials':        initials,
                 'avatar_color':    avatar_color,
                 'name':            name,
-                'searching_since': _timesince(latest.created_at),
+                'searching_since': _timesince(s.created_at),
                 'rating_label':    rating_label,
                 'seats_needed':    s.passenger_count,
             })
@@ -4732,9 +4753,9 @@ def _send_invite_email(request, invite):
             reply_to=[settings.REPLY_TO_EMAIL_RIDE_INVITE],
         )
         msg.attach_alternative(html, 'text/html')
-        msg.send(fail_silently=True)
+        send_later(msg, EmailLog.KIND_INVITE, rider)
     except Exception:
-        pass
+        logger.exception('_send_invite_email could not build or queue an email')
 
 
 # ──────────────────────────────────────────────────────────────────
@@ -5081,15 +5102,12 @@ def _send_report_admin_email(request, report):
     if booking:
         lines.append(f"Booking:   #{booking.id} ({booking.status}), ride {booking.ride.origin} → {booking.ride.destination}")
     lines += ['', 'Details:', report.details or '(none)', '', f"Review it in the admin: {admin_url}"]
-    try:
-        EmailMultiAlternatives(
-            subject=f"[Komüte Report] {report.get_reason_display()} — report #{report.id}",
-            body='\n'.join(lines),
-            from_email=settings.DEFAULT_FROM_EMAIL,
-            to=[settings.ADMIN_EMAIL],
-        ).send(fail_silently=False)
-    except Exception:
-        logger.exception('Could not email ADMIN_EMAIL about report %s', report.id)
+    send_later(EmailMultiAlternatives(
+        subject=f"[Komüte Report] {report.get_reason_display()} — report #{report.id}",
+        body='\n'.join(lines),
+        from_email=settings.DEFAULT_FROM_EMAIL,
+        to=[settings.ADMIN_EMAIL],
+    ), EmailLog.KIND_REPORT_ADMIN)
 
 
 @login_required

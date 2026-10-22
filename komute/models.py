@@ -956,3 +956,72 @@ class UserBlock(models.Model):
 
     def __str__(self):
         return f"Block {self.blocker_id} → {self.blocked_id}"
+
+class EmailLog(models.Model):
+    """One row per queued email, so staff can see whether it went out
+    (audit F-6). Holds no body and only a masked address; purge_task_log
+    deletes rows after TASK_LOG_RETENTION_DAYS."""
+
+    KIND_BOOKING_REQUEST   = "booking_request"
+    KIND_BOOKING_CONFIRMED = "booking_confirmed"
+    KIND_BOOKING_CANCELLED = "booking_cancelled"
+    KIND_BOOKING_REJECTED  = "booking_rejected"
+    KIND_RIDE_CANCELLED    = "ride_cancelled"
+    KIND_WELCOME           = "welcome"
+    KIND_INVITE            = "invite"
+    KIND_REPORT_ADMIN      = "report_admin"
+
+    KIND_CHOICES = [
+        (KIND_BOOKING_REQUEST, "Booking request (to driver)"),
+        (KIND_BOOKING_CONFIRMED, "Booking confirmed"),
+        (KIND_BOOKING_CANCELLED, "Booking cancelled (to driver)"),
+        (KIND_BOOKING_REJECTED, "Booking declined (to rider)"),
+        (KIND_RIDE_CANCELLED, "Ride cancelled (to rider)"),
+        (KIND_WELCOME, "Welcome"),
+        (KIND_INVITE, "Ride invite"),
+        (KIND_REPORT_ADMIN, "User report (to staff)"),
+    ]
+
+    STATUS_QUEUED   = "queued"
+    STATUS_RETRYING = "retrying"
+    STATUS_SENT     = "sent"
+    STATUS_FAILED   = "failed"
+
+    STATUS_CHOICES = [
+        (STATUS_QUEUED, "Queued"),
+        (STATUS_RETRYING, "Retrying"),
+        (STATUS_SENT, "Sent"),
+        (STATUS_FAILED, "Failed"),
+    ]
+
+    kind = models.CharField(max_length=30, choices=KIND_CHOICES)
+
+    # The account the email went to; empty for staff emails.
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name="email_logs",
+    )
+
+    to_masked = models.CharField(max_length=255)
+    subject = models.CharField(max_length=255)
+
+    status = models.CharField(max_length=10, choices=STATUS_CHOICES, default=STATUS_QUEUED)
+    attempts = models.PositiveSmallIntegerField(default=0)
+    last_error = models.TextField(blank=True)
+
+    # SES's id for the sent message, for looking it up in AWS.
+    message_id = models.CharField(max_length=255, blank=True)
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    sent_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        db_table = "email_logs"
+        ordering = ["-created_at"]
+        indexes = [models.Index(fields=["status", "created_at"])]
+
+    def __str__(self):
+        return f"{self.get_kind_display()} to {self.to_masked} ({self.status})"

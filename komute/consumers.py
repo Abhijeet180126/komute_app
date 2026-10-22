@@ -366,9 +366,8 @@ class ChatConsumer(AsyncWebsocketConsumer):
         if was_unconfirmed:
             booking.agreed_price_cents = agreed_price_cents
             booking.status = RideBooking.STATUS_CONFIRMED
-            import threading
             from .views import _send_booking_confirmation_emails
-            threading.Thread(target=_send_booking_confirmation_emails, args=(booking,), daemon=True).start()
+            _send_booking_confirmation_emails(booking)
 
         return 'ok', offer.price_cents / 100
 

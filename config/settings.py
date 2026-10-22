@@ -73,6 +73,7 @@ INSTALLED_APPS = [
     'django.contrib.staticfiles',
     'channels',
     'axes',
+    'django_q',
     # 'komute',
     'komute.apps.KomuteConfig',
 ]
@@ -104,6 +105,26 @@ CACHES = {
         'LOCATION': _redis_url,
         'KEY_PREFIX': 'komute-cache',
     },
+}
+
+# Background jobs (audit F-6): fire-and-forget emails are queued here and
+# sent by the `manage.py qcluster` worker (systemd unit komute-qcluster).
+# The queue lives in Postgres (ORM broker), not Redis: a job is only queued
+# if the request's transaction commits, and it survives Redis or worker
+# restarts. A failed send isn't acknowledged, so it's picked up again after
+# `retry` seconds, up to `max_attempts` times. Job arguments hold whole
+# emails, so successes aren't stored (save_limit -1) and failures are
+# deleted by purge_task_log after TASK_LOG_RETENTION_DAYS.
+Q_CLUSTER = {
+    'name':         'komute',
+    'orm':          'default',
+    'workers':      2,
+    'timeout':      60,
+    'retry':        300,
+    'max_attempts': 5,
+    'poll':         2,
+    'save_limit':   -1,
+    'label':        'Background tasks',
 }
 
 MIDDLEWARE = [
@@ -302,6 +323,8 @@ VERIFICATION_RECORD_RETENTION_DAYS = config('VERIFICATION_RECORD_RETENTION_DAYS'
 RIDE_SEARCH_RETENTION_DAYS = config('RIDE_SEARCH_RETENTION_DAYS', default=90,  cast=int)
 COMPLETED_RIDE_RETENTION_DAYS = config('COMPLETED_RIDE_RETENTION_DAYS', default=730, cast=int)
 CANCELLED_RIDE_RETENTION_DAYS = config('CANCELLED_RIDE_RETENTION_DAYS', default=180, cast=int)
+# Failed background jobs (audit F-6) hold the unsent email, address included.
+TASK_LOG_RETENTION_DAYS = config('TASK_LOG_RETENTION_DAYS', default=14, cast=int)
 # User reports (ISSUES.md A1): kept this long after staff close them.
 REPORT_RETENTION_DAYS = config('REPORT_RETENTION_DAYS', default=365, cast=int)
 STOP_DETOUR_MAX_KM  = config('STOP_DETOUR_MAX_KM',  default=30,  cast=int)
