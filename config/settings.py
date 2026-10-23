@@ -24,6 +24,11 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 # SECURITY WARNING: keep the secret key used in production secret!
 SECRET_KEY = config('SECRET_KEY')
 
+# Salt for the URL ids in hashid_utils (audit S-20). Kept apart from
+# SECRET_KEY so the key can be rotated without changing every URL. Defaults
+# to SECRET_KEY, so ids already sent out keep working until this is set.
+HASHID_SALT = config('HASHID_SALT', default=SECRET_KEY)
+
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = config('DEBUG', default=False, cast=bool)
 
@@ -163,13 +168,17 @@ TEMPLATES = [
 WSGI_APPLICATION = 'config.wsgi.application'
 
 CSRF_TRUSTED_ORIGINS = [
-    "https://localhost:8000",
-    "https://127.0.0.1:8000",
     "https://komute.org",
     "https://www.komute.org",
     "https://komute.net",
     "https://www.komute.net",
 ]
+# Local origins are trusted only in development (audit S-17).
+if DEBUG:
+    CSRF_TRUSTED_ORIGINS += [
+        "https://localhost:8000",
+        "https://127.0.0.1:8000",
+    ]
 
 # Database
 # https://docs.djangoproject.com/en/5.2/ref/settings/#databases
@@ -400,6 +409,9 @@ ACCOUNT_LOGIN_METHODS = {"email"}
 ACCOUNT_SIGNUP_FIELDS = ["email*", "password1*", "password2*"]
 
 ACCOUNT_EMAIL_VERIFICATION = "mandatory"
+# allauth puts "[<Site name>] " in front of its subjects. Fixed here so an
+# unset Site row can't send "[example.com]" mail (audit S-18).
+ACCOUNT_EMAIL_SUBJECT_PREFIX = "[Komüte] "
 
 LOGIN_URL = "/login/"
 LOGIN_REDIRECT_URL = "/"

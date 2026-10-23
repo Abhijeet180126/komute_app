@@ -808,6 +808,12 @@ class HashidUtilsTests(TestCase):
     def test_decode_empty_string_returns_none(self):
         self.assertIsNone(decode_id(''))
 
+    def test_uses_hashid_salt(self):
+        # Audit S-20: ids come from HASHID_SALT, not SECRET_KEY directly.
+        from hashids import Hashids
+        expected = Hashids(salt=settings.HASHID_SALT, min_length=8).encode(42)
+        self.assertEqual(encode_id(42), expected)
+
 
 class PostRideViewTests(TestCase):
     def setUp(self):
@@ -4564,3 +4570,17 @@ class SelfHostedFontsTests(TestCase):
         for name in files:
             self.assertEqual((static / 'fonts' / name).read_bytes()[:4], b'wOF2', name)
         self.assertEqual(css.count('font-display: swap;'), css.count('@font-face'))
+
+
+class SiteAndEmailSubjectTests(TestCase):
+    """Audit S-18: allauth mail must not say "[example.com]"."""
+
+    def test_site_row_points_at_real_domain(self):
+        from django.contrib.sites.models import Site
+        site = Site.objects.get_current()
+        self.assertEqual(site.domain, 'komute.net')
+        self.assertEqual(site.name, 'Komüte')
+
+    def test_allauth_subject_prefix(self):
+        from allauth.account.adapter import get_adapter
+        self.assertEqual(get_adapter().format_email_subject('Hello'), '[Komüte] Hello')
