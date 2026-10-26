@@ -392,6 +392,39 @@ _EMAIL_UNVERIFIED_MSG = (
     "your email on your profile page."
 )
 
+_DOB_MISSING_MSG = (
+    "Please add your date of birth on your profile page first. "
+    "KOMUTE is for adults aged 18 and over."
+)
+
+
+def _latest_adult_dob():
+    """The latest date of birth that is 18 today (Feb 29 -> Feb 28)."""
+    today = date.today()
+    try:
+        return today.replace(year=today.year - 18)
+    except ValueError:
+        return today.replace(year=today.year - 18, day=28)
+
+
+def _parse_dob(dob_str):
+    """(dob, error) for a submitted date of birth. Ages 18 to 100 only
+    (audit L-5); an empty value is an error, so every caller requires it."""
+    if not dob_str:
+        return None, "Date of birth is required."
+    try:
+        dob = date.fromisoformat(dob_str)
+    except ValueError:
+        return None, "Invalid date of birth."
+    today = date.today()
+    age = today.year - dob.year - ((today.month, today.day) < (dob.month, dob.day))
+    if age < 18:
+        return None, "You must be at least 18 years old."
+    if age > 100:
+        return None, "Please enter a valid date of birth (age must be 100 or under)."
+    return dob, None
+
+
 _PHONE_RE = re.compile(r'^\+?[1-9]\d{6,14}$')
 _PHONE_NUMBER_RE = re.compile(r'^\d{4,14}$')
 
@@ -644,18 +677,20 @@ def signup_view(request):
         email            = request.POST.get("email", "").strip().lower()
         country_code     = request.POST.get("country_code", "").strip()
         phone_number     = request.POST.get("phone_number", "").strip()
+        dob_str          = request.POST.get("dob", "").strip()
         password         = request.POST.get("password", "")
         confirm_password = request.POST.get("confirm_password", "")
         agreed_to_terms  = request.POST.get("agreed_to_terms", "")
 
         form_data = {"full_name": full_name, "email": email,
                      "country_code": country_code, "phone_number": phone_number,
-                     "agreed_to_terms": agreed_to_terms}
+                     "dob": dob_str, "agreed_to_terms": agreed_to_terms}
 
         if _rate_limited(request, 'signup'):
             errors["rate_limit"] = "Too many signup attempts from this connection. Please try again later."
             priority_countries, countries = _dropdown_countries()
             return render(request, "signup.html", {"form": form_data, "errors": errors,
+                                                     "dob_max": _latest_adult_dob().isoformat(),
                                                      "priority_countries": priority_countries, "countries": countries})
 
         if not full_name:
@@ -688,6 +723,11 @@ def signup_view(request):
             if not _PHONE_RE.match(phone):
                 errors["phone_number"] = "Phone must be in E.164 format (e.g. +14155552671)."
 
+        # 18+ only (audit L-5): checked here, not first at booking.
+        dob, dob_error = _parse_dob(dob_str)
+        if dob_error:
+            errors["dob"] = dob_error
+
         if not password:
             errors["password"] = "Password is required."
         else:
@@ -713,6 +753,7 @@ def signup_view(request):
                     password=password,
                     full_name=full_name,
                     phone=phone or None,
+                    dob=dob,
                 )
                 _record_legal_acceptance(request, new_user, LegalAcceptance.SOURCE_SIGNUP)
             _send_welcome_email(request, new_user)
@@ -721,6 +762,7 @@ def signup_view(request):
 
     priority_countries, countries = _dropdown_countries()
     return render(request, "signup.html", {"form": form_data, "errors": errors, "next": next_url,
+                                             "dob_max": _latest_adult_dob().isoformat(),
                                              "priority_countries": priority_countries, "countries": countries})
 
 @never_cache
@@ -844,23 +886,10 @@ def profile_view(request):
                 if not _PHONE_RE.match(phone):
                     errors["phone_number"] = "Phone must be in E.164 format (e.g. +14155552671)."
 
-        dob = None
-        if not dob_str:
-            if role == "driver":
-                errors["dob"] = "Date of birth is required to post rides as a driver."
-        else:
-            try:
-                dob = date.fromisoformat(dob_str)
-            except ValueError:
-                errors["dob"] = "Invalid date of birth."
-
-        if dob and not errors.get("dob"):
-            today = date.today()
-            age = today.year - dob.year - ((today.month, today.day) < (dob.month, dob.day))
-            if age < 18:
-                errors["dob"] = "You must be at least 18 years old."
-            elif age > 100:
-                errors["dob"] = "Please enter a valid date of birth (age must be 100 or under)."
+        # Required for riders too: booking needs it (audit L-5).
+        dob, dob_error = _parse_dob(dob_str)
+        if dob_error:
+            errors["dob"] = dob_error
 
         license_expiry = None
         if license_expiry_str:
@@ -1670,6 +1699,9 @@ def create_ride_booking(request, ride_id):
         # the rider's address, so it must be verified (audit S-10).
         if not request.user.email_verified:
             return JsonResponse({'ok': False, 'error': _EMAIL_UNVERIFIED_MSG}, status=403)
+        # Accounts from before DOB was asked at signup (audit L-5).
+        if not request.user.dob:
+            return JsonResponse({'ok': False, 'error': _DOB_MISSING_MSG}, status=403)
         if ride.status not in ('posted', 'full') or ride.depart_at <= timezone.now():
             return JsonResponse({'ok': False, 'error': 'This ride is no longer available.'}, status=400)
         if not _gender_pref_allows(ride, request.user):
@@ -4949,6 +4981,11 @@ def accept_invite_view(request, token):
     if not request.user.email_verified:
         return render(request, 'invite-detail.html', {
             'invite': invite, 'token': token, 'error': _EMAIL_UNVERIFIED_MSG,
+        })
+
+    if not request.user.dob:
+        return render(request, 'invite-detail.html', {
+            'invite': invite, 'token': token, 'error': _DOB_MISSING_MSG,
         })
 
     # The rules a normal booking follows (audit L-7/L-8): the gender

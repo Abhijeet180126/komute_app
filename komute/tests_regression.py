@@ -91,7 +91,7 @@ class AuthFlowTests(TestCase):
         resp = c.post(reverse('signup'), {
             'full_name': 'Jane Doe', 'email': 'jane@example.com',
             'country_code': '+1', 'phone_number': '4155552671', 'password': 'GoodPassword1!',
-            'confirm_password': 'GoodPassword1!', 'agreed_to_terms': '1',
+            'confirm_password': 'GoodPassword1!', 'dob': '1995-01-01', 'agreed_to_terms': '1',
         })
         self.assertRedirects(resp, reverse('login'))
         self.assertTrue(CustomUser.objects.filter(email='jane@example.com').exists())
@@ -106,7 +106,7 @@ class AuthFlowTests(TestCase):
         Client(HTTP_USER_AGENT='TestBrowser/1.0').post(reverse('signup'), {
             'full_name': 'Jane Doe', 'email': 'jane@example.com',
             'country_code': '+1', 'phone_number': '4155552671', 'password': 'GoodPassword1!',
-            'confirm_password': 'GoodPassword1!', 'agreed_to_terms': '1',
+            'confirm_password': 'GoodPassword1!', 'dob': '1995-01-01', 'agreed_to_terms': '1',
         }, REMOTE_ADDR='203.0.113.9')
         acceptance = LegalAcceptance.objects.get(user__email='jane@example.com')
         self.assertEqual(acceptance.terms_version, settings.TERMS_VERSION)
@@ -121,12 +121,46 @@ class AuthFlowTests(TestCase):
             resp = Client().post(reverse('signup'), {
                 'full_name': 'Jane Doe', 'email': 'jane@example.com',
                 'country_code': '+1', 'phone_number': '4155552671', 'password': 'GoodPassword1!',
-                'confirm_password': 'GoodPassword1!', 'agreed_to_terms': value,
+                'confirm_password': 'GoodPassword1!', 'dob': '1995-01-01', 'agreed_to_terms': value,
             })
             self.assertEqual(resp.status_code, 200)
             self.assertIn('Privacy Policy', resp.context['errors']['agreed_to_terms'])
         self.assertFalse(CustomUser.objects.filter(email='jane@example.com').exists())
         self.assertFalse(LegalAcceptance.objects.exists())
+
+    def _signup(self, **overrides):
+        payload = {
+            'full_name': 'Jane Doe', 'email': 'jane@example.com',
+            'country_code': '+1', 'phone_number': '4155552671', 'password': 'GoodPassword1!',
+            'confirm_password': 'GoodPassword1!', 'dob': '1995-01-01', 'agreed_to_terms': '1',
+        }
+        payload.update(overrides)
+        return Client().post(reverse('signup'), payload)
+
+    def test_signup_saves_dob(self):
+        self._signup()
+        self.assertEqual(CustomUser.objects.get(email='jane@example.com').dob, date(1995, 1, 1))
+
+    def test_signup_requires_adult_dob(self):
+        # L-5: 18+ is enforced at signup, not first at booking.
+        today = date.today()
+        try:
+            seventeen = today.replace(year=today.year - 18) + timedelta(days=1)
+        except ValueError:  # Feb 29
+            seventeen = date(today.year - 18, 3, 1)
+        for dob, error in (('', 'required'), ('not-a-date', 'Invalid'),
+                           (seventeen.isoformat(), 'at least 18'), ('1900-01-01', '100 or under')):
+            resp = self._signup(dob=dob)
+            self.assertEqual(resp.status_code, 200, dob)
+            self.assertIn(error, resp.context['errors']['dob'], dob)
+        self.assertFalse(CustomUser.objects.filter(email='jane@example.com').exists())
+
+    def test_signup_accepts_eighteenth_birthday(self):
+        from komute.views import _latest_adult_dob
+        resp = self._signup(dob=_latest_adult_dob().isoformat())
+        self.assertRedirects(resp, reverse('login'))
+        self.assertContains(Client().get(reverse('signup')),
+                            f'max="{_latest_adult_dob().isoformat()}"')
 
     def test_signup_checkbox_names_the_privacy_policy(self):
         resp = Client().get(reverse('signup'))
@@ -2496,6 +2530,16 @@ class ProfileVehicleTests(TestCase):
         self.assertEqual(resp.status_code, 200)
         self.assertIn('dob', resp.context['errors'])
 
+    def test_rider_cannot_save_without_dob(self):
+        # L-5: riders need it too, or clearing it would undo the booking check.
+        make_user('pv_rider@example.com')
+        c = Client()
+        c.login(username='pv_rider@example.com', password='TestPass123')
+        resp = c.post(reverse('profile'), self._base_payload(role='rider', dob=''))
+        self.assertEqual(resp.status_code, 200)
+        self.assertIn('required', resp.context['errors']['dob'])
+        self.assertEqual(CustomUser.objects.get(email='pv_rider@example.com').dob, date(1995, 1, 1))
+
     def test_adult_driver_with_future_license_expiry_saves(self):
         # Regression: the profile page's shared date helpers applied the DOB
         # 18+ age check to License Expiry too, so a (valid) future expiry
@@ -2941,7 +2985,7 @@ class PrivateMediaTests(TestCase):
         c = Client()
         c.login(username='pm_owner@example.com', password='TestPass123')
         resp = c.post(reverse('profile'), {
-            'full_name': 'PM Owner', 'role': 'rider',
+            'full_name': 'PM Owner', 'dob': '1995-01-01', 'role': 'rider',
             'selfie_file': SimpleUploadedFile('me.jpg', _jpeg_bytes(), content_type='image/jpeg'),
         })
         self.assertRedirects(resp, reverse('profile'))
@@ -4033,6 +4077,24 @@ class AuditFixTests(TestCase):
         self.ride.refresh_from_db()
         self.assertEqual(self.ride.seats_available, self.ride.seats_total)
 
+    def test_missing_dob_cannot_book_or_accept_invite(self):
+        # L-5: accounts from before signup asked for a DOB.
+        from komute.views import _make_invite_token
+        CustomUser.objects.filter(pk=self.rider.pk).update(dob=None)
+        rider = self._client('au_rider@example.com')
+        for intent in ('book', 'chat'):
+            resp = rider.post(reverse('create-ride-booking', args=[encode_id(self.ride.id)]),
+                              {'seats': '1', 'intent': intent})
+            self.assertEqual(resp.status_code, 403, intent)
+            self.assertIn('date of birth', resp.json()['error'])
+
+        invite = RideInvite.objects.create(driver=self.driver, passenger=self.rider, ride=self.ride)
+        resp = rider.post(reverse('accept-invite', args=[_make_invite_token(invite.id)]))
+        self.assertContains(resp, 'date of birth')
+        invite.refresh_from_db()
+        self.assertNotEqual(invite.status, RideInvite.STATUS_ACCEPTED)
+        self.assertFalse(RideBooking.objects.filter(passenger=self.rider).exists())
+
     def test_verified_email_can_book(self):
         resp = self._client('au_rider@example.com').post(
             reverse('create-ride-booking', args=[encode_id(self.ride.id)]), {'seats': '1'})
@@ -4253,7 +4315,7 @@ class AuditFixTests(TestCase):
         resp = c.post(reverse('signup'), {
             'full_name': 'Sam Share', 'email': 'sam@example.com',
             'country_code': '+1', 'phone_number': '4155552672', 'password': 'GoodPassword1!',
-            'confirm_password': 'GoodPassword1!', 'agreed_to_terms': '1', 'next': booking_url,
+            'confirm_password': 'GoodPassword1!', 'dob': '1995-01-01', 'agreed_to_terms': '1', 'next': booking_url,
         })
         self.assertRedirects(resp, login_url, fetch_redirect_response=False)
         resp = c.post(reverse('login'), {'email': 'sam@example.com', 'password': 'GoodPassword1!',
