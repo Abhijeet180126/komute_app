@@ -86,8 +86,6 @@ class Command(BaseCommand):
                     vehicles.delete()
 
                     _delete_stored_file(user.selfie_url)
-                    _delete_stored_file(user.license_front_url)
-                    _delete_stored_file(user.license_back_url)
                     _delete_stored_file(user.avatar_url)
 
                     anon_email = f"deleted-user-{user.id}@komute.invalid"
@@ -108,8 +106,6 @@ class Command(BaseCommand):
                     user.license_number = None
                     user.license_province = None
                     user.license_expiry = None
-                    user.license_front_url = None
-                    user.license_back_url = None
                     user.selfie_url = None
                     user.face_match_score = None
                     user.set_unusable_password()

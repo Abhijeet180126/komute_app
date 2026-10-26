@@ -16,6 +16,7 @@ from urllib.parse import quote, urlsplit
 from django.conf import settings
 from django.core.cache import cache
 from django.core.files.base import ContentFile
+from django.core.files.uploadhandler import MemoryFileUploadHandler
 from django.http import FileResponse, JsonResponse, HttpResponse
 from django.shortcuts import get_object_or_404, render, redirect
 from django.http import Http404
@@ -30,7 +31,7 @@ from django.utils import timezone
 from django.core.paginator import Paginator
 from django.views.decorators.cache import never_cache
 from django.views.decorators.http import require_POST
-from django.views.decorators.csrf import csrf_exempt
+from django.views.decorators.csrf import csrf_exempt, csrf_protect
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth.password_validation import validate_password
 from allauth.account.models import EmailAddress
@@ -51,6 +52,7 @@ from .notifications import booking_fingerprint, notify_bookings_changed
 from .tasks import send_later
 from . import private_media
 from .private_media import delete_stored_file, open_stored_file, save_private_image
+from .service_area import in_quebec
 
 User = get_user_model()
 logger = logging.getLogger(__name__)
@@ -407,6 +409,17 @@ def _in_us_canada(lat, lng):
     return False
 
 
+def _service_area_error(lat, lng, kind):
+    """Why a picked point can't be used, or None. `kind` names it in the
+    message: "pickup", "drop-off" or "stop". Quebec is left out at launch
+    (audit P-11, see service_area.py)."""
+    if not _in_us_canada(lat, lng):
+        return f"We currently only support {kind} locations in the US and Canada."
+    if in_quebec(lat, lng):
+        return f"Komüte isn't available in Quebec yet. Please choose a {kind} location outside Quebec."
+    return None
+
+
 def _clean_stops(post):
     """The ride form's named stops, each with the coordinates of the
     suggestion the driver picked. Returns (stops, error): stops is a list of
@@ -429,6 +442,8 @@ def _clean_stops(post):
             return stops, f'Pick "{loc}" from the suggestions list, or remove that stop.'
         if not _in_us_canada(lat, lng):
             return stops, f'"{loc}" is outside the US and Canada. We currently only support stops there.'
+        if in_quebec(lat, lng):
+            return stops, f'"{loc}" is in Quebec. Komüte isn\'t available in Quebec yet, so please choose a stop outside Quebec.'
         stops.append({'idx': idx, 'location': loc, 'lat': lat, 'lng': lng})
     return stops, None
 
@@ -904,22 +919,8 @@ def profile_view(request):
                 user.license_expiry   = license_expiry
                 update_fields += ["license_number", "license_province", "license_expiry"]
 
-                license_file = request.FILES.get("license_file")
-                if license_file:
-                    try:
-                        resized = _resize_image(license_file, label=f"user={user.id} license")
-                    except ValidationError as e:
-                        image_rejected = True
-                        messages.error(request, f"License photo: {e.messages[0]}")
-                    else:
-                        stale_urls.append(user.license_front_url)
-                        user.license_front_url = save_private_image(private_media.KIND_LICENSE, user.id, resized)
-                        update_fields.append("license_front_url")
-                        if user.driver_verified:
-                            user.driver_verified  = False
-                            user.face_match_score = None
-                            update_fields += ["driver_verified", "face_match_score"]
-                            messages.warning(request, "Your driving license photo was updated. Please verify your identity again before posting rides.")
+                # The licence photo isn't saved with the profile: it is taken
+                # in the verification step and never stored (audit P-5/P-13).
 
                 if identity_changed and user.driver_verified:
                     user.driver_verified  = False
@@ -1070,7 +1071,6 @@ def profile_view(request):
         "license_number": license_number,
         "license_province": license_province,
         "license_expiry": license_expiry_str,
-        "license_front_url": user.license_front_url or "",
         "selfie_url": user.selfie_url or "",
         "avatar_url": user.avatar_url or "",
         "vehicles": vehicles,
@@ -1220,14 +1220,14 @@ def post_ride_view(request):
             errors["origin"] = "Starting point is required."
         elif origin_lat == 0 and origin_lng == 0:
             errors["origin"] = "Please pick a location from the suggestions."
-        elif not _in_us_canada(origin_lat, origin_lng):
-            errors["origin"] = "We currently only support pickup locations in the US and Canada."
+        elif area_error := _service_area_error(origin_lat, origin_lng, "pickup"):
+            errors["origin"] = area_error
         if not destination:
             errors["destination"] = "Final destination is required."
         elif dest_lat == 0 and dest_lng == 0:
             errors["destination"] = "Please pick a location from the suggestions."
-        elif not _in_us_canada(dest_lat, dest_lng):
-            errors["destination"] = "We currently only support drop-off locations in the US and Canada."
+        elif area_error := _service_area_error(dest_lat, dest_lng, "drop-off"):
+            errors["destination"] = area_error
         clean_stops, stops_error = _clean_stops(request.POST)
         if stops_error:
             errors["stops"] = stops_error
@@ -1446,10 +1446,12 @@ def search_rides_view(request):
         except (ValueError, TypeError):
             s_origin_lat = s_origin_lng = s_dest_lat = s_dest_lng = 0.0
 
-        if search_from and (s_origin_lat or s_origin_lng) and not _in_us_canada(s_origin_lat, s_origin_lng):
-            errors['from'] = 'We currently only support pickup locations in the US and Canada.'
-        if search_to and (s_dest_lat or s_dest_lng) and not _in_us_canada(s_dest_lat, s_dest_lng):
-            errors['to'] = 'We currently only support drop-off locations in the US and Canada.'
+        if search_from and (s_origin_lat or s_origin_lng):
+            if area_error := _service_area_error(s_origin_lat, s_origin_lng, 'pickup'):
+                errors['from'] = area_error
+        if search_to and (s_dest_lat or s_dest_lng):
+            if area_error := _service_area_error(s_dest_lat, s_dest_lng, 'drop-off'):
+                errors['to'] = area_error
 
     if search_performed and not errors:
         if parsed_search_date:
@@ -2497,13 +2499,13 @@ def edit_ride_view(request, ride_id):
         if not origin:      errors['origin']      = 'Starting point is required.'
         elif origin_lat == 0 and origin_lng == 0:
             errors['origin'] = 'Please pick a location from the suggestions.'
-        elif not _in_us_canada(origin_lat, origin_lng):
-            errors['origin'] = 'We currently only support pickup locations in the US and Canada.'
+        elif area_error := _service_area_error(origin_lat, origin_lng, 'pickup'):
+            errors['origin'] = area_error
         if not destination: errors['destination'] = 'Final destination is required.'
         elif dest_lat == 0 and dest_lng == 0:
             errors['destination'] = 'Please pick a location from the suggestions.'
-        elif not _in_us_canada(dest_lat, dest_lng):
-            errors['destination'] = 'We currently only support drop-off locations in the US and Canada.'
+        elif area_error := _service_area_error(dest_lat, dest_lng, 'drop-off'):
+            errors['destination'] = area_error
         clean_stops, stops_error = _clean_stops(request.POST)
         if stops_error:
             errors['stops'] = stops_error
@@ -4310,7 +4312,25 @@ def _record_biometric_consent(request, user):
     )
 
 
+class _InMemoryUploadHandler(MemoryFileUploadHandler):
+    """Keeps every uploaded file in memory whatever its size. Django's default
+    writes files over FILE_UPLOAD_MAX_MEMORY_SIZE to a temp file on disk; the
+    licence photo must never touch disk (audit P-5/P-13). Nginx's
+    client_max_body_size still caps the request."""
+    def handle_raw_input(self, *args, **kwargs):
+        self.activated = True
+
+
+@csrf_exempt
 def verify_driver_view(request):
+    # Upload handlers must be swapped before anything reads the body, and
+    # CsrfViewMiddleware reads it, so CSRF is checked inside instead.
+    request.upload_handlers = [_InMemoryUploadHandler(request)]
+    return _verify_driver_view(request)
+
+
+@csrf_protect
+def _verify_driver_view(request):
     """POST /profile/verify-driver/ - calls DL-Verification Node API and updates driver_verified."""
     try:
         import requests as http_client
@@ -4339,15 +4359,16 @@ def verify_driver_view(request):
     if request.POST.get("notice_version") != settings.BIOMETRIC_NOTICE_VERSION:
         return JsonResponse({"error": "The biometric notice has changed. Please reload the page and review it again."}, status=400)
 
-    if not user.license_front_url:
-        return JsonResponse({"error": "Please upload your driving license image first and save your profile."}, status=400)
-
+    # The licence photo comes with this request and is never written to
+    # storage: it is resized in memory, sent to DL-Verification and dropped
+    # with the request (audit P-5/P-13).
+    license_file = request.FILES.get("license_image")
+    if not license_file:
+        return JsonResponse({"error": "Please add a photo of your driving license."}, status=400)
     try:
-        with open_stored_file(user.license_front_url) as f:
-            license_bytes = f.read()
-    except Exception:
-        logger.exception("verify_driver_view: could not read license image for user %s", user.id)
-        return JsonResponse({"error": "Could not read license image. Please try again later."}, status=500)
+        license_bytes = _resize_image(license_file, label=f"user={user.id} verify-license").read()
+    except ValidationError as e:
+        return JsonResponse({"error": f"License photo: {e.messages[0]} Please choose another photo."}, status=400)
 
     # Only the selfie captured for this attempt counts. The profile photo is
     # never used: it may legitimately show the driver's vehicle instead of

@@ -2227,12 +2227,12 @@ class EditRideViewTests(TestCase):
     def _payload(self):
         depart_dt = timezone.now() + timedelta(days=2)
         return {
-            'origin': 'Kingston, ON', 'destination': 'Montreal, QC',
+            'origin': 'Kingston, ON', 'destination': 'Ottawa, ON',
             'date': depart_dt.date().isoformat(), 'depart_time': '11:00',
             'depart_utc': depart_dt.isoformat().replace('+00:00', 'Z'),
             'seats': '4', 'price': '30.00',
             'origin_lat': '44.23', 'origin_lng': '-76.48',
-            'destination_lat': '45.50', 'destination_lng': '-73.56',
+            'destination_lat': '45.42', 'destination_lng': '-75.69',
         }
 
     def test_owner_can_edit_ride(self):
@@ -2299,6 +2299,102 @@ class EditRideViewTests(TestCase):
         self.assertRedirects(resp, reverse('my-rides'))
         stop = self.ride.stops.get()
         self.assertEqual((stop.location, stop.lat, stop.lng), ('Cornwall, ON', 45.02, -74.73))
+
+    def test_quebec_destination_rejected(self):
+        # Audit P-11: Quebec is outside the service area at launch.
+        resp = self._post(destination='Montreal, QC', destination_lat='45.50', destination_lng='-73.56')
+        self.assertEqual(resp.status_code, 200)
+        self.assertIn('Quebec', resp.context['errors']['destination'])
+        self.ride.refresh_from_db()
+        self.assertNotEqual(self.ride.destination, 'Montreal, QC')
+
+
+class QuebecServiceAreaTests(TestCase):
+    """Audit P-11 / D-5: no pickups, stops or drop-offs in Quebec at launch
+    (no French Terms yet). Rides that only drive through Quebec are fine."""
+
+    def test_border_points(self):
+        from komute.service_area import in_quebec
+        points = [
+            ('Parliament Hill, Ottawa', 45.4236, -75.7009, False),
+            ('Museum of History, Gatineau', 45.4302, -75.7093, True),
+            ('Aylmer, Gatineau', 45.3945, -75.8440, True),
+            ('Orleans, Ottawa', 45.4700, -75.5150, False),
+            ('Hawkesbury, ON', 45.6080, -74.6050, False),
+            ('Grenville, QC', 45.6280, -74.6000, True),
+            ('Montreal', 45.5019, -73.5674, True),
+            ('Cornwall, ON', 45.0180, -74.7280, False),
+            ('Saint-Regis, QC', 45.0010, -74.6490, True),
+            ('Stanstead, QC', 45.0200, -72.0970, True),
+            ('Derby Line, VT', 44.9980, -72.0990, False),
+            ('Campbellton, NB', 48.0050, -66.6730, False),
+            ('Pointe-a-la-Croix, QC', 48.0180, -66.6920, True),
+            ('Edmundston, NB', 47.3730, -68.3250, False),
+            ('Quebec City', 46.8139, -71.2080, True),
+            ('Labrador City, NL', 52.9440, -66.9140, False),
+            ('Fermont, QC', 52.7920, -67.0860, True),
+            ('Toronto', 43.6532, -79.3832, False),
+            ('Iles-de-la-Madeleine', 47.3800, -61.8600, True),
+            ('Boston', 42.3601, -71.0589, False),
+        ]
+        for name, lat, lng, expected in points:
+            self.assertEqual(in_quebec(lat, lng), expected, name)
+
+    def _post_ride(self, **overrides):
+        driver = make_driver_with_vehicle('qc_driver@example.com')
+        depart_dt = timezone.now() + timedelta(days=1)
+        payload = {
+            'origin': 'Ottawa, ON', 'destination': 'Moncton, NB',
+            'date': depart_dt.date().isoformat(), 'depart_time': '10:00',
+            'depart_utc': depart_dt.isoformat().replace('+00:00', 'Z'),
+            'seats': '3', 'vehicle': str(driver.vehicles.first().id), 'price': '25.00',
+            'origin_lat': '45.42', 'origin_lng': '-75.69',
+            'destination_lat': '46.09', 'destination_lng': '-64.78',
+            'stop_type': ['pickup'],
+        }
+        payload.update(overrides)
+        c = Client()
+        c.login(username='qc_driver@example.com', password='TestPass123')
+        return c.post(reverse('post-ride'), payload)
+
+    def test_ride_through_quebec_allowed(self):
+        resp = self._post_ride()
+        self.assertEqual(resp.status_code, 302)
+        self.assertTrue(Rides.objects.filter(destination='Moncton, NB').exists())
+
+    def test_quebec_pickup_rejected(self):
+        resp = self._post_ride(origin='Gatineau, QC', origin_lat='45.43', origin_lng='-75.71')
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.context['errors']['origin'],
+                         "Komüte isn't available in Quebec yet. Please choose a pickup location outside Quebec.")
+        self.assertFalse(Rides.objects.exists())
+
+    def test_quebec_drop_off_rejected(self):
+        resp = self._post_ride(destination='Quebec City, QC', destination_lat='46.81', destination_lng='-71.21')
+        self.assertIn('drop-off location outside Quebec', resp.context['errors']['destination'])
+        self.assertFalse(Rides.objects.exists())
+
+    def test_quebec_stop_rejected(self):
+        resp = self._post_ride(stop_location=['Montreal, QC'], stop_lat=['45.50'], stop_lng=['-73.57'])
+        self.assertIn('"Montreal, QC" is in Quebec', resp.context['errors']['stops'])
+        self.assertFalse(Rides.objects.exists())
+
+    def test_search_in_quebec_rejected(self):
+        make_user('qc_rider@example.com')
+        c = Client()
+        c.login(username='qc_rider@example.com', password='TestPass123')
+        resp = c.post(reverse('search-rides'), {
+            'from': 'Montreal, QC', 'origin_lat': '45.50', 'origin_lng': '-73.57',
+            'to': 'Ottawa, ON', 'dest_lat': '45.42', 'dest_lng': '-75.69',
+            'date': (timezone.localdate() + timedelta(days=1)).isoformat(),
+        })
+        self.assertIn('Quebec', resp.context['errors']['from'])
+        self.assertNotIn('to', resp.context['errors'])
+        self.assertFalse(RideSearch.objects.exists())
+
+    def test_terms_say_quebec_is_not_served(self):
+        for url in (reverse('terms-condition'), reverse('signup')):
+            self.assertContains(Client().get(url), 'not yet available in the province of Quebec', msg_prefix=url)
 
 
 class PlaceAutocompleteTests(TestCase):
@@ -2652,10 +2748,9 @@ class VerifyDriverViewGateTests(TestCase):
         self.driver = make_user('vd_driver@example.com', role='driver')
 
     def _make_verifiable(self, photo_url='/media/vehicles/v1.jpg', **vehicle_kwargs):
-        """Give self.driver a license + a vehicle with a photo, i.e. everything
-        the pre-call gates require before the outbound API call is made."""
-        self.driver.license_front_url = '/media/licenses/license_1.jpg'
-        self.driver.save(update_fields=['license_front_url'])
+        """Give self.driver a vehicle with a photo, i.e. everything the
+        pre-call gates require (besides the request's own photos) before the
+        outbound API call is made."""
         defaults = dict(
             make='Honda', model='Civic', year=2019, color='black',
             plate=f'PLT{self.driver.id}', photo_url=photo_url, vehicle_verified=False,
@@ -2666,7 +2761,7 @@ class VerifyDriverViewGateTests(TestCase):
     def _selfie_file(self):
         # A real image: the view decodes and resizes the selfie (H2).
         return {'selfie': SimpleUploadedFile('s.jpg', _jpeg_bytes(), content_type='image/jpeg'),
-                **_consent_fields()}
+                **_licence_image(), **_consent_fields()}
 
     def test_get_method_not_allowed(self):
         c = Client()
@@ -2687,20 +2782,13 @@ class VerifyDriverViewGateTests(TestCase):
         self.assertIn('license', json.loads(resp.content)['error'].lower())
 
     def test_missing_selfie_rejected(self):
-        self.driver.license_front_url = '/media/licenses/license_1.jpg'
-        self.driver.save(update_fields=['license_front_url'])
         c = Client()
         c.login(username='vd_driver@example.com', password='TestPass123')
-        # License read is mocked out so the request reaches the selfie check
-        # without touching real disk storage.
-        with patch('komute.views.open_stored_file', mock_open(read_data=b'fake-bytes')):
-            resp = c.post(reverse('verify-driver'), _consent_fields())
+        resp = c.post(reverse('verify-driver'), {**_licence_image(), **_consent_fields()})
         self.assertEqual(resp.status_code, 400)
         self.assertIn('selfie', json.loads(resp.content)['error'].lower())
 
     def test_no_vehicle_rejected(self):
-        self.driver.license_front_url = '/media/licenses/license_1.jpg'
-        self.driver.save(update_fields=['license_front_url'])
         c = Client()
         c.login(username='vd_driver@example.com', password='TestPass123')
         with patch('komute.views.open_stored_file', mock_open(read_data=b'fake-bytes')):
@@ -2709,8 +2797,6 @@ class VerifyDriverViewGateTests(TestCase):
         self.assertIn('vehicle', json.loads(resp.content)['error'].lower())
 
     def test_vehicle_without_photo_rejected(self):
-        self.driver.license_front_url = '/media/licenses/license_1.jpg'
-        self.driver.save(update_fields=['license_front_url'])
         Vehicle.objects.create(
             owner=self.driver, make='Honda', model='Civic', year=2019,
             color='black', plate='NOPHOTO1', photo_url=None,
@@ -2779,7 +2865,7 @@ class VerifyDriverViewGateTests(TestCase):
         c.login(username='vd_driver@example.com', password='TestPass123')
         with patch('komute.views.open_stored_file', mock_open(read_data=b'fake-bytes')), \
              patch('requests.post') as mock_post:
-            resp = c.post(reverse('verify-driver'), _consent_fields())
+            resp = c.post(reverse('verify-driver'), {**_licence_image(), **_consent_fields()})
         self.assertEqual(resp.status_code, 400)
         self.assertIn('selfie', json.loads(resp.content)['error'].lower())
         mock_post.assert_not_called()
@@ -2812,6 +2898,12 @@ class VerifyDriverViewGateTests(TestCase):
         vehicle.refresh_from_db()
         self.assertFalse(self.driver.driver_verified)
         self.assertFalse(vehicle.vehicle_verified)
+
+
+def _licence_image():
+    """The licence photo the verification modal sends with the selfie (it is
+    never stored, audit P-5/P-13)."""
+    return {'license_image': SimpleUploadedFile('l.jpg', _jpeg_bytes(), content_type='image/jpeg')}
 
 
 def _consent_fields():
@@ -2923,7 +3015,6 @@ class PrivateMediaTests(TestCase):
         (public / 'selfies' / f'selfie_{self.owner.id}.jpg').write_bytes(b'self')
         (public / 'vehicles' / 'vehicle_1_1.jpg').write_bytes(b'veh')
         (public / 'vehicles' / 'orphan.jpg').write_bytes(b'old')
-        self.owner.license_front_url = f'/media/licenses/license_{self.owner.id}.jpg'
         self.owner.selfie_url = self.owner.avatar_url = f'/media/selfies/selfie_{self.owner.id}.jpg'
         self.owner.save()
         vehicle = Vehicle.objects.create(
@@ -2933,12 +3024,11 @@ class PrivateMediaTests(TestCase):
 
         call_command('move_private_media', '--dry-run')
         self.owner.refresh_from_db()
-        self.assertTrue(self.owner.license_front_url.startswith('/media/'))
+        self.assertTrue(self.owner.selfie_url.startswith('/media/'))
 
         call_command('move_private_media', '--delete-orphans')
         self.owner.refresh_from_db()
         vehicle.refresh_from_db()
-        self.assertTrue(self.owner.license_front_url.startswith('/private-media/licenses/'))
         self.assertTrue(self.owner.selfie_url.startswith('/private-media/selfies/'))
         self.assertEqual(self.owner.avatar_url, self.owner.selfie_url)
         self.assertTrue(vehicle.photo_url.startswith('/private-media/vehicles/'))
@@ -2946,8 +3036,58 @@ class PrivateMediaTests(TestCase):
 
         c = Client()
         c.login(username='pm_owner@example.com', password='TestPass123')
-        self.assertEqual(b''.join(c.get(self.owner.license_front_url).streaming_content), b'lic')
+        self.assertEqual(b''.join(c.get(self.owner.selfie_url).streaming_content), b'self')
         self.assertEqual(c.get(vehicle.photo_url).status_code, 200)
+
+
+class LicenceImageMigrationTests(TransactionTestCase):
+    """Migration 0040 (audit P-5/P-13): deletes stored licence photos and
+    encrypts the licence number and province already in the database."""
+
+    def setUp(self):
+        self._tmp = tempfile.mkdtemp()
+        self._override = override_settings(PRIVATE_MEDIA_ROOT=Path(self._tmp))
+        self._override.enable()
+
+    def tearDown(self):
+        self._override.disable()
+        shutil.rmtree(self._tmp, ignore_errors=True)
+        call_command('migrate', 'komute', verbosity=0)
+
+    def test_deletes_licence_files_and_encrypts_fields(self):
+        from django.db import connection
+        from django.db.migrations.executor import MigrationExecutor
+        before, after = [('komute', '0039_set_site_domain')], [('komute', '0040_licence_image_not_stored')]
+
+        executor = MigrationExecutor(connection)
+        executor.migrate(before)
+        old_user = executor.loader.project_state(before).apps.get_model('komute', 'CustomUser')
+        licence = Path(self._tmp) / 'licenses' / '1' / 'old.jpg'
+        licence.parent.mkdir(parents=True)
+        licence.write_bytes(b'lic')
+        selfie = Path(self._tmp) / 'selfies' / '1' / 'me.jpg'
+        selfie.parent.mkdir(parents=True)
+        selfie.write_bytes(b'me')
+        user = old_user.objects.create(
+            username='mig@example.com', email='mig@example.com',
+            license_number='S1234-56789', license_province='ON',
+            license_front_url='/private-media/licenses/1/old.jpg',
+            selfie_url='/private-media/selfies/1/me.jpg',
+        )
+
+        executor = MigrationExecutor(connection)
+        executor.migrate(after)
+
+        self.assertFalse(licence.exists())
+        self.assertTrue(selfie.exists())
+        with connection.cursor() as cur:
+            cur.execute('SELECT license_number, license_province FROM users WHERE id = %s', [user.id])
+            raw_number, raw_province = cur.fetchone()
+        self.assertNotIn('56789', raw_number)
+        self.assertNotEqual(raw_province, 'ON')
+        new_user = executor.loader.project_state(after).apps.get_model('komute', 'CustomUser')
+        migrated = new_user.objects.get(id=user.id)
+        self.assertEqual((migrated.license_number, migrated.license_province), ('S1234-56789', 'ON'))
 
 
 class ImageUploadTests(TestCase):
@@ -3005,14 +3145,14 @@ class ImageUploadTests(TestCase):
     def test_too_large_photo_not_reported_as_saved(self):
         too_big = SimpleUploadedFile('huge.jpg', b'x' * (1024 * 1024 + 1), content_type='image/jpeg')
         with self.assertLogs('komute.uploads', 'WARNING') as logs:
-            msgs = self._save_profile(full_name='Renamed', license_file=too_big)
+            msgs = self._save_profile(full_name='Renamed', selfie_file=too_big)
         self.assertNotIn('Profile saved successfully.', msgs)
-        self.assertIn('License photo: File is too large (max 1 MB).', msgs)
+        self.assertIn('Profile photo: File is too large (max 1 MB).', msgs)
         self.assertIn('Your other changes were saved.', msgs)
         self.assertIn('too large', logs.output[0])
         self.user.refresh_from_db()
         self.assertEqual(self.user.full_name, 'Renamed')
-        self.assertFalse(self.user.license_front_url)
+        self.assertFalse(self.user.selfie_url)
 
     def test_unreadable_photo_not_reported_as_saved(self):
         msgs = self._save_profile(selfie_file=SimpleUploadedFile('a.heic', b'not an image', content_type='image/heic'))
@@ -3036,8 +3176,6 @@ class ImageUploadTests(TestCase):
         self.assertTrue(v2.photo_url.startswith('/private-media/vehicles/'))
 
     def _verifiable(self):
-        self.user.license_front_url = '/media/licenses/license_1.jpg'
-        self.user.save(update_fields=['license_front_url'])
         Vehicle.objects.create(owner=self.user, make='Honda', model='Civic', year=2019,
                                color='black', plate='UPV1', photo_url='/media/vehicles/v1.jpg')
 
@@ -3055,7 +3193,7 @@ class ImageUploadTests(TestCase):
         with patch('komute.views.open_stored_file', mock_open(read_data=b'fake-bytes')), \
              patch('requests.post', return_value=mock_resp) as mock_post, \
              self.assertLogs('komute.uploads', 'INFO') as logs:
-            resp = self.client.post(reverse('verify-driver'), {'selfie': selfie, **_consent_fields()})
+            resp = self.client.post(reverse('verify-driver'), {'selfie': selfie, **_licence_image(), **_consent_fields()})
         self.assertEqual(resp.status_code, 200)
         sent = base64.b64decode(mock_post.call_args.kwargs['json']['images']['selfie_base64'])
         with Image.open(io.BytesIO(sent)) as img:
@@ -3071,10 +3209,92 @@ class ImageUploadTests(TestCase):
              patch('requests.post') as mock_post:
             resp = self.client.post(reverse('verify-driver'), {
                 'selfie': SimpleUploadedFile('s.jpg', b'garbage', content_type='image/jpeg'),
-                **_consent_fields()})
+                **_licence_image(), **_consent_fields()})
         self.assertEqual(resp.status_code, 400)
         self.assertIn('Selfie', json.loads(resp.content)['error'])
         mock_post.assert_not_called()
+
+    def _verify(self, licence):
+        mock_resp = MagicMock()
+        mock_resp.json.return_value = {"decision": "REJECTED", "stages": {}, "rejection_reasons": []}
+        with patch('komute.views.open_stored_file', mock_open(read_data=b'fake-bytes')), \
+             patch('requests.post', return_value=mock_resp) as mock_post:
+            resp = self.client.post(reverse('verify-driver'), {
+                'selfie': SimpleUploadedFile('s.jpg', _jpeg_bytes(), content_type='image/jpeg'),
+                'license_image': licence, **_consent_fields()})
+        return resp, mock_post
+
+    def test_licence_photo_sent_resized_and_never_stored(self):
+        # Audit P-5/P-13: the licence photo comes with the request, goes to
+        # DL-Verification and is dropped; nothing lands in private storage.
+        from PIL import Image
+        import base64
+        self._verifiable()
+        resp, mock_post = self._verify(SimpleUploadedFile('l.jpg', self._big_jpeg(), content_type='image/jpeg'))
+        self.assertEqual(resp.status_code, 200)
+        sent = base64.b64decode(mock_post.call_args.kwargs['json']['images']['license_image_base64'])
+        with Image.open(io.BytesIO(sent)) as img:
+            self.assertEqual(img.size, (1200, 800))
+        self.assertEqual([p for p in Path(self._tmp).rglob('*') if p.is_file()], [])
+        self.assertFalse(hasattr(self.user, 'license_front_url'))
+
+    @override_settings(FILE_UPLOAD_MAX_MEMORY_SIZE=1024)
+    def test_large_licence_photo_kept_in_memory(self):
+        # Django would spill an upload over FILE_UPLOAD_MAX_MEMORY_SIZE to a
+        # temp file on disk; the verify view keeps it in memory instead.
+        from django.core.files.uploadedfile import InMemoryUploadedFile
+        self._verifiable()
+        seen = []
+        from komute.views import _resize_image as real_resize
+        def spy(file_obj, *args, **kwargs):
+            seen.append(type(file_obj))
+            return real_resize(file_obj, *args, **kwargs)
+        with patch('komute.views._resize_image', side_effect=spy):
+            resp, _ = self._verify(SimpleUploadedFile('l.jpg', self._big_jpeg(), content_type='image/jpeg'))
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(seen, [InMemoryUploadedFile, InMemoryUploadedFile])
+
+    def test_verify_still_checks_csrf(self):
+        self._verifiable()
+        c = Client(enforce_csrf_checks=True)
+        c.login(username='up_user@example.com', password='TestPass123')
+        with patch('requests.post') as mock_post:
+            resp = c.post(reverse('verify-driver'), {**_licence_image(), **_consent_fields()})
+        self.assertEqual(resp.status_code, 403)
+        mock_post.assert_not_called()
+
+    def test_unreadable_licence_photo_rejected_before_call(self):
+        self._verifiable()
+        resp, mock_post = self._verify(SimpleUploadedFile('l.jpg', b'garbage', content_type='image/jpeg'))
+        self.assertEqual(resp.status_code, 400)
+        self.assertIn('License photo', json.loads(resp.content)['error'])
+        mock_post.assert_not_called()
+
+    def test_profile_save_ignores_a_licence_file(self):
+        msgs = self._save_profile(license_file=SimpleUploadedFile('l.jpg', _jpeg_bytes(), content_type='image/jpeg'))
+        self.assertIn('Profile saved successfully.', msgs)
+        self.assertEqual([p for p in Path(self._tmp).rglob('*') if p.is_file()], [])
+
+    def test_licence_number_and_province_encrypted_in_db(self):
+        from django.db import connection
+        self.user.license_number = 'S1234-56789'
+        self.user.license_province = 'ON'
+        self.user.save(update_fields=['license_number', 'license_province'])
+        with connection.cursor() as cur:
+            cur.execute('SELECT license_number, license_province FROM users WHERE id = %s', [self.user.id])
+            raw_number, raw_province = cur.fetchone()
+        self.assertNotIn('56789', raw_number)
+        self.assertNotEqual(raw_province, 'ON')
+        self.user.refresh_from_db()
+        self.assertEqual((self.user.license_number, self.user.license_province), ('S1234-56789', 'ON'))
+
+    def test_profile_asks_for_licence_photo_in_the_verify_modal(self):
+        html = self.client.get(reverse('profile')).content.decode()
+        self.assertNotIn('name="license_file"', html)
+        self.assertIn('id="verifyLicenseStep"', html)
+        self.assertLess(html.index('id="verifyConsentStep"'), html.index('id="verifyLicenseStep"'))
+        self.assertLess(html.index('id="verifyLicenseStep"'), html.index('id="verifyCaptureStep"'))
+        self.assertIn("fd.append('license_image', license, 'verify_license.jpg')", html)
 
     @override_settings(UPLOAD_REQUEST_MAX_MB=40)
     def test_upload_too_large_page(self):
@@ -3089,6 +3309,7 @@ class ImageUploadTests(TestCase):
         self.assertIn('const UPLOAD_REQUEST_MAX_BYTES = 40 * 1024 * 1024;', html)
         self.assertIn("'vehicle_image_file_' + i", html)
         self.assertIn('shrinkImage(_verifySelfieBlob)', html)
+        self.assertIn('shrinkImage(_verifyLicenseFile)', html)
         self.assertIn('r.status === 413', html)
 
 
@@ -3529,7 +3750,8 @@ class BiometricConsentTests(TestCase):
         return c
 
     def _selfie(self):
-        return {'selfie': SimpleUploadedFile('s.jpg', _jpeg_bytes(), content_type='image/jpeg')}
+        return {'selfie': SimpleUploadedFile('s.jpg', _jpeg_bytes(), content_type='image/jpeg'),
+                **_licence_image()}
 
     def _post(self, data, on_call=None):
         mock_resp = MagicMock()
@@ -3596,8 +3818,6 @@ class BiometricConsentTests(TestCase):
 
     def test_no_record_when_request_fails_before_the_call(self):
         # No vehicle: rejected before anything is sent, so nothing to record.
-        self.driver.license_front_url = '/media/licenses/license_1.jpg'
-        self.driver.save(update_fields=['license_front_url'])
         resp, mock_post, _ = self._post({**self._selfie(), **_consent_fields()})
         self.assertEqual(resp.status_code, 400)
         mock_post.assert_not_called()
@@ -4130,6 +4350,14 @@ class AuditFixTests(TestCase):
         self.assertIn('camera=(self)', policy)
         self.assertIn('geolocation=(self)', policy)
         self.assertIn('microphone=()', policy)
+
+    def test_home_page_claims_email_not_phone_verification(self):
+        # Audit L-14: phone numbers are never verified (phone_verified is
+        # never set), so the home page mustn't say they are.
+        html = Client().get(reverse('home')).content.decode()
+        self.assertNotIn('verified with phone', html)
+        self.assertIn('has a verified email address', html)
+
     def test_purge_removes_allauth_email_addresses(self):
         from allauth.account.models import EmailAddress
         EmailAddress.objects.create(user=self.rider, email=self.rider.email, primary=True, verified=True)

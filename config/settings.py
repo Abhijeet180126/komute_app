@@ -306,13 +306,13 @@ DL_VERIFICATION_API_KEY = config('DL_VERIFICATION_API_KEY', default='')
 # Version of the biometric notice shown before the verification selfie
 # (profile.html, #verifyConsentStep). Change it whenever that text changes,
 # so each BiometricConsent row records which wording the driver agreed to.
-BIOMETRIC_NOTICE_VERSION = '2026-10-18'
+BIOMETRIC_NOTICE_VERSION = '2026-10-26'
 # Versions of the Terms & Conditions and the Privacy Policy, matching their
 # "Last updated" dates. Change one whenever that page changes: signed-in
 # users are then asked to accept again (LegalAcceptanceMiddleware), and each
 # acceptance is stored as a LegalAcceptance row.
-TERMS_VERSION   = '2026-07-09'
-PRIVACY_VERSION = '2026-07-09'
+TERMS_VERSION   = '2026-10-26'
+PRIVACY_VERSION = '2026-10-26'
 # Content-Security-Policy (komute/middleware.py, audit S-8). False sends it
 # as Report-Only: violations are logged by /csp-report/ (logger komute.csp)
 # and nothing is blocked. Set True in .env once the log shows no

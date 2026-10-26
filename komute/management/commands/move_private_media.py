@@ -7,14 +7,14 @@ from django.core.management.base import BaseCommand
 
 from komute.models import CustomUser, Vehicle
 from komute.private_media import (
-    KIND_LICENSE, KIND_SELFIE, KIND_VEHICLE, KINDS, delete_stored_file, save_private_image,
+    KIND_SELFIE, KIND_VEHICLE, KINDS, delete_stored_file, save_private_image,
 )
 
 logger = logging.getLogger(__name__)
 
+# Licence images are no longer stored (migration 0040 deleted them); any left
+# in media/licenses are unreferenced and show up as orphans below.
 USER_FIELDS = (
-    ("license_front_url", KIND_LICENSE),
-    ("license_back_url", KIND_LICENSE),
     ("selfie_url", KIND_SELFIE),
     ("avatar_url", KIND_SELFIE),
 )
