@@ -10,6 +10,7 @@
 <title>{{ page_title|default:"Komüte App – Sign Up" }}</title>
 
 <link rel="stylesheet" href="{% static 'css/fonts.css' %}">
+<link rel="stylesheet" href="{% static 'css/base.css' %}">
 
 <style>
 /* ── KOMÜTE BRAND TOKENS ── */
@@ -537,14 +538,14 @@ select.form-input {
 
     <!-- Full Name -->
     <div class="form-group">
-      <label class="form-label">
+      <label for="signupName" class="form-label">
         <svg viewBox="0 0 24 24">
           <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
           <circle cx="12" cy="7" r="4"/>
         </svg>
         Full Name
       </label>
-      <input type="text"
+      <input id="signupName" type="text"
              name="full_name"
              class="form-input"
              placeholder="John Doe"
@@ -557,14 +558,14 @@ select.form-input {
 
     <!-- Email -->
     <div class="form-group">
-      <label class="form-label">
+      <label for="signupEmail" class="form-label">
         <svg viewBox="0 0 24 24">
           <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/>
           <polyline points="22,6 12,13 2,6"/>
         </svg>
         Email Address
       </label>
-      <input type="email"
+      <input id="signupEmail" type="email"
              name="email"
              class="form-input"
              placeholder="john@example.com"
@@ -577,14 +578,14 @@ select.form-input {
 
     <!-- Phone -->
     <div class="form-group">
-      <label class="form-label">
+      <label class="form-label" for="signupPhone">
         <svg viewBox="0 0 24 24">
           <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07A19.5 19.5 0 0 1 4.69 12 19.79 19.79 0 0 1 1.62 3.38 2 2 0 0 1 3.59 1h3a2 2 0 0 1 2 1.72c.127.96.361 1.903.7 2.81a2 2 0 0 1-.45 2.11L7.91 8.56a16 16 0 0 0 6.07 6.07l.96-.96a2 2 0 0 1 2.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0 1 22 16.92z"/>
         </svg>
         Phone Number
       </label>
       <div class="phone-row">
-        <select name="country_code" class="form-input country-code-select" required>
+        <select name="country_code" class="form-input country-code-select" aria-label="Country code" required>
           <option value="" {% if not form.country_code %}selected{% endif %}>Country Code</option>
           {% for c in priority_countries %}
             <option value="{{ c.dial_code }}" {% if form.country_code == c.dial_code %}selected{% endif %}>{{ c.dial_code }} {{ c.name }}</option>
@@ -595,6 +596,7 @@ select.form-input {
           {% endfor %}
         </select>
         <input type="tel"
+               id="signupPhone"
                name="phone_number"
                class="form-input"
                placeholder="4155552671"
@@ -635,7 +637,7 @@ select.form-input {
 
     <!-- Password -->
     <div class="form-group">
-      <label class="form-label">
+      <label for="password" class="form-label">
         <svg viewBox="0 0 24 24">
           <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
           <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
@@ -665,7 +667,7 @@ select.form-input {
 
     <!-- Confirm Password -->
     <div class="form-group">
-      <label class="form-label">
+      <label for="confirm_password" class="form-label">
         <svg viewBox="0 0 24 24">
           <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
           <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
@@ -743,7 +745,7 @@ select.form-input {
       </svg>
 
       <!-- DJANGO VARIABLE -->
-      {{ join_text|default:"Join 25,000+ eco-conscious commuters" }}
+      {{ join_text|default:"Join a community of eco-conscious commuters" }}
     </div>
 
   </form>
@@ -757,7 +759,7 @@ select.form-input {
 </div>
 </div><!-- /page-content -->
 <!-- ══ T&C Full-screen Modal ══ -->
-<div id="tncOverlay" class="tnc-overlay" role="dialog" aria-modal="true" aria-label="Terms and Conditions">
+<div id="tncOverlay" class="tnc-overlay" data-dialog role="dialog" aria-modal="true" aria-label="Terms and Conditions">
   <div class="tnc-modal">
 
     <!-- Header -->

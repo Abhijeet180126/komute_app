@@ -4420,6 +4420,18 @@ class AuditFixTests(TestCase):
         self.assertNotIn('verified with phone', html)
         self.assertIn('has a verified email address', html)
 
+    def test_no_made_up_usage_numbers(self):
+        # Audit L-12: the rider, tonnage and city counts were never real.
+        for name in ('home', 'login', 'signup'):
+            html = Client().get(reverse(name)).content.decode()
+            for claim in ('25,000', '1,200+ tons', '100+ Cities',
+                          'Carbon Neutral', '100% Green Energy'):
+                self.assertNotIn(claim, html, f'{claim!r} on {name}')
+        html = Client().get(reverse('home')).content.decode()
+        self.assertIn('Save up to 80 kg of CO<sub>2</sub>', html)
+        self.assertIn('for every 100 km carpooled', html)
+        self.assertIn('four passengers share one car', html)
+
     def test_purge_removes_allauth_email_addresses(self):
         from allauth.account.models import EmailAddress
         EmailAddress.objects.create(user=self.rider, email=self.rider.email, primary=True, verified=True)
@@ -4874,3 +4886,109 @@ class SiteAndEmailSubjectTests(TestCase):
     def test_allauth_subject_prefix(self):
         from allauth.account.adapter import get_adapter
         self.assertEqual(get_adapter().format_email_subject('Hello'), '[Komüte] Hello')
+
+
+class TemplateAccessibilityTests(TestCase):
+    """Audit A-1 and A-2: controls work from the keyboard and labels name their fields."""
+
+    def _templates(self):
+        import re
+        root = Path(settings.BASE_DIR) / 'templates'
+        for p in sorted(root.rglob('*.html')):
+            # Blank out comments but keep their newlines so line numbers stay right.
+            yield p.name, re.sub(r'<!--.*?-->', lambda m: '\n' * m.group().count('\n'),
+                                 p.read_text(encoding='utf-8'), flags=re.S)
+
+    def test_every_label_is_linked_to_a_control(self):
+        import re
+        bad = []
+        for name, html in self._templates():
+            for m in re.finditer(r'<label\b([^>]*)>(.*?)</label>', html, re.S):
+                if 'for=' in m.group(1) or re.search(r'<(input|select|textarea)\b', m.group(2)):
+                    continue
+                bad.append(f'{name}:{html.count(chr(10), 0, m.start()) + 1}')
+        self.assertEqual(bad, [])
+
+    def test_every_label_for_points_at_an_id(self):
+        import re
+        bad = []
+        for name, html in self._templates():
+            ids = set(re.findall(r'\bid="([^"]+)"', html))
+            bad += [f'{name}: {f}' for f in re.findall(r'\bfor="([^"]+)"', html) if f not in ids]
+        self.assertEqual(bad, [])
+
+    def test_no_click_only_divs(self):
+        # Backdrops (close on outside click), stopPropagation wrappers, the
+        # inbox cards (whose name is a real link) and the vehicle photo zone
+        # (which holds a real "Click to upload" button) are the only allowed ones.
+        import re
+        allowed = ('event.stopPropagation()', 'event.target===this', 'khCloseDrawer()', 'openChat(',
+                   ".vehicle-img-file').click()")
+        bad = []
+        for name, html in self._templates():
+            for m in re.finditer(r'<(div|span|li|td|tr|label|p|img)\b[^>]*\bonclick="([^"]*)"', html, re.S):
+                if not any(a in m.group(2) for a in allowed):
+                    bad.append(f'{name}:{html.count(chr(10), 0, m.start()) + 1}')
+        self.assertEqual(bad, [])
+
+    def test_inbox_cards_link_to_the_chat(self):
+        for name in ('driver-inbox.html', 'rider-inbox.html'):
+            html = dict(self._templates())[name]
+            self.assertIn('<a class="convo-link" href="{% url \'chat\' convo.chat_token %}">', html, name)
+
+    def test_icon_only_buttons_have_names(self):
+        # Audit A-3. connBtn gets its text from JS.
+        import re
+        bad = []
+        for name, html in self._templates():
+            for m in re.finditer(r'<(button|a)\b([^>]*)>(.*?)</\1>', html, re.S):
+                attrs, inner = m.group(2), m.group(3)
+                if 'aria-label' in attrs or 'id="connBtn"' in attrs:
+                    continue
+                text = re.sub(r'<svg.*?</svg>|<[^>]+>|&[a-z#0-9]+;|[\s×✕←→+−-]', '', inner, flags=re.S)
+                if not text:
+                    bad.append(f'{name}:{html.count(chr(10), 0, m.start()) + 1}')
+        self.assertEqual(bad, [])
+
+    def test_reduced_motion_everywhere(self):
+        # Audit A-4: base.css (linked on every page that loads fonts.css) turns
+        # animations off, and the JS confetti checks the setting itself.
+        css = (Path(settings.BASE_DIR) / 'static' / 'css' / 'base.css').read_text(encoding='utf-8')
+        self.assertIn('@media (prefers-reduced-motion: reduce)', css)
+        missing = [n for n, html in self._templates() if 'css/fonts.css' in html and 'css/base.css' not in html]
+        self.assertEqual(missing, [])
+        self.assertIn("matchMedia('(prefers-reduced-motion: reduce)')", dict(self._templates())['ride-success.html'])
+
+    def test_every_dialog_gets_keyboard_handling(self):
+        # Audit A-5: static/js/dialog.js handles everything marked data-dialog.
+        import re
+        bad = []
+        for name, html in self._templates():
+            for m in re.finditer(r'<[a-z]+\b[^>]*role="dialog"[^>]*>', html):
+                if 'data-dialog' not in m.group(0) or 'aria-modal="true"' not in m.group(0):
+                    bad.append(f'{name}: {m.group(0)[:60]}')
+        self.assertEqual(bad, [])
+        templates = dict(self._templates())
+        for name in ('header.html', 'report-block.html'):
+            self.assertIn("js/dialog.js", templates[name], name)
+        profile = templates['profile.html']
+        for modal in ('vehicleDeleteModal', 'emailModal', 'passwordModal', 'deleteAccountModal',
+                      'cameraModal', 'verifyModal', 'verifySelfieModal'):
+            self.assertRegex(profile, rf'id="{modal}" data-dialog role="dialog"', modal)
+
+    def test_no_light_grey_text(self):
+        # Audit A-6: these greys are under 3:1 on white.
+        import re
+        bad = []
+        for name, html in self._templates():
+            for m in re.finditer(r'(?<![-\w])color:\s*#(9ca3af|94a3b8|9db8a2)\b', html, re.I):
+                bad.append(f'{name}:{html.count(chr(10), 0, m.start()) + 1}')
+        self.assertEqual(bad, [])
+
+    def test_accessibility_statement(self):
+        # Audit A-7.
+        resp = Client().get(reverse('accessibility'))
+        self.assertEqual(resp.status_code, 200)
+        self.assertContains(resp, 'partially conformant')
+        self.assertContains(resp, 'support@komute.net')
+        self.assertContains(Client().get(reverse('home')), reverse('accessibility'))

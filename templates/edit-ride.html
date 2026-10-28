@@ -7,6 +7,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Komüte – Edit Ride</title>
 <link rel="stylesheet" href="{% static 'css/fonts.css' %}">
+<link rel="stylesheet" href="{% static 'css/base.css' %}">
 <style>
 :root{
   --light-bg:#E9F7EE;--contrast-lt:#D5FBE5;--brand-green:#0D7810;
@@ -73,7 +74,7 @@ body{font-family:'DM Sans',sans-serif;background:var(--light-bg);min-height:100v
 
 /* ── PREFERENCES ── */
 .pref-grid{display:flex;flex-wrap:wrap;gap:8px;}
-.pref-chip{display:inline-flex;align-items:center;gap:6px;background:var(--input-bg);border:1.5px solid var(--input-border);border-radius:50px;padding:7px 14px;font-size:.82rem;font-weight:600;color:var(--text-muted);cursor:pointer;transition:all .18s;user-select:none;}
+.pref-chip{display:inline-flex;align-items:center;gap:6px;background:var(--input-bg);border:1.5px solid var(--input-border);border-radius:50px;padding:7px 14px;font-family:inherit;font-size:.82rem;font-weight:600;color:var(--text-muted);cursor:pointer;transition:all .18s;user-select:none;}
 .pref-chip:hover{border-color:var(--brand-green);color:var(--brand-green);background:var(--contrast-lt);}
 .pref-chip.active{background:var(--contrast-lt);border-color:var(--brand-green);color:var(--brand-green);}
 .pref-chip svg{width:13px;height:13px;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;}
@@ -174,7 +175,7 @@ body{font-family:'DM Sans',sans-serif;background:var(--light-bg);min-height:100v
               <div class="stop-track"></div>
             </div>
             <div class="stop-content">
-              <label class="form-label">Starting Point <span class="required">*</span></label>
+              <label for="origin_input" class="form-label">Starting Point <span class="required">*</span></label>
               <div class="input-wrap">
                 <span class="input-icon"><svg viewBox="0 0 24 24"><circle cx="12" cy="10" r="3"/><path d="M12 2a8 8 0 0 0-8 8c0 5.25 8 12 8 12s8-6.75 8-12a8 8 0 0 0-8-8z"/></svg></span>
                 <input type="text" name="origin" id="origin_input" class="form-input" value="{{ ride.origin }}" placeholder="e.g. Downtown Toronto, ON" autocomplete="off">
@@ -196,7 +197,7 @@ body{font-family:'DM Sans',sans-serif;background:var(--light-bg);min-height:100v
               <div class="stop-dot dest-dot"></div>
             </div>
             <div class="stop-content">
-              <label class="form-label">Final Destination <span class="required">*</span></label>
+              <label for="destination_input" class="form-label">Final Destination <span class="required">*</span></label>
               <div class="input-wrap">
                 <span class="input-icon"><svg viewBox="0 0 24 24"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg></span>
                 <input type="text" name="destination" id="destination_input" class="form-input" value="{{ ride.destination }}" placeholder="e.g. Mississauga, ON" autocomplete="off">
@@ -225,18 +226,18 @@ body{font-family:'DM Sans',sans-serif;background:var(--light-bg);min-height:100v
 
       <div class="form-grid-2" style="margin-top:18px">
         <div class="form-group">
-          <label class="form-label">Date <span class="required">*</span></label>
+          <label for="depart_date_display" class="form-label">Date <span class="required">*</span></label>
           <div class="input-wrap">
             <span class="input-icon"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg></span>
             <input type="text" id="depart_date_display" class="form-input" placeholder="MM-DD-YYYY" maxlength="10" inputmode="numeric" autocomplete="off" oninput="autoDateFmt(this,'depart_date')">
             <input type="hidden" name="date" id="depart_date">
-            <input type="date" class="date-picker-native" id="depart_date_picker" tabindex="-1" min="{% now 'Y-m-d' %}"
+            <input type="date" class="date-picker-native" aria-label="Choose a date from the calendar" id="depart_date_picker" tabindex="-1" min="{% now 'Y-m-d' %}"
               onchange="pickNativeDate(this,'depart_date_display','depart_date')">
           </div>
           {% if errors.date %}<span class="form-error">{{ errors.date }}</span>{% endif %}
         </div>
         <div class="form-group">
-          <label class="form-label">Departure Time <span class="required">*</span></label>
+          <label for="depart_time" class="form-label">Departure Time <span class="required">*</span></label>
           <div class="input-wrap">
             <span class="input-icon"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg></span>
             <input type="time" name="depart_time" id="depart_time" class="form-input">
@@ -257,10 +258,10 @@ body{font-family:'DM Sans',sans-serif;background:var(--light-bg);min-height:100v
     <div class="section-body">
 
       <div class="form-group" style="margin-bottom:18px">
-        <label class="form-label">Vehicle</label>
+        <label for="rideVehicle" class="form-label">Vehicle</label>
         <div class="input-wrap">
           <span class="input-icon"><svg viewBox="0 0 24 24"><rect x="1" y="3" width="15" height="13" rx="2"/><polygon points="16 8 20 8 23 11 23 16 16 16 16 8"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></svg></span>
-          <select name="vehicle" class="form-select">
+          <select id="rideVehicle" name="vehicle" class="form-select">
             {% for v in vehicles %}
             <option value="{{ v.id }}" {% if ride.vehicle_id == v.id %}selected{% endif %}>
               {{ v.year }} {{ v.make }} {{ v.model }} ({{ v.plate }})
@@ -272,28 +273,28 @@ body{font-family:'DM Sans',sans-serif;background:var(--light-bg);min-height:100v
 
       <div class="form-grid-3">
         <div class="form-group">
-          <label class="form-label">Available Seats <span class="required">*</span></label>
+          <span class="form-label" id="seatsLabel">Available Seats <span class="required">*</span></span>
           <input type="hidden" name="seats" id="seatInput" value="{{ ride.seats_total }}">
-          <div class="seat-counter">
-            <button type="button" class="seat-btn" onclick="changeSeat(-1)">−</button>
-            <div class="seat-display" id="seatDisplay">{{ ride.seats_total }}</div>
-            <button type="button" class="seat-btn" onclick="changeSeat(1)">+</button>
+          <div class="seat-counter" role="group" aria-labelledby="seatsLabel">
+            <button type="button" class="seat-btn" aria-label="Fewer seats" onclick="changeSeat(-1)">−</button>
+            <div class="seat-display" id="seatDisplay" aria-live="polite">{{ ride.seats_total }}</div>
+            <button type="button" class="seat-btn" aria-label="More seats" onclick="changeSeat(1)">+</button>
           </div>
           {% if errors.seats %}<span class="form-error">{{ errors.seats }}</span>{% endif %}
         </div>
         <div class="form-group">
-          <label class="form-label">Price per Seat (CAD) <span class="required">*</span></label>
+          <label for="ridePrice" class="form-label">Price per Seat (CAD) <span class="required">*</span></label>
           <div class="input-wrap price-wrap">
             <span class="price-prefix">$</span>
-            <input type="number" name="price" class="form-input" value="{{ price_display }}" placeholder="0.00" min="0.01" max="1000" step="0.5">
+            <input id="ridePrice" type="number" name="price" class="form-input" value="{{ price_display }}" placeholder="0.00" min="0.01" max="1000" step="0.5">
           </div>
           {% if errors.price %}<span class="form-error">{{ errors.price }}</span>{% endif %}
         </div>
         <div class="form-group">
-          <label class="form-label">Passenger Preference</label>
+          <label for="rideGenderPref" class="form-label">Passenger Preference</label>
           <div class="input-wrap">
             <span class="input-icon"><svg viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg></span>
-            <select name="passenger_gender_pref" class="form-select">
+            <select id="rideGenderPref" name="passenger_gender_pref" class="form-select">
               <option value="any" {% if ride.passenger_gender_pref == 'any' %}selected{% endif %}>Any</option>
               <option value="women_only" {% if ride.passenger_gender_pref == 'women_only' %}selected{% endif %}>Women Only</option>
               <option value="men_only" {% if ride.passenger_gender_pref == 'men_only' %}selected{% endif %}>Men Only</option>
@@ -313,12 +314,12 @@ body{font-family:'DM Sans',sans-serif;background:var(--light-bg);min-height:100v
     </div>
     <div class="section-body">
       <input type="hidden" name="preferences_json" id="preferencesJson" value="">
-      <div class="pref-grid" id="prefGrid">
+      <div class="pref-grid" id="prefGrid" role="group" aria-label="Ride preferences">
         {% for pref in pref_options %}
-        <div class="pref-chip" onclick="togglePref(this)" data-pref="{{ pref }}">
-          <svg viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+        <button type="button" class="pref-chip" aria-pressed="false" onclick="togglePref(this)" data-pref="{{ pref }}">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
           {{ pref }}
-        </div>
+        </button>
         {% endfor %}
       </div>
     </div>
@@ -365,6 +366,7 @@ const ACTIVE_PREFS = new Set(JSON.parse(document.getElementById('preferences-dat
 document.querySelectorAll('.pref-chip').forEach(chip => {
   if (ACTIVE_PREFS.has(chip.dataset.pref)) {
     chip.classList.add('active');
+    chip.setAttribute('aria-pressed', 'true');
     chip.querySelector('svg').innerHTML = '<polyline points="20 6 9 17 4 12"/>';
   }
 });
@@ -374,6 +376,7 @@ function togglePref(chip) {
   const pref = chip.dataset.pref;
   chip.classList.toggle('active');
   const isActive = chip.classList.contains('active');
+  chip.setAttribute('aria-pressed', isActive);
   chip.querySelector('svg').innerHTML = isActive
     ? '<polyline points="20 6 9 17 4 12"/>'
     : '<line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>';
@@ -404,7 +407,7 @@ function addStop(location='', lat='', lng='') {
       <div class="stop-content">
         <div class="stop-badge-row">
           <span class="stop-badge via-badge">Stop</span>
-          <button type="button" class="remove-stop-btn" onclick="removeStop('${id}')">
+          <button type="button" class="remove-stop-btn" aria-label="Remove stop" onclick="removeStop('${id}')">
             <svg viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
           </button>
         </div>

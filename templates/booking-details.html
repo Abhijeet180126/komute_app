@@ -7,6 +7,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Komüte – Ride Booking Details</title>
 <link rel="stylesheet" href="{% static 'css/fonts.css' %}">
+<link rel="stylesheet" href="{% static 'css/base.css' %}">
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin=""/>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
 
@@ -158,13 +159,15 @@ nav{background:var(--white);border-bottom:1px solid #d8eed9;padding:13px 36px;di
 
 /* ════ T&C + BOOK BUTTON ════ */
 .book-section{animation:fadeUp .4s .38s ease both;}
-.tc-box{display:flex;align-items:flex-start;gap:12px;background:var(--input-bg);border:1.5px solid var(--input-border);border-radius:14px;padding:16px 18px;margin-bottom:14px;cursor:pointer;transition:border-color .2s,background .2s;}
+.tc-box{position:relative;display:flex;align-items:flex-start;gap:12px;background:var(--input-bg);border:1.5px solid var(--input-border);border-radius:14px;padding:16px 18px;margin-bottom:14px;cursor:pointer;transition:border-color .2s,background .2s;}
 .tc-box:hover{border-color:var(--brand-green);background:var(--contrast-lt);}
 .tc-box.checked{border-color:var(--brand-green);background:#f0fdf4;}
 .tc-checkbox{width:20px;height:20px;border-radius:6px;border:2px solid var(--input-border);background:white;display:flex;align-items:center;justify-content:center;flex-shrink:0;margin-top:1px;transition:all .2s;}
 .tc-box.checked .tc-checkbox{background:var(--brand-green);border-color:var(--brand-green);}
 .tc-checkbox svg{width:11px;height:11px;stroke:white;fill:none;stroke-width:3;stroke-linecap:round;stroke-linejoin:round;opacity:0;transition:opacity .15s;}
 .tc-box.checked .tc-checkbox svg{opacity:1;}
+.tc-input{position:absolute;width:1px;height:1px;margin:-1px;padding:0;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0;}
+.tc-input:focus-visible + .tc-checkbox{outline:2px solid var(--brand-green);outline-offset:2px;}
 .tc-text{font-size:.84rem;color:var(--text-muted);line-height:1.55;}
 .tc-text a{color:var(--brand-green);font-weight:600;text-decoration:underline;}
 .btn-book{
@@ -293,7 +296,7 @@ nav{background:var(--white);border-bottom:1px solid #d8eed9;padding:13px 36px;di
     </div>
     <form method="post" action="{% url 'logout' %}" style="margin:0">
       {% csrf_token %}
-      <button type="submit" class="logout-btn" title="Logout">
+      <button type="submit" class="logout-btn" title="Logout" aria-label="Log out">
         <svg viewBox="0 0 24 24"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
       </button>
     </form>
@@ -525,9 +528,9 @@ nav{background:var(--white);border-bottom:1px solid #d8eed9;padding:13px 36px;di
         <div class="price-row">
           <span>Seats</span>
           <div class="seat-selector">
-            <button class="seat-btn" onclick="changeSeat(-1)">−</button>
+            <button class="seat-btn" aria-label="Fewer seats" onclick="changeSeat(-1)">−</button>
             <div class="seat-display" id="seatDisplay">1</div>
-            <button class="seat-btn" onclick="changeSeat(1)">+</button>
+            <button class="seat-btn" aria-label="More seats" onclick="changeSeat(1)">+</button>
           </div>
         </div>
         <div class="price-row">
@@ -573,15 +576,16 @@ nav{background:var(--white);border-bottom:1px solid #d8eed9;padding:13px 36px;di
       Booking confirmed!
     </div>
     {% elif ride.seats_available > 0 %}
-    <div class="tc-box" id="tcBox" onclick="toggleTC()">
-      <div class="tc-checkbox" id="tcCheck">
+    <label class="tc-box" id="tcBox">
+      <input type="checkbox" class="tc-input" id="tcInput" onchange="toggleTC()">
+      <span class="tc-checkbox" id="tcCheck" aria-hidden="true">
         <svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>
-      </div>
-      <div class="tc-text">
-        I agree to Komüte's <a href="{% url 'terms-condition' %}" onclick="event.stopPropagation()">Terms &amp; Conditions</a> and <a href="{% url 'community-guidelines' %}" onclick="event.stopPropagation()">Community Guidelines</a>.
+      </span>
+      <span class="tc-text">
+        I agree to Komüte's <a href="{% url 'terms-condition' %}">Terms &amp; Conditions</a> and <a href="{% url 'community-guidelines' %}">Community Guidelines</a>.
         I understand my seat will be held while the driver reviews my request. The driver may accept or decline. If my plans change, I will cancel as early as possible.
-      </div>
-    </div>
+      </span>
+    </label>
     <button class="btn-book" id="bookBtn" onclick="requestBooking()">
       <svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>
       Request to Book
@@ -626,7 +630,7 @@ nav{background:var(--white);border-bottom:1px solid #d8eed9;padding:13px 36px;di
 
   /* ── T&C TOGGLE ── */
   function toggleTC() {
-    tcAgreed = !tcAgreed;
+    tcAgreed = document.getElementById('tcInput').checked;
     const box = document.getElementById('tcBox');
     box.classList.toggle('checked', tcAgreed);
     const bookBtn = document.getElementById('bookBtn');
@@ -769,17 +773,17 @@ nav{background:var(--white);border-bottom:1px solid #d8eed9;padding:13px 36px;di
       iconSize: [14, 14], iconAnchor: [7, 7],
     });
 
-    L.marker([originLat, originLng], { icon: mkDot('#0D7810') })
+    L.marker([originLat, originLng], { icon: mkDot('#0D7810'), title: 'Start' })
       .addTo(map)
       .bindPopup(popupNode('{{ ride.origin|escapejs }}', 'Departure point'));
 
     stops.forEach((s, i) => {
-      L.marker([s.lat, s.lng], { icon: mkDot('#f59e0b') })
+      L.marker([s.lat, s.lng], { icon: mkDot('#f59e0b'), title: 'Stop' })
         .addTo(map)
         .bindPopup(popupNode(`Stop ${i + 1}`, s.name));
     });
 
-    L.marker([destLat, destLng], { icon: mkDot('#0C63B4') })
+    L.marker([destLat, destLng], { icon: mkDot('#0C63B4'), title: 'Destination' })
       .addTo(map)
       .bindPopup(popupNode('{{ ride.destination|escapejs }}', 'Destination'));
 

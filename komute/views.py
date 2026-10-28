@@ -2437,6 +2437,10 @@ def communityguide_view(request):
     return render(request, 'community-guidelines.html')
 
 
+def accessibility_view(request):
+    return render(request, 'accessibility.html')
+
+
 @login_required
 def accept_terms_view(request):
     """GET/POST /accept-terms/ - where LegalAcceptanceMiddleware sends a
