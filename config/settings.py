@@ -306,13 +306,13 @@ DL_VERIFICATION_API_KEY = config('DL_VERIFICATION_API_KEY', default='')
 # Version of the biometric notice shown before the verification selfie
 # (profile.html, #verifyConsentStep). Change it whenever that text changes,
 # so each BiometricConsent row records which wording the driver agreed to.
-BIOMETRIC_NOTICE_VERSION = '2026-10-26'
+BIOMETRIC_NOTICE_VERSION = '2026-10-28'
 # Versions of the Terms & Conditions and the Privacy Policy, matching their
 # "Last updated" dates. Change one whenever that page changes: signed-in
 # users are then asked to accept again (LegalAcceptanceMiddleware), and each
 # acceptance is stored as a LegalAcceptance row.
-TERMS_VERSION   = '2026-10-26'
-PRIVACY_VERSION = '2026-10-26'
+TERMS_VERSION   = '2026-10-28'
+PRIVACY_VERSION = '2026-10-28'
 # Content-Security-Policy (komute/middleware.py, audit S-8). False sends it
 # as Report-Only: violations are logged by /csp-report/ (logger komute.csp)
 # and nothing is blocked. Set True in .env once the log shows no
@@ -383,6 +383,10 @@ RATE_LIMITS = {
                                config('RATE_LIMIT_DELETE_ACCOUNT_EMAIL_WINDOW', default=3600, cast=int)),
     'report-user':           (config('RATE_LIMIT_REPORT_USER_MAX',           default=10,  cast=int),
                                config('RATE_LIMIT_REPORT_USER_WINDOW',        default=3600, cast=int)),
+    # "Download my data" on the profile (audit P-9): builds a full export, so
+    # a handful per hour per account is plenty.
+    'data-export':           (config('RATE_LIMIT_DATA_EXPORT_MAX',           default=5,   cast=int),
+                               config('RATE_LIMIT_DATA_EXPORT_WINDOW',        default=3600, cast=int)),
     # CSP violation reports (/csp-report/). One page view can send several;
     # past the cap they're dropped, so the log can't be flooded.
     'csp-report':            (config('RATE_LIMIT_CSP_REPORT_MAX',            default=60,  cast=int),

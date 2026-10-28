@@ -2020,7 +2020,7 @@ def reject_booking_view(request, booking_id):
 
     updated = RideBooking.objects.filter(
         id=booking.id, status=RideBooking.STATUS_REQUESTED,
-    ).update(status=RideBooking.STATUS_REJECTED)
+    ).update(status=RideBooking.STATUS_REJECTED, rejected_at=timezone.now())
     if not updated:
         return JsonResponse({'error': f'Cannot reject a booking that is already {booking.status}.'}, status=400)
     booking.status = RideBooking.STATUS_REJECTED
@@ -3839,6 +3839,152 @@ def request_delete_account_view(request):
         return JsonResponse({'error': 'Could not send confirmation email. Please try again later.'}, status=400)
 
     return JsonResponse({'message': f'A confirmation link has been sent to {user.email}. Click it to delete your account.'})
+
+
+def _iso(value):
+    return value.isoformat() if value else None
+
+
+def _ride_summary(ride):
+    return {'ride_id': encode_id(ride.id), 'from': ride.origin, 'to': ride.destination,
+            'departs_at': _iso(ride.depart_at), 'status': ride.status}
+
+
+def _build_data_export(user):
+    """Everything Komüte holds about `user`, for "Download my data" (audit P-9).
+    Other people appear only by the display name the app already shows. Left
+    out: the password hash, staff notes, and reports made about the user (the
+    policy promises reporters stay anonymous)."""
+    other = _display_name
+
+    rides = (Rides.objects.filter(driver=user).select_related('vehicle')
+             .prefetch_related('stops', 'bookings__passenger').order_by('depart_at'))
+    bookings = (RideBooking.objects.filter(passenger=user)
+                .select_related('ride__driver').order_by('booked_at'))
+    messages_qs = (Message.objects.filter(Q(sender=user) | Q(receiver=user))
+                   .select_related('sender', 'receiver').order_by('created_at'))
+
+    return {
+        'exported_at': timezone.now().isoformat(),
+        'account': {
+            'full_name': user.full_name, 'email': user.email, 'email_verified': user.email_verified,
+            'pending_email': user.pending_email, 'phone': user.phone, 'role': user.role,
+            'date_of_birth': _iso(user.dob), 'gender': user.gender, 'bio': user.bio,
+            'has_profile_photo': bool(user.avatar_url),
+            'driver_verified': user.driver_verified, 'driver_verified_at': _iso(user.driver_verified_at),
+            'licence_number': user.license_number, 'licence_province': user.license_province,
+            'licence_expiry': _iso(user.license_expiry), 'face_match_score': user.face_match_score,
+            'average_rating': user.avg_rating, 'total_rides': user.total_rides,
+            'created_at': _iso(user.created_at), 'updated_at': _iso(user.updated_at),
+        },
+        'vehicles': [
+            {'make': v.make, 'model': v.model, 'year': v.year, 'color': v.color, 'plate': v.plate,
+             'seat_capacity': v.seat_capacity, 'has_photo': bool(v.photo_url),
+             'verified': v.vehicle_verified, 'added_at': _iso(v.created_at)}
+            for v in user.vehicles.order_by('created_at')
+        ],
+        'rides_as_driver': [
+            {**_ride_summary(r), 'arrives_at': _iso(r.arrive_at),
+             'origin_coordinates': [r.origin_lat, r.origin_lng],
+             'destination_coordinates': [r.dest_lat, r.dest_lng],
+             'stops': [{'location': s.location, 'coordinates': [s.lat, s.lng]} for s in r.stops.all()],
+             'seats_total': r.seats_total, 'price_per_seat_cents': r.price_cents, 'currency': r.currency,
+             'passenger_preference': r.passenger_gender_pref, 'preferences': r.preferences_json,
+             'notes': r.notes, 'vehicle': f'{r.vehicle.make} {r.vehicle.model}' if r.vehicle else None,
+             'created_at': _iso(r.created_at), 'cancelled_at': _iso(r.cancelled_at),
+             'bookings': [{'passenger': other(b.passenger), 'seats': b.seats, 'status': b.status,
+                           'price_cents': b.agreed_price_cents, 'booked_at': _iso(b.booked_at)}
+                          for b in r.bookings.all()]}
+            for r in rides
+        ],
+        'bookings_as_passenger': [
+            {**_ride_summary(b.ride), 'driver': other(b.ride.driver), 'seats': b.seats,
+             'status': b.status, 'price_cents': b.agreed_price_cents, 'booked_at': _iso(b.booked_at),
+             'confirmed_at': _iso(b.confirmed_at), 'cancelled_at': _iso(b.cancelled_at),
+             'rejected_at': _iso(b.rejected_at), 'cancellation_reason': b.cancellation_reason}
+            for b in bookings
+        ],
+        'price_offers': [
+            {'ride_id': encode_id(o.booking.ride_id), 'price_cents': o.price_cents, 'status': o.status,
+             'made_by_you': o.proposed_by_id == user.id, 'created_at': _iso(o.created_at),
+             'responded_at': _iso(o.responded_at)}
+            for o in PriceOffer.objects.filter(Q(booking__passenger=user) | Q(booking__ride__driver=user))
+                                       .select_related('booking').order_by('created_at')
+        ],
+        'messages': [
+            {'ride_id': encode_id(m.ride_id), 'direction': 'sent' if m.sender_id == user.id else 'received',
+             'with': other(m.receiver if m.sender_id == user.id else m.sender),
+             'text': m.body, 'sent_at': _iso(m.created_at), 'read_at': _iso(m.read_at)}
+            for m in messages_qs
+        ],
+        'reviews_written': [
+            {'about': other(r.reviewee), 'rating': r.rating, 'text': r.body, 'tags': r.tags_json,
+             'subratings': r.subratings_json, 'anonymous': r.is_anonymous, 'created_at': _iso(r.created_at)}
+            for r in Review.objects.filter(reviewer=user).select_related('reviewee').order_by('created_at')
+        ],
+        'reviews_received': [
+            {'from': 'Anonymous' if r.is_anonymous or not r.reviewer else other(r.reviewer),
+             'rating': r.rating, 'text': r.body, 'tags': r.tags_json, 'subratings': r.subratings_json,
+             'created_at': _iso(r.created_at)}
+            for r in Review.objects.filter(reviewee=user).select_related('reviewer').order_by('created_at')
+        ],
+        'reports_you_made': [
+            {'about': other(r.reported), 'reason': r.reason, 'details': r.details, 'status': r.status,
+             'created_at': _iso(r.created_at)}
+            for r in UserReport.objects.filter(reporter=user).select_related('reported').order_by('created_at')
+        ],
+        'users_you_blocked': [
+            {'name': other(b.blocked), 'since': _iso(b.created_at)}
+            for b in UserBlock.objects.filter(blocker=user).select_related('blocked').order_by('created_at')
+        ],
+        'ride_searches': [
+            {'from': s.origin, 'to': s.destination, 'origin_coordinates': [s.origin_lat, s.origin_lng],
+             'destination_coordinates': [s.dest_lat, s.dest_lng], 'date': _iso(s.search_date),
+             'passengers': s.passenger_count, 'searched_at': _iso(s.created_at)}
+            for s in RideSearch.objects.filter(user=user).order_by('created_at')
+        ],
+        'ride_invites': [
+            {**_ride_summary(i.ride), 'direction': 'sent' if i.driver_id == user.id else 'received',
+             'with': other(i.passenger if i.driver_id == user.id else i.driver), 'status': i.status,
+             'sent_at': _iso(i.sent_at), 'responded_at': _iso(i.responded_at)}
+            for i in RideInvite.objects.filter(Q(driver=user) | Q(passenger=user))
+                                       .select_related('ride', 'driver', 'passenger').order_by('sent_at')
+        ],
+        'terms_acceptances': [
+            {'terms_version': a.terms_version, 'privacy_version': a.privacy_version, 'source': a.source,
+             'ip_address': a.ip_address, 'browser': a.user_agent, 'accepted_at': _iso(a.accepted_at)}
+            for a in LegalAcceptance.objects.filter(user=user).order_by('accepted_at')
+        ],
+        'biometric_consents': [
+            {'notice_version': c.notice_version, 'ip_address': c.ip_address, 'browser': c.user_agent,
+             'accepted_at': _iso(c.accepted_at)}
+            for c in BiometricConsent.objects.filter(user=user).order_by('accepted_at')
+        ],
+        'driver_verifications': [
+            {'result': v.result, 'checks': v.stage_results, 'reasons': v.reason_codes,
+             'face_score': v.face_score, 'created_at': _iso(v.created_at)}
+            for v in VerificationLog.objects.filter(user=user).order_by('created_at')
+        ],
+        'emails_sent_to_you': [
+            {'kind': e.kind, 'subject': e.subject, 'status': e.status, 'queued_at': _iso(e.created_at),
+             'sent_at': _iso(e.sent_at)}
+            for e in EmailLog.objects.filter(user=user).order_by('created_at')
+        ],
+    }
+
+
+@login_required
+@never_cache
+def download_my_data_view(request):
+    """Profile → "Download my data": the account's data as a JSON file (audit P-9)."""
+    user = request.user
+    if _rate_limited(request, 'data-export', extra_key=str(user.id), per_ip=False):
+        messages.error(request, _TOO_MANY_ATTEMPTS_MSG)
+        return redirect('profile')
+    body = json.dumps(_build_data_export(user), indent=2, ensure_ascii=False, default=str)
+    resp = HttpResponse(body, content_type='application/json; charset=utf-8')
+    resp['Content-Disposition'] = f'attachment; filename="komute-my-data-{timezone.now():%Y-%m-%d}.json"'
+    return resp
 
 
 _DELETE_ACCOUNT_SENT_MESSAGE = (

@@ -6,7 +6,7 @@ from .views import (
     create_ride_booking, my_rides_view, search_rides_view, logout_view,
     change_password_view, chat_view, send_verification_email, change_email_view,
     create_price_offer_view, respond_price_offer_view, privacy_policy_view,
-    contact_view, terms_view, communityguide_view, accessibility_view, CustomConfirmEmailView,
+    contact_view, terms_view, communityguide_view, accessibility_view, download_my_data_view, CustomConfirmEmailView,
     ride_success_view, driver_inbox_view, rider_inbox_view, verify_driver_view,
     ride_summary_view, ride_receipt_pdf_view, edit_ride_view,
     cancel_booking_view, cancel_ride_view,
@@ -61,6 +61,7 @@ urlpatterns = [
     path('privacy-policy/', privacy_policy_view, name='privacy-policy'),
     path('profile/change-email/', change_email_view, name='change-email'),
     path('profile/delete-account/', request_delete_account_view, name='request-delete-account'),
+    path('profile/my-data/', download_my_data_view, name='download-my-data'),
     # Public: Google Play's account deletion URL (ISSUES.md A2).
     path('delete-account/', delete_account_request_view, name='delete-account'),
     path('delete-account/confirm/<str:token>/', confirm_delete_account_view, name='confirm-delete-account'),

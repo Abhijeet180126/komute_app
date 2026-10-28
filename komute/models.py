@@ -471,6 +471,13 @@ class RideBooking(models.Model):
         blank=True,
     )
 
+    # When the driver rejected the request. purge_cancelled_rides deletes
+    # rejected bookings CANCELLED_RIDE_RETENTION_DAYS after this (audit P-17).
+    rejected_at = models.DateTimeField(
+        null=True,
+        blank=True,
+    )
+
     cancellation_reason = models.TextField(
         null=True,
         blank=True,

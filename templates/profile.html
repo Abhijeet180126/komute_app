@@ -948,6 +948,20 @@ nav {
   transition: opacity 0.2s, transform 0.15s;
 }
 .btn-danger:hover { opacity: 0.9; transform: translateY(-1px); }
+.btn-download-data {
+  flex-shrink: 0;
+  padding: 11px 22px;
+  border-radius: 10px;
+  border: 1.5px solid var(--input-border);
+  background: var(--light-bg);
+  color: var(--brand-green);
+  font-family: 'DM Sans', sans-serif;
+  font-size: 0.85rem;
+  font-weight: 700;
+  text-decoration: none;
+  transition: opacity 0.2s, transform 0.15s;
+}
+.btn-download-data:hover { opacity: 0.9; transform: translateY(-1px); }
 
 /* ── Vehicle Image Upload ── */
 .vehicle-image-block {
@@ -1538,7 +1552,7 @@ body.role-rider .driver-only { display: none; }
           <ul style="margin:0 0 8px;padding-left:18px;">
             <li><strong>What we collect:</strong> a selfie from your camera, a photo of your licence that you add in the next step, and a face-match score worked out from them. The score is a measurement of your facial geometry, which some laws treat as biometric information.</li>
             <li><strong>Why:</strong> only to confirm your identity before you can offer rides. We don't use it for anything else, and we never sell it.</li>
-            <li><strong>Who processes it:</strong> our identity verification service, which processes the images on our behalf under a written contract, only to produce this result.</li>
+            <li><strong>Who processes it:</strong> Komüte's own verification system, on our servers, only to produce this result. The images aren't sent to any other company.</li>
             <li><strong>How long we keep it:</strong> Komüte doesn't store the selfie or the licence photo: they are used for this check only and never saved. The face-match score is permanently deleted within 30 days of the verification decision. We keep only a pass or fail result, for up to 1 year.</li>
             <li><strong>Your choice:</strong> you don't have to agree. If you don't, you can still use Komüte as a rider, but you can't be verified as a driver. You can withdraw consent at any time by writing to <a href="mailto:privacy@komute.net">privacy@komute.net</a>; we then delete any biometric data we still hold.</li>
             <li><strong>A person can review the result:</strong> if the automated check rejects you, you can ask for a person to review it at <a href="mailto:privacy@komute.net">privacy@komute.net</a>.</li>
@@ -1547,7 +1561,7 @@ body.role-rider .driver-only { display: none; }
         </div>
         <label style="display:flex;gap:8px;align-items:flex-start;margin:12px 0 4px;font-size:13px;cursor:pointer;">
           <input type="checkbox" id="vsConsentCheck" onchange="document.getElementById('vsConsentAgreeBtn').disabled = !this.checked" style="margin-top:3px;">
-          <span>I have read this notice and I agree to Komüte and its verification service collecting and using my biometric information as described above.</span>
+          <span>I have read this notice and I agree to Komüte collecting and using my biometric information as described above.</span>
         </label>
         <p style="margin:0 0 10px;font-size:11px;color:#64748b;">Notice version {{ biometric_notice_version }}</p>
         <div style="display:flex;justify-content:center;">
@@ -1690,6 +1704,28 @@ body.role-rider .driver-only { display: none; }
       {% empty %}
       <p class="blocked-empty">You haven't blocked anyone. To block someone, use Report or Block in your chat with them, on the ride details page, or in your inbox.</p>
       {% endfor %}
+    </div>
+  </div>
+
+  <!-- ── YOUR DATA (audit P-9) ── -->
+  <div class="section-card" id="your-data">
+    <div class="section-header">
+      <div class="section-icon">
+        <svg viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+      </div>
+      <div class="section-header-text">
+        <h3>Your Data</h3>
+        <p>A copy of what Komüte holds about you</p>
+      </div>
+    </div>
+    <div class="section-body">
+      <div class="danger-zone-row">
+        <div>
+          <h4>Download my data</h4>
+          <p>A JSON file with your account details, vehicles, rides, bookings, messages, reviews, searches and other records we keep about you. Other people appear only by the name you see in the app. See our <a href="{% url 'privacy-policy' %}" target="_blank" rel="noopener">Privacy Policy</a>.</p>
+        </div>
+        <a class="btn-download-data" href="{% url 'download-my-data' %}" download>Download my data</a>
+      </div>
     </div>
   </div>
 

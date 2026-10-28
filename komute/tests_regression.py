@@ -832,6 +832,78 @@ class RetentionCommandsSmokeTests(TestCase):
         self.assertFalse(Rides.objects.filter(pk=self.cancelled_ride.pk).exists())
 
 
+class BookingAndReviewRetentionTests(TestCase):
+    """Audit P-17: cancelled and rejected bookings go after 6 months even when
+    the ride went ahead. Audit P-18: reviews go 2 years after the ride."""
+
+    def setUp(self):
+        self.driver = make_driver_with_vehicle('bk_driver@example.com')
+        self.rider = make_user('bk_rider@example.com')
+        self.long_ago = timezone.now() - timedelta(days=settings.CANCELLED_RIDE_RETENTION_DAYS + 10)
+        self.recently = timezone.now() - timedelta(days=10)
+        # A ride that went ahead, still inside its 2-year window.
+        self.ride = make_ride(self.driver, status='completed', depart_at=self.long_ago, arrive_at=self.long_ago)
+
+    def _booking(self, status, **kwargs):
+        return RideBooking.objects.create(ride=self.ride, passenger=self.rider, seats=1,
+                                          agreed_price_cents=1000, status=status, **kwargs)
+
+    def test_old_cancelled_and_rejected_bookings_are_deleted(self):
+        old_cancel = self._booking(RideBooking.STATUS_CANCELLED, cancelled_at=self.long_ago)
+        old_reject = self._booking(RideBooking.STATUS_REJECTED, rejected_at=self.long_ago)
+        new_cancel = self._booking(RideBooking.STATUS_CANCELLED, cancelled_at=self.recently)
+        new_reject = self._booking(RideBooking.STATUS_REJECTED, rejected_at=self.recently)
+        completed = self._booking(RideBooking.STATUS_COMPLETED)
+        # Rejected before rejected_at existed: falls back to booked_at.
+        legacy = self._booking(RideBooking.STATUS_REJECTED)
+        RideBooking.objects.filter(pk=legacy.pk).update(booked_at=self.long_ago)
+
+        call_command('purge_cancelled_rides')
+
+        left = set(RideBooking.objects.values_list('pk', flat=True))
+        self.assertEqual(left, {new_cancel.pk, new_reject.pk, completed.pk})
+        self.assertNotIn(old_cancel.pk, left)
+        self.assertNotIn(old_reject.pk, left)
+        self.assertTrue(Rides.objects.filter(pk=self.ride.pk).exists())
+
+    def test_rejecting_records_the_time(self):
+        ride = make_ride(self.driver)
+        booking = RideBooking.objects.create(ride=ride, passenger=self.rider, seats=1,
+                                             agreed_price_cents=2500, status=RideBooking.STATUS_REQUESTED)
+        c = Client()
+        c.force_login(self.driver)
+        resp = c.post(reverse('reject-booking', args=[encode_id(booking.id)]))
+        self.assertEqual(resp.status_code, 200, resp.content)
+        booking.refresh_from_db()
+        self.assertEqual(booking.status, RideBooking.STATUS_REJECTED)
+        self.assertIsNotNone(booking.rejected_at)
+
+    def test_reviews_go_with_the_ride_after_two_years(self):
+        cutoff_days = settings.COMPLETED_RIDE_RETENTION_DAYS
+        old = timezone.now() - timedelta(days=cutoff_days + 10)
+        old_ride = make_ride(self.driver, status='completed', depart_at=old, arrive_at=old)
+        old_booking = RideBooking.objects.create(ride=old_ride, passenger=self.rider, seats=1,
+                                                 agreed_price_cents=1000, status=RideBooking.STATUS_COMPLETED)
+        recent_booking = self._booking(RideBooking.STATUS_COMPLETED)
+        gone = Review.objects.create(booking=old_booking, reviewer=self.rider, reviewee=self.driver, rating=5)
+        kept = Review.objects.create(booking=recent_booking, reviewer=self.rider, reviewee=self.driver, rating=4)
+        # Already detached from its booking: dated by when it was written.
+        orphan_old = Review.objects.create(booking=None, reviewer=self.rider, reviewee=self.driver, rating=3)
+        Review.objects.filter(pk=orphan_old.pk).update(created_at=old)
+        orphan_new = Review.objects.create(booking=None, reviewer=self.rider, reviewee=self.driver, rating=3)
+
+        call_command('purge_completed_rides')
+
+        self.assertEqual(set(Review.objects.values_list('pk', flat=True)), {kept.pk, orphan_new.pk})
+        self.assertFalse(Review.objects.filter(pk=gone.pk).exists())
+        self.assertFalse(Rides.objects.filter(pk=old_ride.pk).exists())
+
+    def test_policy_states_both_periods(self):
+        html = Client().get(reverse('privacy-policy')).content.decode()
+        self.assertIn('bookings that were cancelled or that the driver declined:</strong> up to 6 months', html)
+        self.assertIn('<strong>Reviews:</strong> up to 2 years after the ride, then deleted.', html)
+
+
 class HashidUtilsTests(TestCase):
     def test_roundtrip(self):
         self.assertEqual(decode_id(encode_id(42)), 42)
@@ -4992,3 +5064,126 @@ class TemplateAccessibilityTests(TestCase):
         self.assertContains(resp, 'partially conformant')
         self.assertContains(resp, 'support@komute.net')
         self.assertContains(Client().get(reverse('home')), reverse('accessibility'))
+
+
+class PrivacyPolicyProcessorTests(TestCase):
+    """Audit P-7: the Privacy Policy names every outside service we use."""
+
+    # Every outside host the CSP allows, and the name the policy gives it.
+    # Adding a host to the CSP fails test_every_csp_host_is_named until the
+    # policy (section 3) and this map are updated.
+    CSP_HOSTS = {
+        'unpkg.com': 'unpkg',
+        'tile.openstreetmap.org': 'OpenStreetMap Foundation',
+        '*.tile.openstreetmap.org': 'OpenStreetMap Foundation',
+        'images.unsplash.com': 'Unsplash',
+        'photon.komoot.io': 'Photon',
+        'router.project-osrm.org': 'OSRM',
+    }
+
+    def setUp(self):
+        self.html = Client().get(reverse('privacy-policy')).content.decode()
+
+    def test_every_csp_host_is_named(self):
+        import re
+        from komute.middleware import CONTENT_SECURITY_POLICY
+        hosts = set(re.findall(r'https://([\w.*-]+)', CONTENT_SECURITY_POLICY))
+        self.assertEqual(hosts - set(self.CSP_HOSTS), set(), 'CSP host missing from CSP_HOSTS')
+        for host in hosts:
+            self.assertIn(self.CSP_HOSTS[host], self.html, host)
+
+    def test_server_side_providers_are_named(self):
+        for name in ('DigitalOcean', 'Amazon Web Services, Simple Email Service'):
+            self.assertIn(name, self.html)
+
+    def test_verification_is_described_as_in_house(self):
+        self.assertIn("Driver verification runs on KOMUTE's own servers", self.html)
+        self.assertNotIn('trusted third-party services', self.html)
+        self.assertNotIn('verification service provider', self.html)
+
+
+class LegalTextAccuracyTests(TestCase):
+    """Audit P-16: the legal pages don't promise things the site doesn't do."""
+
+    def test_no_analytics_social_sign_in_or_mobile_app_claims(self):
+        import re
+        for name in ('privacy-policy', 'terms-condition', 'signup', 'how-it-works', 'community-guidelines', 'delete-account'):
+            html = re.sub(r'<!--.*?-->', '', Client().get(reverse(name)).content.decode(), flags=re.S)
+            for claim in ('analyze usage', 'Analyze trends', 'Google or Apple', 'Google / Apple',
+                          'mobile app', 'through the app', 'use the app', 'sign-in providers'):
+                self.assertNotIn(claim, html, f'{claim!r} on {name}')
+
+    def test_cookie_section_matches_the_site(self):
+        html = Client().get(reverse('privacy-policy')).content.decode()
+        self.assertIn("We don't use analytics, advertising or tracking cookies.", html)
+
+    def test_last_updated_matches_the_versions(self):
+        for name, version in (('privacy-policy', settings.PRIVACY_VERSION), ('terms-condition', settings.TERMS_VERSION)):
+            d = date.fromisoformat(version)
+            self.assertContains(Client().get(reverse(name)), f'{d:%B} {d.day}, {d.year}', msg_prefix=name)
+
+
+class DataExportTests(TestCase):
+    """Audit P-9: "Download my data" on the profile."""
+
+    def setUp(self):
+        from django.core.cache import cache
+        cache.clear()
+        self.me = make_driver_with_vehicle('me@example.com')
+        self.me.license_number = 'LIC-12345'
+        self.me.license_province = 'ON'
+        self.me.save()
+        self.other = make_user('someone.else@example.com', full_name='Olive Other')
+        self.mine = make_ride(self.me)
+        RideBooking.objects.create(ride=self.mine, passenger=self.other, seats=1, agreed_price_cents=2500,
+                                   status=RideBooking.STATUS_CONFIRMED)
+        Message.objects.create(ride=self.mine, sender=self.other, receiver=self.me, body='See you at 8')
+        Review.objects.create(reviewer=self.other, reviewee=self.me, rating=5, body='Great', is_anonymous=True)
+        UserReport.objects.create(reporter=self.me, reported=self.other, reason='other', details='late',
+                                  staff_note='internal note')
+        UserReport.objects.create(reporter=self.other, reported=self.me, reason='other', details='secret reporter')
+        UserBlock.objects.create(blocker=self.me, blocked=self.other)
+        self.c = Client()
+        self.c.force_login(self.me)
+
+    def _export(self):
+        resp = self.c.get(reverse('download-my-data'))
+        self.assertEqual(resp.status_code, 200)
+        self.assertIn('attachment; filename="komute-my-data-', resp['Content-Disposition'])
+        return resp, json.loads(resp.content)
+
+    def test_export_contains_my_data(self):
+        _, data = self._export()
+        self.assertEqual(data['account']['email'], 'me@example.com')
+        self.assertEqual(data['account']['licence_number'], 'LIC-12345')  # decrypted: it's theirs
+        self.assertEqual(len(data['vehicles']), 1)
+        self.assertEqual(data['rides_as_driver'][0]['bookings'][0]['passenger'], 'Olive Other')
+        self.assertEqual(data['messages'][0]['text'], 'See you at 8')
+        self.assertEqual(data['messages'][0]['direction'], 'received')
+        self.assertEqual(data['reports_you_made'][0]['details'], 'late')
+        self.assertEqual(data['users_you_blocked'][0]['name'], 'Olive Other')
+        self.assertTrue(data['terms_acceptances'])
+
+    def test_export_leaks_nothing_about_others(self):
+        resp, data = self._export()
+        body = resp.content.decode()
+        self.assertNotIn('someone.else@example.com', body)   # names only, never emails
+        self.assertEqual(data['reviews_received'][0]['from'], 'Anonymous')
+        self.assertNotIn('secret reporter', body)              # reports about me stay out
+        self.assertNotIn('internal note', body)                # staff notes stay out
+        self.assertNotIn('password', body)
+
+    def test_needs_login(self):
+        resp = Client().get(reverse('download-my-data'))
+        self.assertEqual(resp.status_code, 302)
+        self.assertIn('login', resp['Location'])
+
+    def test_rate_limited(self):
+        limit, _ = settings.RATE_LIMITS['data-export']
+        for _ in range(limit):
+            self.assertEqual(self.c.get(reverse('download-my-data')).status_code, 200)
+        self.assertRedirects(self.c.get(reverse('download-my-data')), reverse('profile'), fetch_redirect_response=False)
+
+    def test_profile_and_policy_offer_it(self):
+        self.assertContains(self.c.get(reverse('profile')), reverse('download-my-data'))
+        self.assertContains(Client().get(reverse('privacy-policy')), 'Download my data</strong> on your profile page')
