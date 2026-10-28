@@ -1,0 +1,92 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Accessibility — Komüte</title>
+<link rel="stylesheet" href="{% static 'css/fonts.css' %}">
+<link rel="stylesheet" href="{% static 'css/base.css' %}">
+<style>
+  :root{
+    --brand-green:#0D7810;
+    --grad-blue:#0C63B4;
+    --grad-green:#0CB439;
+    --light-bg:#E9F7EE;
+    --card-border:#E2F0E4;
+    --text-dark:#121212;
+    --text-muted:#5A7060;
+  }
+  *{margin:0;padding:0;box-sizing:border-box}
+  body{
+    font-family:'DM Sans',sans-serif;
+    background:var(--light-bg);
+    color:var(--text-dark);
+    line-height:1.7;
+    -webkit-font-smoothing:antialiased;
+  }
+
+  .hero{
+    background:linear-gradient(135deg,var(--grad-blue),var(--grad-green));
+    color:#fff;padding:64px 24px 88px;
+  }
+  .hero-inner{max-width:860px;margin:0 auto}
+  .hero h1{font-family:'Poppins',sans-serif;font-weight:800;font-size:clamp(30px,5vw,46px);line-height:1.15;margin-bottom:12px}
+  .hero p{font-size:17px;max-width:640px;opacity:.95}
+
+  .wrap{max-width:860px;margin:-52px auto 0;padding:0 16px 80px}
+  .card{background:#fff;border:1px solid var(--card-border);border-radius:18px;padding:36px clamp(20px,5vw,44px);box-shadow:0 10px 30px rgba(13,120,16,.06)}
+  .card h2{font-family:'Poppins',sans-serif;font-size:21px;font-weight:700;color:var(--brand-green);margin:30px 0 10px}
+  .card h2:first-child{margin-top:0}
+  .card p{margin-bottom:12px}
+  .card ul{margin:0 0 14px 22px}
+  .card li{margin-bottom:6px}
+  .card a{color:var(--brand-green);font-weight:600;text-decoration:underline}
+  .updated{color:var(--text-muted);font-size:14px;margin-top:28px}
+</style>
+</head>
+<body>
+{% include 'header.html' %}
+
+<main>
+  <section class="hero">
+    <div class="hero-inner">
+      <h1>Accessibility</h1>
+      <p>We want everyone to be able to find, offer and share a ride on Komüte, including people who use a keyboard, a screen reader or other assistive technology.</p>
+    </div>
+  </section>
+
+  <div class="wrap">
+    <div class="card">
+      <h2>Our goal</h2>
+      <p>We aim to meet the Web Content Accessibility Guidelines (WCAG) 2.2 at Level AA, the standard used by the Accessibility for Ontarians with Disabilities Act (AODA) and most accessibility laws.</p>
+
+      <h2>Where we are today</h2>
+      <p>Komüte is <strong>partially conformant</strong> with WCAG 2.2 AA: most of the site meets the standard, but some parts don't yet. In October 2026 we reviewed the site and made these changes:</p>
+      <ul>
+        <li>Every button, toggle and choice on the site works with a keyboard, not just a mouse.</li>
+        <li>Every form field has a label that screen readers announce.</li>
+        <li>Buttons that show only an icon have a name a screen reader can read.</li>
+        <li>Pop-up windows keep keyboard focus inside them, close with Escape, and return you to where you were.</li>
+        <li>If your device is set to reduce motion, the site turns off its animations, including the confetti after you post a ride.</li>
+        <li>Text that was too light to read easily is darker.</li>
+      </ul>
+
+      <h2>Known limitations</h2>
+      <ul>
+        <li><strong>Maps.</strong> The route maps can't be used with a keyboard or screen reader. Every ride page also gives the start, destination and stops as text.</li>
+        <li><strong>Driver verification.</strong> Verifying as a driver needs a photo of your licence and a selfie taken with a camera. If you can't complete this step, contact us and we'll work with you.</li>
+        <li><strong>Testing.</strong> We have checked the site against WCAG ourselves, but have not yet tested it with people who use assistive technology every day. We plan to.</li>
+      </ul>
+
+      <h2>Tell us about a problem</h2>
+      <p>If something on Komüte is hard to use, or you need information in a different format, email <a href="mailto:support@komute.net?subject=Accessibility">support@komute.net</a> or use our <a href="{% url 'contact-us' %}">contact form</a>. Tell us the page and what happened, and we'll reply and help you complete what you were trying to do.</p>
+
+      <p class="updated">Last reviewed: October 28, 2026</p>
+    </div>
+  </div>
+</main>
+
+{% include 'footer.html' %}
+</body>
+</html>

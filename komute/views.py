@@ -16,6 +16,7 @@ from urllib.parse import quote, urlsplit
 from django.conf import settings
 from django.core.cache import cache
 from django.core.files.base import ContentFile
+from django.core.files.uploadhandler import MemoryFileUploadHandler
 from django.http import FileResponse, JsonResponse, HttpResponse
 from django.shortcuts import get_object_or_404, render, redirect
 from django.http import Http404
@@ -30,7 +31,7 @@ from django.utils import timezone
 from django.core.paginator import Paginator
 from django.views.decorators.cache import never_cache
 from django.views.decorators.http import require_POST
-from django.views.decorators.csrf import csrf_exempt
+from django.views.decorators.csrf import csrf_exempt, csrf_protect
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth.password_validation import validate_password
 from allauth.account.models import EmailAddress
@@ -51,6 +52,7 @@ from .notifications import booking_fingerprint, notify_bookings_changed
 from .tasks import send_later
 from . import private_media
 from .private_media import delete_stored_file, open_stored_file, save_private_image
+from .service_area import in_quebec
 
 User = get_user_model()
 logger = logging.getLogger(__name__)
@@ -390,6 +392,39 @@ _EMAIL_UNVERIFIED_MSG = (
     "your email on your profile page."
 )
 
+_DOB_MISSING_MSG = (
+    "Please add your date of birth on your profile page first. "
+    "KOMUTE is for adults aged 18 and over."
+)
+
+
+def _latest_adult_dob():
+    """The latest date of birth that is 18 today (Feb 29 -> Feb 28)."""
+    today = date.today()
+    try:
+        return today.replace(year=today.year - 18)
+    except ValueError:
+        return today.replace(year=today.year - 18, day=28)
+
+
+def _parse_dob(dob_str):
+    """(dob, error) for a submitted date of birth. Ages 18 to 100 only
+    (audit L-5); an empty value is an error, so every caller requires it."""
+    if not dob_str:
+        return None, "Date of birth is required."
+    try:
+        dob = date.fromisoformat(dob_str)
+    except ValueError:
+        return None, "Invalid date of birth."
+    today = date.today()
+    age = today.year - dob.year - ((today.month, today.day) < (dob.month, dob.day))
+    if age < 18:
+        return None, "You must be at least 18 years old."
+    if age > 100:
+        return None, "Please enter a valid date of birth (age must be 100 or under)."
+    return dob, None
+
+
 _PHONE_RE = re.compile(r'^\+?[1-9]\d{6,14}$')
 _PHONE_NUMBER_RE = re.compile(r'^\d{4,14}$')
 
@@ -405,6 +440,17 @@ def _in_us_canada(lat, lng):
         if min_lat <= lat <= max_lat and min_lon <= lng <= max_lon:
             return True
     return False
+
+
+def _service_area_error(lat, lng, kind):
+    """Why a picked point can't be used, or None. `kind` names it in the
+    message: "pickup", "drop-off" or "stop". Quebec is left out at launch
+    (audit P-11, see service_area.py)."""
+    if not _in_us_canada(lat, lng):
+        return f"We currently only support {kind} locations in the US and Canada."
+    if in_quebec(lat, lng):
+        return f"Komüte isn't available in Quebec yet. Please choose a {kind} location outside Quebec."
+    return None
 
 
 def _clean_stops(post):
@@ -429,6 +475,8 @@ def _clean_stops(post):
             return stops, f'Pick "{loc}" from the suggestions list, or remove that stop.'
         if not _in_us_canada(lat, lng):
             return stops, f'"{loc}" is outside the US and Canada. We currently only support stops there.'
+        if in_quebec(lat, lng):
+            return stops, f'"{loc}" is in Quebec. Komüte isn\'t available in Quebec yet, so please choose a stop outside Quebec.'
         stops.append({'idx': idx, 'location': loc, 'lat': lat, 'lng': lng})
     return stops, None
 
@@ -629,18 +677,20 @@ def signup_view(request):
         email            = request.POST.get("email", "").strip().lower()
         country_code     = request.POST.get("country_code", "").strip()
         phone_number     = request.POST.get("phone_number", "").strip()
+        dob_str          = request.POST.get("dob", "").strip()
         password         = request.POST.get("password", "")
         confirm_password = request.POST.get("confirm_password", "")
         agreed_to_terms  = request.POST.get("agreed_to_terms", "")
 
         form_data = {"full_name": full_name, "email": email,
                      "country_code": country_code, "phone_number": phone_number,
-                     "agreed_to_terms": agreed_to_terms}
+                     "dob": dob_str, "agreed_to_terms": agreed_to_terms}
 
         if _rate_limited(request, 'signup'):
             errors["rate_limit"] = "Too many signup attempts from this connection. Please try again later."
             priority_countries, countries = _dropdown_countries()
             return render(request, "signup.html", {"form": form_data, "errors": errors,
+                                                     "dob_max": _latest_adult_dob().isoformat(),
                                                      "priority_countries": priority_countries, "countries": countries})
 
         if not full_name:
@@ -673,6 +723,11 @@ def signup_view(request):
             if not _PHONE_RE.match(phone):
                 errors["phone_number"] = "Phone must be in E.164 format (e.g. +14155552671)."
 
+        # 18+ only (audit L-5): checked here, not first at booking.
+        dob, dob_error = _parse_dob(dob_str)
+        if dob_error:
+            errors["dob"] = dob_error
+
         if not password:
             errors["password"] = "Password is required."
         else:
@@ -698,6 +753,7 @@ def signup_view(request):
                     password=password,
                     full_name=full_name,
                     phone=phone or None,
+                    dob=dob,
                 )
                 _record_legal_acceptance(request, new_user, LegalAcceptance.SOURCE_SIGNUP)
             _send_welcome_email(request, new_user)
@@ -706,6 +762,7 @@ def signup_view(request):
 
     priority_countries, countries = _dropdown_countries()
     return render(request, "signup.html", {"form": form_data, "errors": errors, "next": next_url,
+                                             "dob_max": _latest_adult_dob().isoformat(),
                                              "priority_countries": priority_countries, "countries": countries})
 
 @never_cache
@@ -829,23 +886,10 @@ def profile_view(request):
                 if not _PHONE_RE.match(phone):
                     errors["phone_number"] = "Phone must be in E.164 format (e.g. +14155552671)."
 
-        dob = None
-        if not dob_str:
-            if role == "driver":
-                errors["dob"] = "Date of birth is required to post rides as a driver."
-        else:
-            try:
-                dob = date.fromisoformat(dob_str)
-            except ValueError:
-                errors["dob"] = "Invalid date of birth."
-
-        if dob and not errors.get("dob"):
-            today = date.today()
-            age = today.year - dob.year - ((today.month, today.day) < (dob.month, dob.day))
-            if age < 18:
-                errors["dob"] = "You must be at least 18 years old."
-            elif age > 100:
-                errors["dob"] = "Please enter a valid date of birth (age must be 100 or under)."
+        # Required for riders too: booking needs it (audit L-5).
+        dob, dob_error = _parse_dob(dob_str)
+        if dob_error:
+            errors["dob"] = dob_error
 
         license_expiry = None
         if license_expiry_str:
@@ -904,22 +948,8 @@ def profile_view(request):
                 user.license_expiry   = license_expiry
                 update_fields += ["license_number", "license_province", "license_expiry"]
 
-                license_file = request.FILES.get("license_file")
-                if license_file:
-                    try:
-                        resized = _resize_image(license_file, label=f"user={user.id} license")
-                    except ValidationError as e:
-                        image_rejected = True
-                        messages.error(request, f"License photo: {e.messages[0]}")
-                    else:
-                        stale_urls.append(user.license_front_url)
-                        user.license_front_url = save_private_image(private_media.KIND_LICENSE, user.id, resized)
-                        update_fields.append("license_front_url")
-                        if user.driver_verified:
-                            user.driver_verified  = False
-                            user.face_match_score = None
-                            update_fields += ["driver_verified", "face_match_score"]
-                            messages.warning(request, "Your driving license photo was updated. Please verify your identity again before posting rides.")
+                # The licence photo isn't saved with the profile: it is taken
+                # in the verification step and never stored (audit P-5/P-13).
 
                 if identity_changed and user.driver_verified:
                     user.driver_verified  = False
@@ -1070,7 +1100,6 @@ def profile_view(request):
         "license_number": license_number,
         "license_province": license_province,
         "license_expiry": license_expiry_str,
-        "license_front_url": user.license_front_url or "",
         "selfie_url": user.selfie_url or "",
         "avatar_url": user.avatar_url or "",
         "vehicles": vehicles,
@@ -1220,14 +1249,14 @@ def post_ride_view(request):
             errors["origin"] = "Starting point is required."
         elif origin_lat == 0 and origin_lng == 0:
             errors["origin"] = "Please pick a location from the suggestions."
-        elif not _in_us_canada(origin_lat, origin_lng):
-            errors["origin"] = "We currently only support pickup locations in the US and Canada."
+        elif area_error := _service_area_error(origin_lat, origin_lng, "pickup"):
+            errors["origin"] = area_error
         if not destination:
             errors["destination"] = "Final destination is required."
         elif dest_lat == 0 and dest_lng == 0:
             errors["destination"] = "Please pick a location from the suggestions."
-        elif not _in_us_canada(dest_lat, dest_lng):
-            errors["destination"] = "We currently only support drop-off locations in the US and Canada."
+        elif area_error := _service_area_error(dest_lat, dest_lng, "drop-off"):
+            errors["destination"] = area_error
         clean_stops, stops_error = _clean_stops(request.POST)
         if stops_error:
             errors["stops"] = stops_error
@@ -1446,10 +1475,12 @@ def search_rides_view(request):
         except (ValueError, TypeError):
             s_origin_lat = s_origin_lng = s_dest_lat = s_dest_lng = 0.0
 
-        if search_from and (s_origin_lat or s_origin_lng) and not _in_us_canada(s_origin_lat, s_origin_lng):
-            errors['from'] = 'We currently only support pickup locations in the US and Canada.'
-        if search_to and (s_dest_lat or s_dest_lng) and not _in_us_canada(s_dest_lat, s_dest_lng):
-            errors['to'] = 'We currently only support drop-off locations in the US and Canada.'
+        if search_from and (s_origin_lat or s_origin_lng):
+            if area_error := _service_area_error(s_origin_lat, s_origin_lng, 'pickup'):
+                errors['from'] = area_error
+        if search_to and (s_dest_lat or s_dest_lng):
+            if area_error := _service_area_error(s_dest_lat, s_dest_lng, 'drop-off'):
+                errors['to'] = area_error
 
     if search_performed and not errors:
         if parsed_search_date:
@@ -1668,6 +1699,9 @@ def create_ride_booking(request, ride_id):
         # the rider's address, so it must be verified (audit S-10).
         if not request.user.email_verified:
             return JsonResponse({'ok': False, 'error': _EMAIL_UNVERIFIED_MSG}, status=403)
+        # Accounts from before DOB was asked at signup (audit L-5).
+        if not request.user.dob:
+            return JsonResponse({'ok': False, 'error': _DOB_MISSING_MSG}, status=403)
         if ride.status not in ('posted', 'full') or ride.depart_at <= timezone.now():
             return JsonResponse({'ok': False, 'error': 'This ride is no longer available.'}, status=400)
         if not _gender_pref_allows(ride, request.user):
@@ -2403,6 +2437,10 @@ def communityguide_view(request):
     return render(request, 'community-guidelines.html')
 
 
+def accessibility_view(request):
+    return render(request, 'accessibility.html')
+
+
 @login_required
 def accept_terms_view(request):
     """GET/POST /accept-terms/ - where LegalAcceptanceMiddleware sends a
@@ -2497,13 +2535,13 @@ def edit_ride_view(request, ride_id):
         if not origin:      errors['origin']      = 'Starting point is required.'
         elif origin_lat == 0 and origin_lng == 0:
             errors['origin'] = 'Please pick a location from the suggestions.'
-        elif not _in_us_canada(origin_lat, origin_lng):
-            errors['origin'] = 'We currently only support pickup locations in the US and Canada.'
+        elif area_error := _service_area_error(origin_lat, origin_lng, 'pickup'):
+            errors['origin'] = area_error
         if not destination: errors['destination'] = 'Final destination is required.'
         elif dest_lat == 0 and dest_lng == 0:
             errors['destination'] = 'Please pick a location from the suggestions.'
-        elif not _in_us_canada(dest_lat, dest_lng):
-            errors['destination'] = 'We currently only support drop-off locations in the US and Canada.'
+        elif area_error := _service_area_error(dest_lat, dest_lng, 'drop-off'):
+            errors['destination'] = area_error
         clean_stops, stops_error = _clean_stops(request.POST)
         if stops_error:
             errors['stops'] = stops_error
@@ -4310,7 +4348,25 @@ def _record_biometric_consent(request, user):
     )
 
 
+class _InMemoryUploadHandler(MemoryFileUploadHandler):
+    """Keeps every uploaded file in memory whatever its size. Django's default
+    writes files over FILE_UPLOAD_MAX_MEMORY_SIZE to a temp file on disk; the
+    licence photo must never touch disk (audit P-5/P-13). Nginx's
+    client_max_body_size still caps the request."""
+    def handle_raw_input(self, *args, **kwargs):
+        self.activated = True
+
+
+@csrf_exempt
 def verify_driver_view(request):
+    # Upload handlers must be swapped before anything reads the body, and
+    # CsrfViewMiddleware reads it, so CSRF is checked inside instead.
+    request.upload_handlers = [_InMemoryUploadHandler(request)]
+    return _verify_driver_view(request)
+
+
+@csrf_protect
+def _verify_driver_view(request):
     """POST /profile/verify-driver/ - calls DL-Verification Node API and updates driver_verified."""
     try:
         import requests as http_client
@@ -4339,15 +4395,16 @@ def verify_driver_view(request):
     if request.POST.get("notice_version") != settings.BIOMETRIC_NOTICE_VERSION:
         return JsonResponse({"error": "The biometric notice has changed. Please reload the page and review it again."}, status=400)
 
-    if not user.license_front_url:
-        return JsonResponse({"error": "Please upload your driving license image first and save your profile."}, status=400)
-
+    # The licence photo comes with this request and is never written to
+    # storage: it is resized in memory, sent to DL-Verification and dropped
+    # with the request (audit P-5/P-13).
+    license_file = request.FILES.get("license_image")
+    if not license_file:
+        return JsonResponse({"error": "Please add a photo of your driving license."}, status=400)
     try:
-        with open_stored_file(user.license_front_url) as f:
-            license_bytes = f.read()
-    except Exception:
-        logger.exception("verify_driver_view: could not read license image for user %s", user.id)
-        return JsonResponse({"error": "Could not read license image. Please try again later."}, status=500)
+        license_bytes = _resize_image(license_file, label=f"user={user.id} verify-license").read()
+    except ValidationError as e:
+        return JsonResponse({"error": f"License photo: {e.messages[0]} Please choose another photo."}, status=400)
 
     # Only the selfie captured for this attempt counts. The profile photo is
     # never used: it may legitimately show the driver's vehicle instead of
@@ -4928,6 +4985,11 @@ def accept_invite_view(request, token):
     if not request.user.email_verified:
         return render(request, 'invite-detail.html', {
             'invite': invite, 'token': token, 'error': _EMAIL_UNVERIFIED_MSG,
+        })
+
+    if not request.user.dob:
+        return render(request, 'invite-detail.html', {
+            'invite': invite, 'token': token, 'error': _DOB_MISSING_MSG,
         })
 
     # The rules a normal booking follows (audit L-7/L-8): the gender

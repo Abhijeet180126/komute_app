@@ -1,6 +1,7 @@
 """
-Private storage for identity images (driver's licenses, selfies, vehicle
-photos) — ISSUES.md C1.
+Private storage for identity images (selfies, vehicle photos) — ISSUES.md C1.
+Licence photos are no longer stored (audit P-5/P-13); KIND_LICENSE stays so
+old files can still be found and deleted.
 
 These used to live under MEDIA_ROOT at guessable paths
 (licenses/license_<id>.jpg), which Nginx serves publicly at /media/.
@@ -100,7 +101,7 @@ def user_can_access(user, rel_path):
     if user.is_staff:
         return True
     url = private_url(rel_path)
-    if url in (user.license_front_url, user.license_back_url, user.selfie_url, user.avatar_url):
+    if url in (user.selfie_url, user.avatar_url):
         return True
     return user.vehicles.filter(photo_url=url).exists()
 

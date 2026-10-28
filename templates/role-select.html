@@ -6,6 +6,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Komüte App – Choose Your Journey</title>
 <link rel="stylesheet" href="{% static 'css/fonts.css' %}">
+<link rel="stylesheet" href="{% static 'css/base.css' %}">
 
 <style>
 /* ── KOMÜTE BRAND TOKENS ── */
@@ -103,7 +104,6 @@ body {
   max-width: 460px;
   box-shadow: 0 4px 24px rgba(12, 99, 180, 0.08);
   border: 2px solid transparent;
-  cursor: pointer;
   transition: border-color 0.2s, box-shadow 0.2s, transform 0.2s;
   display: flex;
   flex-direction: column;
@@ -123,11 +123,6 @@ body {
   border-color: var(--brand-green);
   box-shadow: 0 8px 32px rgba(13, 120, 16, 0.15);
   transform: translateY(-4px);
-}
-
-.role-card.selected {
-  border-color: var(--brand-green);
-  box-shadow: 0 8px 32px rgba(13, 120, 16, 0.18);
 }
 
 /* ── ICON BOX ── */
@@ -272,7 +267,7 @@ body {
     {% csrf_token %}
     {% if next %}<input type="hidden" name="next" value="{{ next }}">{% endif %}
       <!-- Driver -->
-      <div class="role-card" onclick="this.classList.toggle('selected')">
+      <div class="role-card">
         <div class="icon-box">
           <svg viewBox="0 0 24 24">
             <rect x="1" y="3" width="15" height="13" rx="2"/>
@@ -316,7 +311,7 @@ body {
   <form action="{% url 'role-select' %}" method="POST">
     {% csrf_token %}
     {% if next %}<input type="hidden" name="next" value="{{ next }}">{% endif %}
-    <div class="role-card" onclick="this.classList.toggle('selected')">
+    <div class="role-card">
       <div class="icon-box">
         <svg viewBox="0 0 24 24">
           <circle cx="12" cy="8" r="4"/>

@@ -6,6 +6,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Komüte – Leave a Review</title>
 <link rel="stylesheet" href="{% static 'css/fonts.css' %}">
+<link rel="stylesheet" href="{% static 'css/base.css' %}">
 <style>
 :root{
   --light-bg:#E9F7EE;--contrast-lt:#D5FBE5;--brand-green:#0D7810;
@@ -174,6 +175,7 @@ body{font-family:'DM Sans',sans-serif;background:var(--light-bg);min-height:100v
 /* ════ PRIVACY TOGGLE ════ */
 .privacy-row{
   display:flex;align-items:flex-start;gap:12px;
+  width:100%;text-align:left;font:inherit;color:inherit;
   padding:14px;background:var(--input-bg);border:1.5px solid var(--input-border);
   border-radius:13px;cursor:pointer;
   transition:border-color .2s;
@@ -192,6 +194,7 @@ body{font-family:'DM Sans',sans-serif;background:var(--light-bg);min-height:100v
 .toggle-switch.on{background:var(--brand-green);}
 .toggle-switch.on::after{left:20px;}
 .privacy-text{flex:1;}
+.privacy-title,.privacy-desc{display:block;}
 .privacy-title{font-family:'Poppins',sans-serif;font-weight:600;font-size:.92rem;color:var(--text-dark);margin-bottom:2px;}
 .privacy-desc{font-size:.78rem;color:var(--text-muted);line-height:1.55;}
 
@@ -411,13 +414,13 @@ body{font-family:'DM Sans',sans-serif;background:var(--light-bg);min-height:100v
 
     <!-- Privacy -->
     <div class="section-card" style="padding:18px 22px;">
-      <div class="privacy-row" onclick="togglePrivacy()">
-        <div class="toggle-switch" id="privacyToggle"></div>
-        <div class="privacy-text">
-          <div class="privacy-title">Post anonymously</div>
-          <div class="privacy-desc">Your rating still counts, but your name and photo won't be shown on the public profile.</div>
-        </div>
-      </div>
+      <button type="button" class="privacy-row" id="privacySwitch" role="switch" aria-checked="false" onclick="togglePrivacy()">
+        <span class="toggle-switch" id="privacyToggle" aria-hidden="true"></span>
+        <span class="privacy-text">
+          <span class="privacy-title">Post anonymously</span>
+          <span class="privacy-desc">Your rating still counts, but your name and photo won't be shown on the public profile.</span>
+        </span>
+      </button>
     </div>
 
     <!-- Submit -->
@@ -569,6 +572,7 @@ function insertPrompt(text){
 function togglePrivacy(){
   anonymous = !anonymous;
   document.getElementById('privacyToggle').classList.toggle('on', anonymous);
+  document.getElementById('privacySwitch').setAttribute('aria-checked', anonymous);
 }
 
 /* ══════════════════════════

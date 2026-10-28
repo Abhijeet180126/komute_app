@@ -91,7 +91,7 @@ class AuthFlowTests(TestCase):
         resp = c.post(reverse('signup'), {
             'full_name': 'Jane Doe', 'email': 'jane@example.com',
             'country_code': '+1', 'phone_number': '4155552671', 'password': 'GoodPassword1!',
-            'confirm_password': 'GoodPassword1!', 'agreed_to_terms': '1',
+            'confirm_password': 'GoodPassword1!', 'dob': '1995-01-01', 'agreed_to_terms': '1',
         })
         self.assertRedirects(resp, reverse('login'))
         self.assertTrue(CustomUser.objects.filter(email='jane@example.com').exists())
@@ -106,7 +106,7 @@ class AuthFlowTests(TestCase):
         Client(HTTP_USER_AGENT='TestBrowser/1.0').post(reverse('signup'), {
             'full_name': 'Jane Doe', 'email': 'jane@example.com',
             'country_code': '+1', 'phone_number': '4155552671', 'password': 'GoodPassword1!',
-            'confirm_password': 'GoodPassword1!', 'agreed_to_terms': '1',
+            'confirm_password': 'GoodPassword1!', 'dob': '1995-01-01', 'agreed_to_terms': '1',
         }, REMOTE_ADDR='203.0.113.9')
         acceptance = LegalAcceptance.objects.get(user__email='jane@example.com')
         self.assertEqual(acceptance.terms_version, settings.TERMS_VERSION)
@@ -121,12 +121,46 @@ class AuthFlowTests(TestCase):
             resp = Client().post(reverse('signup'), {
                 'full_name': 'Jane Doe', 'email': 'jane@example.com',
                 'country_code': '+1', 'phone_number': '4155552671', 'password': 'GoodPassword1!',
-                'confirm_password': 'GoodPassword1!', 'agreed_to_terms': value,
+                'confirm_password': 'GoodPassword1!', 'dob': '1995-01-01', 'agreed_to_terms': value,
             })
             self.assertEqual(resp.status_code, 200)
             self.assertIn('Privacy Policy', resp.context['errors']['agreed_to_terms'])
         self.assertFalse(CustomUser.objects.filter(email='jane@example.com').exists())
         self.assertFalse(LegalAcceptance.objects.exists())
+
+    def _signup(self, **overrides):
+        payload = {
+            'full_name': 'Jane Doe', 'email': 'jane@example.com',
+            'country_code': '+1', 'phone_number': '4155552671', 'password': 'GoodPassword1!',
+            'confirm_password': 'GoodPassword1!', 'dob': '1995-01-01', 'agreed_to_terms': '1',
+        }
+        payload.update(overrides)
+        return Client().post(reverse('signup'), payload)
+
+    def test_signup_saves_dob(self):
+        self._signup()
+        self.assertEqual(CustomUser.objects.get(email='jane@example.com').dob, date(1995, 1, 1))
+
+    def test_signup_requires_adult_dob(self):
+        # L-5: 18+ is enforced at signup, not first at booking.
+        today = date.today()
+        try:
+            seventeen = today.replace(year=today.year - 18) + timedelta(days=1)
+        except ValueError:  # Feb 29
+            seventeen = date(today.year - 18, 3, 1)
+        for dob, error in (('', 'required'), ('not-a-date', 'Invalid'),
+                           (seventeen.isoformat(), 'at least 18'), ('1900-01-01', '100 or under')):
+            resp = self._signup(dob=dob)
+            self.assertEqual(resp.status_code, 200, dob)
+            self.assertIn(error, resp.context['errors']['dob'], dob)
+        self.assertFalse(CustomUser.objects.filter(email='jane@example.com').exists())
+
+    def test_signup_accepts_eighteenth_birthday(self):
+        from komute.views import _latest_adult_dob
+        resp = self._signup(dob=_latest_adult_dob().isoformat())
+        self.assertRedirects(resp, reverse('login'))
+        self.assertContains(Client().get(reverse('signup')),
+                            f'max="{_latest_adult_dob().isoformat()}"')
 
     def test_signup_checkbox_names_the_privacy_policy(self):
         resp = Client().get(reverse('signup'))
@@ -807,6 +841,12 @@ class HashidUtilsTests(TestCase):
 
     def test_decode_empty_string_returns_none(self):
         self.assertIsNone(decode_id(''))
+
+    def test_uses_hashid_salt(self):
+        # Audit S-20: ids come from HASHID_SALT, not SECRET_KEY directly.
+        from hashids import Hashids
+        expected = Hashids(salt=settings.HASHID_SALT, min_length=8).encode(42)
+        self.assertEqual(encode_id(42), expected)
 
 
 class PostRideViewTests(TestCase):
@@ -2221,12 +2261,12 @@ class EditRideViewTests(TestCase):
     def _payload(self):
         depart_dt = timezone.now() + timedelta(days=2)
         return {
-            'origin': 'Kingston, ON', 'destination': 'Montreal, QC',
+            'origin': 'Kingston, ON', 'destination': 'Ottawa, ON',
             'date': depart_dt.date().isoformat(), 'depart_time': '11:00',
             'depart_utc': depart_dt.isoformat().replace('+00:00', 'Z'),
             'seats': '4', 'price': '30.00',
             'origin_lat': '44.23', 'origin_lng': '-76.48',
-            'destination_lat': '45.50', 'destination_lng': '-73.56',
+            'destination_lat': '45.42', 'destination_lng': '-75.69',
         }
 
     def test_owner_can_edit_ride(self):
@@ -2293,6 +2333,102 @@ class EditRideViewTests(TestCase):
         self.assertRedirects(resp, reverse('my-rides'))
         stop = self.ride.stops.get()
         self.assertEqual((stop.location, stop.lat, stop.lng), ('Cornwall, ON', 45.02, -74.73))
+
+    def test_quebec_destination_rejected(self):
+        # Audit P-11: Quebec is outside the service area at launch.
+        resp = self._post(destination='Montreal, QC', destination_lat='45.50', destination_lng='-73.56')
+        self.assertEqual(resp.status_code, 200)
+        self.assertIn('Quebec', resp.context['errors']['destination'])
+        self.ride.refresh_from_db()
+        self.assertNotEqual(self.ride.destination, 'Montreal, QC')
+
+
+class QuebecServiceAreaTests(TestCase):
+    """Audit P-11 / D-5: no pickups, stops or drop-offs in Quebec at launch
+    (no French Terms yet). Rides that only drive through Quebec are fine."""
+
+    def test_border_points(self):
+        from komute.service_area import in_quebec
+        points = [
+            ('Parliament Hill, Ottawa', 45.4236, -75.7009, False),
+            ('Museum of History, Gatineau', 45.4302, -75.7093, True),
+            ('Aylmer, Gatineau', 45.3945, -75.8440, True),
+            ('Orleans, Ottawa', 45.4700, -75.5150, False),
+            ('Hawkesbury, ON', 45.6080, -74.6050, False),
+            ('Grenville, QC', 45.6280, -74.6000, True),
+            ('Montreal', 45.5019, -73.5674, True),
+            ('Cornwall, ON', 45.0180, -74.7280, False),
+            ('Saint-Regis, QC', 45.0010, -74.6490, True),
+            ('Stanstead, QC', 45.0200, -72.0970, True),
+            ('Derby Line, VT', 44.9980, -72.0990, False),
+            ('Campbellton, NB', 48.0050, -66.6730, False),
+            ('Pointe-a-la-Croix, QC', 48.0180, -66.6920, True),
+            ('Edmundston, NB', 47.3730, -68.3250, False),
+            ('Quebec City', 46.8139, -71.2080, True),
+            ('Labrador City, NL', 52.9440, -66.9140, False),
+            ('Fermont, QC', 52.7920, -67.0860, True),
+            ('Toronto', 43.6532, -79.3832, False),
+            ('Iles-de-la-Madeleine', 47.3800, -61.8600, True),
+            ('Boston', 42.3601, -71.0589, False),
+        ]
+        for name, lat, lng, expected in points:
+            self.assertEqual(in_quebec(lat, lng), expected, name)
+
+    def _post_ride(self, **overrides):
+        driver = make_driver_with_vehicle('qc_driver@example.com')
+        depart_dt = timezone.now() + timedelta(days=1)
+        payload = {
+            'origin': 'Ottawa, ON', 'destination': 'Moncton, NB',
+            'date': depart_dt.date().isoformat(), 'depart_time': '10:00',
+            'depart_utc': depart_dt.isoformat().replace('+00:00', 'Z'),
+            'seats': '3', 'vehicle': str(driver.vehicles.first().id), 'price': '25.00',
+            'origin_lat': '45.42', 'origin_lng': '-75.69',
+            'destination_lat': '46.09', 'destination_lng': '-64.78',
+            'stop_type': ['pickup'],
+        }
+        payload.update(overrides)
+        c = Client()
+        c.login(username='qc_driver@example.com', password='TestPass123')
+        return c.post(reverse('post-ride'), payload)
+
+    def test_ride_through_quebec_allowed(self):
+        resp = self._post_ride()
+        self.assertEqual(resp.status_code, 302)
+        self.assertTrue(Rides.objects.filter(destination='Moncton, NB').exists())
+
+    def test_quebec_pickup_rejected(self):
+        resp = self._post_ride(origin='Gatineau, QC', origin_lat='45.43', origin_lng='-75.71')
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.context['errors']['origin'],
+                         "Komüte isn't available in Quebec yet. Please choose a pickup location outside Quebec.")
+        self.assertFalse(Rides.objects.exists())
+
+    def test_quebec_drop_off_rejected(self):
+        resp = self._post_ride(destination='Quebec City, QC', destination_lat='46.81', destination_lng='-71.21')
+        self.assertIn('drop-off location outside Quebec', resp.context['errors']['destination'])
+        self.assertFalse(Rides.objects.exists())
+
+    def test_quebec_stop_rejected(self):
+        resp = self._post_ride(stop_location=['Montreal, QC'], stop_lat=['45.50'], stop_lng=['-73.57'])
+        self.assertIn('"Montreal, QC" is in Quebec', resp.context['errors']['stops'])
+        self.assertFalse(Rides.objects.exists())
+
+    def test_search_in_quebec_rejected(self):
+        make_user('qc_rider@example.com')
+        c = Client()
+        c.login(username='qc_rider@example.com', password='TestPass123')
+        resp = c.post(reverse('search-rides'), {
+            'from': 'Montreal, QC', 'origin_lat': '45.50', 'origin_lng': '-73.57',
+            'to': 'Ottawa, ON', 'dest_lat': '45.42', 'dest_lng': '-75.69',
+            'date': (timezone.localdate() + timedelta(days=1)).isoformat(),
+        })
+        self.assertIn('Quebec', resp.context['errors']['from'])
+        self.assertNotIn('to', resp.context['errors'])
+        self.assertFalse(RideSearch.objects.exists())
+
+    def test_terms_say_quebec_is_not_served(self):
+        for url in (reverse('terms-condition'), reverse('signup')):
+            self.assertContains(Client().get(url), 'not yet available in the province of Quebec', msg_prefix=url)
 
 
 class PlaceAutocompleteTests(TestCase):
@@ -2393,6 +2529,16 @@ class ProfileVehicleTests(TestCase):
         resp = c.post(reverse('profile'), self._base_payload(dob=too_young))
         self.assertEqual(resp.status_code, 200)
         self.assertIn('dob', resp.context['errors'])
+
+    def test_rider_cannot_save_without_dob(self):
+        # L-5: riders need it too, or clearing it would undo the booking check.
+        make_user('pv_rider@example.com')
+        c = Client()
+        c.login(username='pv_rider@example.com', password='TestPass123')
+        resp = c.post(reverse('profile'), self._base_payload(role='rider', dob=''))
+        self.assertEqual(resp.status_code, 200)
+        self.assertIn('required', resp.context['errors']['dob'])
+        self.assertEqual(CustomUser.objects.get(email='pv_rider@example.com').dob, date(1995, 1, 1))
 
     def test_adult_driver_with_future_license_expiry_saves(self):
         # Regression: the profile page's shared date helpers applied the DOB
@@ -2646,10 +2792,9 @@ class VerifyDriverViewGateTests(TestCase):
         self.driver = make_user('vd_driver@example.com', role='driver')
 
     def _make_verifiable(self, photo_url='/media/vehicles/v1.jpg', **vehicle_kwargs):
-        """Give self.driver a license + a vehicle with a photo, i.e. everything
-        the pre-call gates require before the outbound API call is made."""
-        self.driver.license_front_url = '/media/licenses/license_1.jpg'
-        self.driver.save(update_fields=['license_front_url'])
+        """Give self.driver a vehicle with a photo, i.e. everything the
+        pre-call gates require (besides the request's own photos) before the
+        outbound API call is made."""
         defaults = dict(
             make='Honda', model='Civic', year=2019, color='black',
             plate=f'PLT{self.driver.id}', photo_url=photo_url, vehicle_verified=False,
@@ -2660,7 +2805,7 @@ class VerifyDriverViewGateTests(TestCase):
     def _selfie_file(self):
         # A real image: the view decodes and resizes the selfie (H2).
         return {'selfie': SimpleUploadedFile('s.jpg', _jpeg_bytes(), content_type='image/jpeg'),
-                **_consent_fields()}
+                **_licence_image(), **_consent_fields()}
 
     def test_get_method_not_allowed(self):
         c = Client()
@@ -2681,20 +2826,13 @@ class VerifyDriverViewGateTests(TestCase):
         self.assertIn('license', json.loads(resp.content)['error'].lower())
 
     def test_missing_selfie_rejected(self):
-        self.driver.license_front_url = '/media/licenses/license_1.jpg'
-        self.driver.save(update_fields=['license_front_url'])
         c = Client()
         c.login(username='vd_driver@example.com', password='TestPass123')
-        # License read is mocked out so the request reaches the selfie check
-        # without touching real disk storage.
-        with patch('komute.views.open_stored_file', mock_open(read_data=b'fake-bytes')):
-            resp = c.post(reverse('verify-driver'), _consent_fields())
+        resp = c.post(reverse('verify-driver'), {**_licence_image(), **_consent_fields()})
         self.assertEqual(resp.status_code, 400)
         self.assertIn('selfie', json.loads(resp.content)['error'].lower())
 
     def test_no_vehicle_rejected(self):
-        self.driver.license_front_url = '/media/licenses/license_1.jpg'
-        self.driver.save(update_fields=['license_front_url'])
         c = Client()
         c.login(username='vd_driver@example.com', password='TestPass123')
         with patch('komute.views.open_stored_file', mock_open(read_data=b'fake-bytes')):
@@ -2703,8 +2841,6 @@ class VerifyDriverViewGateTests(TestCase):
         self.assertIn('vehicle', json.loads(resp.content)['error'].lower())
 
     def test_vehicle_without_photo_rejected(self):
-        self.driver.license_front_url = '/media/licenses/license_1.jpg'
-        self.driver.save(update_fields=['license_front_url'])
         Vehicle.objects.create(
             owner=self.driver, make='Honda', model='Civic', year=2019,
             color='black', plate='NOPHOTO1', photo_url=None,
@@ -2773,7 +2909,7 @@ class VerifyDriverViewGateTests(TestCase):
         c.login(username='vd_driver@example.com', password='TestPass123')
         with patch('komute.views.open_stored_file', mock_open(read_data=b'fake-bytes')), \
              patch('requests.post') as mock_post:
-            resp = c.post(reverse('verify-driver'), _consent_fields())
+            resp = c.post(reverse('verify-driver'), {**_licence_image(), **_consent_fields()})
         self.assertEqual(resp.status_code, 400)
         self.assertIn('selfie', json.loads(resp.content)['error'].lower())
         mock_post.assert_not_called()
@@ -2806,6 +2942,12 @@ class VerifyDriverViewGateTests(TestCase):
         vehicle.refresh_from_db()
         self.assertFalse(self.driver.driver_verified)
         self.assertFalse(vehicle.vehicle_verified)
+
+
+def _licence_image():
+    """The licence photo the verification modal sends with the selfie (it is
+    never stored, audit P-5/P-13)."""
+    return {'license_image': SimpleUploadedFile('l.jpg', _jpeg_bytes(), content_type='image/jpeg')}
 
 
 def _consent_fields():
@@ -2843,7 +2985,7 @@ class PrivateMediaTests(TestCase):
         c = Client()
         c.login(username='pm_owner@example.com', password='TestPass123')
         resp = c.post(reverse('profile'), {
-            'full_name': 'PM Owner', 'role': 'rider',
+            'full_name': 'PM Owner', 'dob': '1995-01-01', 'role': 'rider',
             'selfie_file': SimpleUploadedFile('me.jpg', _jpeg_bytes(), content_type='image/jpeg'),
         })
         self.assertRedirects(resp, reverse('profile'))
@@ -2917,7 +3059,6 @@ class PrivateMediaTests(TestCase):
         (public / 'selfies' / f'selfie_{self.owner.id}.jpg').write_bytes(b'self')
         (public / 'vehicles' / 'vehicle_1_1.jpg').write_bytes(b'veh')
         (public / 'vehicles' / 'orphan.jpg').write_bytes(b'old')
-        self.owner.license_front_url = f'/media/licenses/license_{self.owner.id}.jpg'
         self.owner.selfie_url = self.owner.avatar_url = f'/media/selfies/selfie_{self.owner.id}.jpg'
         self.owner.save()
         vehicle = Vehicle.objects.create(
@@ -2927,12 +3068,11 @@ class PrivateMediaTests(TestCase):
 
         call_command('move_private_media', '--dry-run')
         self.owner.refresh_from_db()
-        self.assertTrue(self.owner.license_front_url.startswith('/media/'))
+        self.assertTrue(self.owner.selfie_url.startswith('/media/'))
 
         call_command('move_private_media', '--delete-orphans')
         self.owner.refresh_from_db()
         vehicle.refresh_from_db()
-        self.assertTrue(self.owner.license_front_url.startswith('/private-media/licenses/'))
         self.assertTrue(self.owner.selfie_url.startswith('/private-media/selfies/'))
         self.assertEqual(self.owner.avatar_url, self.owner.selfie_url)
         self.assertTrue(vehicle.photo_url.startswith('/private-media/vehicles/'))
@@ -2940,8 +3080,58 @@ class PrivateMediaTests(TestCase):
 
         c = Client()
         c.login(username='pm_owner@example.com', password='TestPass123')
-        self.assertEqual(b''.join(c.get(self.owner.license_front_url).streaming_content), b'lic')
+        self.assertEqual(b''.join(c.get(self.owner.selfie_url).streaming_content), b'self')
         self.assertEqual(c.get(vehicle.photo_url).status_code, 200)
+
+
+class LicenceImageMigrationTests(TransactionTestCase):
+    """Migration 0040 (audit P-5/P-13): deletes stored licence photos and
+    encrypts the licence number and province already in the database."""
+
+    def setUp(self):
+        self._tmp = tempfile.mkdtemp()
+        self._override = override_settings(PRIVATE_MEDIA_ROOT=Path(self._tmp))
+        self._override.enable()
+
+    def tearDown(self):
+        self._override.disable()
+        shutil.rmtree(self._tmp, ignore_errors=True)
+        call_command('migrate', 'komute', verbosity=0)
+
+    def test_deletes_licence_files_and_encrypts_fields(self):
+        from django.db import connection
+        from django.db.migrations.executor import MigrationExecutor
+        before, after = [('komute', '0039_set_site_domain')], [('komute', '0040_licence_image_not_stored')]
+
+        executor = MigrationExecutor(connection)
+        executor.migrate(before)
+        old_user = executor.loader.project_state(before).apps.get_model('komute', 'CustomUser')
+        licence = Path(self._tmp) / 'licenses' / '1' / 'old.jpg'
+        licence.parent.mkdir(parents=True)
+        licence.write_bytes(b'lic')
+        selfie = Path(self._tmp) / 'selfies' / '1' / 'me.jpg'
+        selfie.parent.mkdir(parents=True)
+        selfie.write_bytes(b'me')
+        user = old_user.objects.create(
+            username='mig@example.com', email='mig@example.com',
+            license_number='S1234-56789', license_province='ON',
+            license_front_url='/private-media/licenses/1/old.jpg',
+            selfie_url='/private-media/selfies/1/me.jpg',
+        )
+
+        executor = MigrationExecutor(connection)
+        executor.migrate(after)
+
+        self.assertFalse(licence.exists())
+        self.assertTrue(selfie.exists())
+        with connection.cursor() as cur:
+            cur.execute('SELECT license_number, license_province FROM users WHERE id = %s', [user.id])
+            raw_number, raw_province = cur.fetchone()
+        self.assertNotIn('56789', raw_number)
+        self.assertNotEqual(raw_province, 'ON')
+        new_user = executor.loader.project_state(after).apps.get_model('komute', 'CustomUser')
+        migrated = new_user.objects.get(id=user.id)
+        self.assertEqual((migrated.license_number, migrated.license_province), ('S1234-56789', 'ON'))
 
 
 class ImageUploadTests(TestCase):
@@ -2999,14 +3189,14 @@ class ImageUploadTests(TestCase):
     def test_too_large_photo_not_reported_as_saved(self):
         too_big = SimpleUploadedFile('huge.jpg', b'x' * (1024 * 1024 + 1), content_type='image/jpeg')
         with self.assertLogs('komute.uploads', 'WARNING') as logs:
-            msgs = self._save_profile(full_name='Renamed', license_file=too_big)
+            msgs = self._save_profile(full_name='Renamed', selfie_file=too_big)
         self.assertNotIn('Profile saved successfully.', msgs)
-        self.assertIn('License photo: File is too large (max 1 MB).', msgs)
+        self.assertIn('Profile photo: File is too large (max 1 MB).', msgs)
         self.assertIn('Your other changes were saved.', msgs)
         self.assertIn('too large', logs.output[0])
         self.user.refresh_from_db()
         self.assertEqual(self.user.full_name, 'Renamed')
-        self.assertFalse(self.user.license_front_url)
+        self.assertFalse(self.user.selfie_url)
 
     def test_unreadable_photo_not_reported_as_saved(self):
         msgs = self._save_profile(selfie_file=SimpleUploadedFile('a.heic', b'not an image', content_type='image/heic'))
@@ -3030,8 +3220,6 @@ class ImageUploadTests(TestCase):
         self.assertTrue(v2.photo_url.startswith('/private-media/vehicles/'))
 
     def _verifiable(self):
-        self.user.license_front_url = '/media/licenses/license_1.jpg'
-        self.user.save(update_fields=['license_front_url'])
         Vehicle.objects.create(owner=self.user, make='Honda', model='Civic', year=2019,
                                color='black', plate='UPV1', photo_url='/media/vehicles/v1.jpg')
 
@@ -3049,7 +3237,7 @@ class ImageUploadTests(TestCase):
         with patch('komute.views.open_stored_file', mock_open(read_data=b'fake-bytes')), \
              patch('requests.post', return_value=mock_resp) as mock_post, \
              self.assertLogs('komute.uploads', 'INFO') as logs:
-            resp = self.client.post(reverse('verify-driver'), {'selfie': selfie, **_consent_fields()})
+            resp = self.client.post(reverse('verify-driver'), {'selfie': selfie, **_licence_image(), **_consent_fields()})
         self.assertEqual(resp.status_code, 200)
         sent = base64.b64decode(mock_post.call_args.kwargs['json']['images']['selfie_base64'])
         with Image.open(io.BytesIO(sent)) as img:
@@ -3065,10 +3253,92 @@ class ImageUploadTests(TestCase):
              patch('requests.post') as mock_post:
             resp = self.client.post(reverse('verify-driver'), {
                 'selfie': SimpleUploadedFile('s.jpg', b'garbage', content_type='image/jpeg'),
-                **_consent_fields()})
+                **_licence_image(), **_consent_fields()})
         self.assertEqual(resp.status_code, 400)
         self.assertIn('Selfie', json.loads(resp.content)['error'])
         mock_post.assert_not_called()
+
+    def _verify(self, licence):
+        mock_resp = MagicMock()
+        mock_resp.json.return_value = {"decision": "REJECTED", "stages": {}, "rejection_reasons": []}
+        with patch('komute.views.open_stored_file', mock_open(read_data=b'fake-bytes')), \
+             patch('requests.post', return_value=mock_resp) as mock_post:
+            resp = self.client.post(reverse('verify-driver'), {
+                'selfie': SimpleUploadedFile('s.jpg', _jpeg_bytes(), content_type='image/jpeg'),
+                'license_image': licence, **_consent_fields()})
+        return resp, mock_post
+
+    def test_licence_photo_sent_resized_and_never_stored(self):
+        # Audit P-5/P-13: the licence photo comes with the request, goes to
+        # DL-Verification and is dropped; nothing lands in private storage.
+        from PIL import Image
+        import base64
+        self._verifiable()
+        resp, mock_post = self._verify(SimpleUploadedFile('l.jpg', self._big_jpeg(), content_type='image/jpeg'))
+        self.assertEqual(resp.status_code, 200)
+        sent = base64.b64decode(mock_post.call_args.kwargs['json']['images']['license_image_base64'])
+        with Image.open(io.BytesIO(sent)) as img:
+            self.assertEqual(img.size, (1200, 800))
+        self.assertEqual([p for p in Path(self._tmp).rglob('*') if p.is_file()], [])
+        self.assertFalse(hasattr(self.user, 'license_front_url'))
+
+    @override_settings(FILE_UPLOAD_MAX_MEMORY_SIZE=1024)
+    def test_large_licence_photo_kept_in_memory(self):
+        # Django would spill an upload over FILE_UPLOAD_MAX_MEMORY_SIZE to a
+        # temp file on disk; the verify view keeps it in memory instead.
+        from django.core.files.uploadedfile import InMemoryUploadedFile
+        self._verifiable()
+        seen = []
+        from komute.views import _resize_image as real_resize
+        def spy(file_obj, *args, **kwargs):
+            seen.append(type(file_obj))
+            return real_resize(file_obj, *args, **kwargs)
+        with patch('komute.views._resize_image', side_effect=spy):
+            resp, _ = self._verify(SimpleUploadedFile('l.jpg', self._big_jpeg(), content_type='image/jpeg'))
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(seen, [InMemoryUploadedFile, InMemoryUploadedFile])
+
+    def test_verify_still_checks_csrf(self):
+        self._verifiable()
+        c = Client(enforce_csrf_checks=True)
+        c.login(username='up_user@example.com', password='TestPass123')
+        with patch('requests.post') as mock_post:
+            resp = c.post(reverse('verify-driver'), {**_licence_image(), **_consent_fields()})
+        self.assertEqual(resp.status_code, 403)
+        mock_post.assert_not_called()
+
+    def test_unreadable_licence_photo_rejected_before_call(self):
+        self._verifiable()
+        resp, mock_post = self._verify(SimpleUploadedFile('l.jpg', b'garbage', content_type='image/jpeg'))
+        self.assertEqual(resp.status_code, 400)
+        self.assertIn('License photo', json.loads(resp.content)['error'])
+        mock_post.assert_not_called()
+
+    def test_profile_save_ignores_a_licence_file(self):
+        msgs = self._save_profile(license_file=SimpleUploadedFile('l.jpg', _jpeg_bytes(), content_type='image/jpeg'))
+        self.assertIn('Profile saved successfully.', msgs)
+        self.assertEqual([p for p in Path(self._tmp).rglob('*') if p.is_file()], [])
+
+    def test_licence_number_and_province_encrypted_in_db(self):
+        from django.db import connection
+        self.user.license_number = 'S1234-56789'
+        self.user.license_province = 'ON'
+        self.user.save(update_fields=['license_number', 'license_province'])
+        with connection.cursor() as cur:
+            cur.execute('SELECT license_number, license_province FROM users WHERE id = %s', [self.user.id])
+            raw_number, raw_province = cur.fetchone()
+        self.assertNotIn('56789', raw_number)
+        self.assertNotEqual(raw_province, 'ON')
+        self.user.refresh_from_db()
+        self.assertEqual((self.user.license_number, self.user.license_province), ('S1234-56789', 'ON'))
+
+    def test_profile_asks_for_licence_photo_in_the_verify_modal(self):
+        html = self.client.get(reverse('profile')).content.decode()
+        self.assertNotIn('name="license_file"', html)
+        self.assertIn('id="verifyLicenseStep"', html)
+        self.assertLess(html.index('id="verifyConsentStep"'), html.index('id="verifyLicenseStep"'))
+        self.assertLess(html.index('id="verifyLicenseStep"'), html.index('id="verifyCaptureStep"'))
+        self.assertIn("fd.append('license_image', license, 'verify_license.jpg')", html)
 
     @override_settings(UPLOAD_REQUEST_MAX_MB=40)
     def test_upload_too_large_page(self):
@@ -3083,6 +3353,7 @@ class ImageUploadTests(TestCase):
         self.assertIn('const UPLOAD_REQUEST_MAX_BYTES = 40 * 1024 * 1024;', html)
         self.assertIn("'vehicle_image_file_' + i", html)
         self.assertIn('shrinkImage(_verifySelfieBlob)', html)
+        self.assertIn('shrinkImage(_verifyLicenseFile)', html)
         self.assertIn('r.status === 413', html)
 
 
@@ -3523,7 +3794,8 @@ class BiometricConsentTests(TestCase):
         return c
 
     def _selfie(self):
-        return {'selfie': SimpleUploadedFile('s.jpg', _jpeg_bytes(), content_type='image/jpeg')}
+        return {'selfie': SimpleUploadedFile('s.jpg', _jpeg_bytes(), content_type='image/jpeg'),
+                **_licence_image()}
 
     def _post(self, data, on_call=None):
         mock_resp = MagicMock()
@@ -3590,8 +3862,6 @@ class BiometricConsentTests(TestCase):
 
     def test_no_record_when_request_fails_before_the_call(self):
         # No vehicle: rejected before anything is sent, so nothing to record.
-        self.driver.license_front_url = '/media/licenses/license_1.jpg'
-        self.driver.save(update_fields=['license_front_url'])
         resp, mock_post, _ = self._post({**self._selfie(), **_consent_fields()})
         self.assertEqual(resp.status_code, 400)
         mock_post.assert_not_called()
@@ -3806,6 +4076,24 @@ class AuditFixTests(TestCase):
         self.assertFalse(RideBooking.objects.filter(passenger=self.rider).exists())
         self.ride.refresh_from_db()
         self.assertEqual(self.ride.seats_available, self.ride.seats_total)
+
+    def test_missing_dob_cannot_book_or_accept_invite(self):
+        # L-5: accounts from before signup asked for a DOB.
+        from komute.views import _make_invite_token
+        CustomUser.objects.filter(pk=self.rider.pk).update(dob=None)
+        rider = self._client('au_rider@example.com')
+        for intent in ('book', 'chat'):
+            resp = rider.post(reverse('create-ride-booking', args=[encode_id(self.ride.id)]),
+                              {'seats': '1', 'intent': intent})
+            self.assertEqual(resp.status_code, 403, intent)
+            self.assertIn('date of birth', resp.json()['error'])
+
+        invite = RideInvite.objects.create(driver=self.driver, passenger=self.rider, ride=self.ride)
+        resp = rider.post(reverse('accept-invite', args=[_make_invite_token(invite.id)]))
+        self.assertContains(resp, 'date of birth')
+        invite.refresh_from_db()
+        self.assertNotEqual(invite.status, RideInvite.STATUS_ACCEPTED)
+        self.assertFalse(RideBooking.objects.filter(passenger=self.rider).exists())
 
     def test_verified_email_can_book(self):
         resp = self._client('au_rider@example.com').post(
@@ -4027,7 +4315,7 @@ class AuditFixTests(TestCase):
         resp = c.post(reverse('signup'), {
             'full_name': 'Sam Share', 'email': 'sam@example.com',
             'country_code': '+1', 'phone_number': '4155552672', 'password': 'GoodPassword1!',
-            'confirm_password': 'GoodPassword1!', 'agreed_to_terms': '1', 'next': booking_url,
+            'confirm_password': 'GoodPassword1!', 'dob': '1995-01-01', 'agreed_to_terms': '1', 'next': booking_url,
         })
         self.assertRedirects(resp, login_url, fetch_redirect_response=False)
         resp = c.post(reverse('login'), {'email': 'sam@example.com', 'password': 'GoodPassword1!',
@@ -4124,6 +4412,26 @@ class AuditFixTests(TestCase):
         self.assertIn('camera=(self)', policy)
         self.assertIn('geolocation=(self)', policy)
         self.assertIn('microphone=()', policy)
+
+    def test_home_page_claims_email_not_phone_verification(self):
+        # Audit L-14: phone numbers are never verified (phone_verified is
+        # never set), so the home page mustn't say they are.
+        html = Client().get(reverse('home')).content.decode()
+        self.assertNotIn('verified with phone', html)
+        self.assertIn('has a verified email address', html)
+
+    def test_no_made_up_usage_numbers(self):
+        # Audit L-12: the rider, tonnage and city counts were never real.
+        for name in ('home', 'login', 'signup'):
+            html = Client().get(reverse(name)).content.decode()
+            for claim in ('25,000', '1,200+ tons', '100+ Cities',
+                          'Carbon Neutral', '100% Green Energy'):
+                self.assertNotIn(claim, html, f'{claim!r} on {name}')
+        html = Client().get(reverse('home')).content.decode()
+        self.assertIn('Save up to 80 kg of CO<sub>2</sub>', html)
+        self.assertIn('for every 100 km carpooled', html)
+        self.assertIn('four passengers share one car', html)
+
     def test_purge_removes_allauth_email_addresses(self):
         from allauth.account.models import EmailAddress
         EmailAddress.objects.create(user=self.rider, email=self.rider.email, primary=True, verified=True)
@@ -4564,3 +4872,123 @@ class SelfHostedFontsTests(TestCase):
         for name in files:
             self.assertEqual((static / 'fonts' / name).read_bytes()[:4], b'wOF2', name)
         self.assertEqual(css.count('font-display: swap;'), css.count('@font-face'))
+
+
+class SiteAndEmailSubjectTests(TestCase):
+    """Audit S-18: allauth mail must not say "[example.com]"."""
+
+    def test_site_row_points_at_real_domain(self):
+        from django.contrib.sites.models import Site
+        site = Site.objects.get_current()
+        self.assertEqual(site.domain, 'komute.net')
+        self.assertEqual(site.name, 'Komüte')
+
+    def test_allauth_subject_prefix(self):
+        from allauth.account.adapter import get_adapter
+        self.assertEqual(get_adapter().format_email_subject('Hello'), '[Komüte] Hello')
+
+
+class TemplateAccessibilityTests(TestCase):
+    """Audit A-1 and A-2: controls work from the keyboard and labels name their fields."""
+
+    def _templates(self):
+        import re
+        root = Path(settings.BASE_DIR) / 'templates'
+        for p in sorted(root.rglob('*.html')):
+            # Blank out comments but keep their newlines so line numbers stay right.
+            yield p.name, re.sub(r'<!--.*?-->', lambda m: '\n' * m.group().count('\n'),
+                                 p.read_text(encoding='utf-8'), flags=re.S)
+
+    def test_every_label_is_linked_to_a_control(self):
+        import re
+        bad = []
+        for name, html in self._templates():
+            for m in re.finditer(r'<label\b([^>]*)>(.*?)</label>', html, re.S):
+                if 'for=' in m.group(1) or re.search(r'<(input|select|textarea)\b', m.group(2)):
+                    continue
+                bad.append(f'{name}:{html.count(chr(10), 0, m.start()) + 1}')
+        self.assertEqual(bad, [])
+
+    def test_every_label_for_points_at_an_id(self):
+        import re
+        bad = []
+        for name, html in self._templates():
+            ids = set(re.findall(r'\bid="([^"]+)"', html))
+            bad += [f'{name}: {f}' for f in re.findall(r'\bfor="([^"]+)"', html) if f not in ids]
+        self.assertEqual(bad, [])
+
+    def test_no_click_only_divs(self):
+        # Backdrops (close on outside click), stopPropagation wrappers, the
+        # inbox cards (whose name is a real link) and the vehicle photo zone
+        # (which holds a real "Click to upload" button) are the only allowed ones.
+        import re
+        allowed = ('event.stopPropagation()', 'event.target===this', 'khCloseDrawer()', 'openChat(',
+                   ".vehicle-img-file').click()")
+        bad = []
+        for name, html in self._templates():
+            for m in re.finditer(r'<(div|span|li|td|tr|label|p|img)\b[^>]*\bonclick="([^"]*)"', html, re.S):
+                if not any(a in m.group(2) for a in allowed):
+                    bad.append(f'{name}:{html.count(chr(10), 0, m.start()) + 1}')
+        self.assertEqual(bad, [])
+
+    def test_inbox_cards_link_to_the_chat(self):
+        for name in ('driver-inbox.html', 'rider-inbox.html'):
+            html = dict(self._templates())[name]
+            self.assertIn('<a class="convo-link" href="{% url \'chat\' convo.chat_token %}">', html, name)
+
+    def test_icon_only_buttons_have_names(self):
+        # Audit A-3. connBtn gets its text from JS.
+        import re
+        bad = []
+        for name, html in self._templates():
+            for m in re.finditer(r'<(button|a)\b([^>]*)>(.*?)</\1>', html, re.S):
+                attrs, inner = m.group(2), m.group(3)
+                if 'aria-label' in attrs or 'id="connBtn"' in attrs:
+                    continue
+                text = re.sub(r'<svg.*?</svg>|<[^>]+>|&[a-z#0-9]+;|[\s×✕←→+−-]', '', inner, flags=re.S)
+                if not text:
+                    bad.append(f'{name}:{html.count(chr(10), 0, m.start()) + 1}')
+        self.assertEqual(bad, [])
+
+    def test_reduced_motion_everywhere(self):
+        # Audit A-4: base.css (linked on every page that loads fonts.css) turns
+        # animations off, and the JS confetti checks the setting itself.
+        css = (Path(settings.BASE_DIR) / 'static' / 'css' / 'base.css').read_text(encoding='utf-8')
+        self.assertIn('@media (prefers-reduced-motion: reduce)', css)
+        missing = [n for n, html in self._templates() if 'css/fonts.css' in html and 'css/base.css' not in html]
+        self.assertEqual(missing, [])
+        self.assertIn("matchMedia('(prefers-reduced-motion: reduce)')", dict(self._templates())['ride-success.html'])
+
+    def test_every_dialog_gets_keyboard_handling(self):
+        # Audit A-5: static/js/dialog.js handles everything marked data-dialog.
+        import re
+        bad = []
+        for name, html in self._templates():
+            for m in re.finditer(r'<[a-z]+\b[^>]*role="dialog"[^>]*>', html):
+                if 'data-dialog' not in m.group(0) or 'aria-modal="true"' not in m.group(0):
+                    bad.append(f'{name}: {m.group(0)[:60]}')
+        self.assertEqual(bad, [])
+        templates = dict(self._templates())
+        for name in ('header.html', 'report-block.html'):
+            self.assertIn("js/dialog.js", templates[name], name)
+        profile = templates['profile.html']
+        for modal in ('vehicleDeleteModal', 'emailModal', 'passwordModal', 'deleteAccountModal',
+                      'cameraModal', 'verifyModal', 'verifySelfieModal'):
+            self.assertRegex(profile, rf'id="{modal}" data-dialog role="dialog"', modal)
+
+    def test_no_light_grey_text(self):
+        # Audit A-6: these greys are under 3:1 on white.
+        import re
+        bad = []
+        for name, html in self._templates():
+            for m in re.finditer(r'(?<![-\w])color:\s*#(9ca3af|94a3b8|9db8a2)\b', html, re.I):
+                bad.append(f'{name}:{html.count(chr(10), 0, m.start()) + 1}')
+        self.assertEqual(bad, [])
+
+    def test_accessibility_statement(self):
+        # Audit A-7.
+        resp = Client().get(reverse('accessibility'))
+        self.assertEqual(resp.status_code, 200)
+        self.assertContains(resp, 'partially conformant')
+        self.assertContains(resp, 'support@komute.net')
+        self.assertContains(Client().get(reverse('home')), reverse('accessibility'))

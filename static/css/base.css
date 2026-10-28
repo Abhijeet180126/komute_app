@@ -1,0 +1,15 @@
+/* Sitewide rules shared by every page. Page styles stay in each template. */
+
+/* Audit A-4: honour the "reduce motion" system setting. Animations and
+   transitions still finish (so JS waiting on animationend keeps working),
+   they just happen at once. */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    animation-delay: 0s !important;
+    transition-duration: 0.01ms !important;
+    transition-delay: 0s !important;
+    scroll-behavior: auto !important;
+  }
+}

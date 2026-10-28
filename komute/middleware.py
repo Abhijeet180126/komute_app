@@ -100,7 +100,7 @@ class LegalAcceptanceMiddleware:
     SESSION_KEY = 'legal_accepted_versions'
     EXEMPT_URL_NAMES = {
         'accept-terms', 'logout', 'terms-condition', 'privacy-policy',
-        'community-guidelines', 'contact-us', 'request-delete-account',
+        'community-guidelines', 'accessibility', 'contact-us', 'request-delete-account',
         'delete-account', 'confirm-delete-account', 'account_confirm_email',
         'private-media', 'upload-too-large', 'csp-report',
     }

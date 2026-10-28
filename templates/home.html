@@ -7,6 +7,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Komüte – Share Your Ride, Save The Planet</title>
 <link rel="stylesheet" href="{% static 'css/fonts.css' %}">
+<link rel="stylesheet" href="{% static 'css/base.css' %}">
 
 <style>
 /* ============================================================
@@ -192,6 +193,7 @@ nav {
   box-shadow: 0 2px 18px rgba(12, 99, 180, 0.09);
   animation: fadeUp 0.55s ease both;
 }
+.stat-card--wide { max-width: 560px; }
 .stat-card:nth-child(1) { animation-delay: 0.1s; }
 .stat-card:nth-child(2) { animation-delay: 0.2s; }
 .stat-card:nth-child(3) { animation-delay: 0.3s; }
@@ -218,6 +220,12 @@ nav {
 .stat-label {
   font-size: 0.875rem;
   color: var(--text-muted);
+}
+
+.stat-note {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  margin-top: 10px;
 }
 
 /* ── FEATURES ── */
@@ -514,38 +522,17 @@ footer {
 <!-- ═══ STATS ═══ -->
 <section class="stats">
 
-  <div class="stat-card">
-    <div class="stat-icon">
-      <svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-        <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" stroke="url(#gH)"/>
-        <circle cx="9" cy="7" r="4" stroke="url(#gH)"/>
-        <path d="M23 21v-2a4 4 0 0 0-3-3.87" stroke="url(#gH)"/>
-        <path d="M16 3.13a4 4 0 0 1 0 7.75" stroke="url(#gH)"/>
-      </svg>
-    </div>
-    <div class="stat-number">25,000+</div>
-    <div class="stat-label">Happy Riders</div>
-  </div>
-
-  <div class="stat-card">
+  <!-- Audit L-12: no usage numbers until we have real ones to show. -->
+  <div class="stat-card stat-card--wide">
     <div class="stat-icon">
       <svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
         <path d="M11 20A7 7 0 0 1 9.8 6.1C15.5 5 17 4.48 19 2c1 2 2 4.18 2 8 0 5.5-4.78 10-10 10z" stroke="url(#gH)"/>
         <path d="M2 21c0-3 1.85-5.36 5.08-6C9.5 14.52 12 13 13 12" stroke="url(#gH)"/>
       </svg>
     </div>
-    <div class="stat-number">1,200+ tons</div>
-    <div class="stat-label">CO<sub>2</sub> Saved</div>
-  </div>
-
-  <div class="stat-card">
-    <div class="stat-icon">
-      <svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-        <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" stroke="url(#gH)"/>
-      </svg>
-    </div>
-    <div class="stat-number">100+ Cities</div>
-    <div class="stat-label">Worldwide</div>
+    <div class="stat-number">Save up to 80 kg of CO<sub>2</sub></div>
+    <div class="stat-label">for every 100 km carpooled</div>
+    <div class="stat-note">When four passengers share one car instead of each driving alone (about 20 kg per car per 100 km).</div>
   </div>
 
 </section>
@@ -575,7 +562,7 @@ footer {
         <svg viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
       </div>
       <h3>Safe &amp; Secure</h3>
-      <p>All users are verified with phone numbers, ratings, and reviews for your peace of mind.</p>
+      <p>Everyone who posts or books a ride has a verified email address, drivers verify their identity with their licence, and ratings and reviews help you choose who to ride with.</p>
     </div>
 
   </div>
@@ -598,11 +585,11 @@ footer {
           <path d="M11 20A7 7 0 0 1 9.8 6.1C15.5 5 17 4.48 19 2c1 2 2 4.18 2 8 0 5.5-4.78 10-10 10z"/>
           <path d="M2 21c0-3 1.85-5.36 5.08-6C9.5 14.52 12 13 13 12"/>
         </svg>
-        Carbon Neutral by 2026
+        Fewer Cars on the Road
       </div>
       <div class="pill">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#0D7810" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
-        100% Green Energy
+        Cleaner Air
       </div>
       <div class="pill">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#0D7810" stroke-width="2" stroke-linecap="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>

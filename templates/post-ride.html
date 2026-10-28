@@ -7,6 +7,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Komüte – Post a Ride</title>
 <link rel="stylesheet" href="{% static 'css/fonts.css' %}">
+<link rel="stylesheet" href="{% static 'css/base.css' %}">
 
 <style>
 /* ── KOMÜTE BRAND TOKENS ── */
@@ -284,6 +285,7 @@ nav {
 /* Recurring toggle */
 .toggle-row {
   display: flex; align-items: center; justify-content: space-between;
+  width: 100%; text-align: left; font: inherit; color: inherit;
   padding: 14px 16px;
   background: var(--input-bg);
   border: 1.5px solid var(--input-border);
@@ -324,6 +326,7 @@ nav {
   font-size: 0.72rem; font-weight: 700;
   color: var(--text-muted);
   display: flex; align-items: center; justify-content: center;
+  padding: 0;
   cursor: pointer; transition: all 0.18s;
   user-select: none;
 }
@@ -341,7 +344,7 @@ nav {
   border-radius: 50px;
   border: 1.5px solid var(--input-border);
   background: var(--input-bg);
-  font-size: 0.8rem; font-weight: 500; color: var(--text-muted);
+  font-family: inherit; font-size: 0.8rem; font-weight: 500; color: var(--text-muted);
   cursor: pointer; transition: all 0.18s; user-select: none;
 }
 .pref-tag svg { width: 14px; height: 14px; stroke: #9db8a2; fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
@@ -749,7 +752,7 @@ nav {
                 <div class="stop-track"></div>
               </div>
               <div class="stop-content">
-                <label class="form-label">Starting Point <span class="required">*</span></label>
+                <label for="origin_input" class="form-label">Starting Point <span class="required">*</span></label>
                 <div class="input-wrap">
                   <span class="input-icon"><svg viewBox="0 0 24 24"><circle cx="12" cy="10" r="3"/><path d="M12 2a8 8 0 0 0-8 8c0 5.25 8 12 8 12s8-6.75 8-12a8 8 0 0 0-8-8z"/></svg></span>
                   <input type="text" name="origin" id="origin_input" class="form-input" placeholder="e.g. Downtown Toronto, ON" oninput="updateProgress()" autocomplete="off" style="padding-right:96px" value="{{ form.origin }}">
@@ -778,7 +781,7 @@ nav {
                 <div class="stop-dot dest-dot"></div>
               </div>
               <div class="stop-content">
-                <label class="form-label">Final Destination <span class="required">*</span></label>
+                <label for="destination_input" class="form-label">Final Destination <span class="required">*</span></label>
                 <div class="input-wrap">
                   <span class="input-icon"><svg viewBox="0 0 24 24"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg></span>
                   <input type="text" name="destination" id="destination_input" class="form-input" placeholder="e.g. Mississauga, ON" oninput="updateProgress()" autocomplete="off" value="{{ form.destination }}">
@@ -820,12 +823,12 @@ nav {
         <div class="form-grid-2 mb-0" style="margin-top:18px">
           <!-- Date -->
           <div class="form-group">
-            <label class="form-label">Date <span class="required">*</span></label>
+            <label for="depart_date_display" class="form-label">Date <span class="required">*</span></label>
             <div class="input-wrap">
               <span class="input-icon"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg></span>
               <input type="text" id="depart_date_display" class="form-input" placeholder="MM-DD-YYYY" maxlength="10" inputmode="numeric" autocomplete="off" oninput="autoDateFmt(this,'depart_date');enforceRideDateBounds(this);updateProgress()">
               <input type="hidden" name="date" id="depart_date">
-              <input type="date" class="date-picker-native" id="depart_date_picker" tabindex="-1" min="{% now 'Y-m-d' %}"
+              <input type="date" class="date-picker-native" aria-label="Choose a date from the calendar" id="depart_date_picker" tabindex="-1" min="{% now 'Y-m-d' %}"
                 onchange="pickNativeDate(this,'depart_date_display','depart_date');updateProgress()">
               <small id="dateClientError" style="color:#ef4444;font-size:0.78rem;display:none;"></small>
               {% if errors.date %}<small style="color:#ef4444;font-size:0.78rem;">{{ errors.date }}</small>{% endif %}
@@ -833,7 +836,7 @@ nav {
           </div>
           <!-- Departure Time -->
           <div class="form-group">
-            <label class="form-label">Departure Time <span class="required">*</span></label>
+            <label for="depart_time" class="form-label">Departure Time <span class="required">*</span></label>
             <div class="input-wrap">
               <span class="input-icon"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg></span>
               <input type="time" id="depart_time" name="depart_time" class="form-input" oninput="clearTimeError()" value="{{ form.depart_time }}">
@@ -864,10 +867,10 @@ nav {
 
         <!-- Vehicle selector -->
         <div class="form-group" style="margin-bottom:18px">
-          <label class="form-label">Vehicle <span class="required">*</span></label>
+          <label for="rideVehicle" class="form-label">Vehicle <span class="required">*</span></label>
           <div class="input-wrap">
             <span class="input-icon"><svg viewBox="0 0 24 24"><rect x="1" y="3" width="15" height="13" rx="2"/><polygon points="16 8 20 8 23 11 23 16 16 16 16 8"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></svg></span>
-            <select class="form-select" name="vehicle">
+            <select id="rideVehicle" class="form-select" name="vehicle">
               <option value="">— Select Vehicle —</option>
               {% for v in vehicles %}
               <option value="{{ v.id }}"{% if not v.vehicle_verified %} disabled{% elif v.id|stringformat:"s" == form.vehicle %} selected{% endif %}>
@@ -882,29 +885,29 @@ nav {
         <div class="form-grid-3">
           <!-- Available Seats -->
           <div class="form-group">
-            <label class="form-label">Available Seats <span class="required">*</span></label>
+            <span class="form-label" id="seatsLabel">Available Seats <span class="required">*</span></span>
             <input type="hidden" name="seats" id="seatInput" value="2">
-            <div class="seat-counter">
-              <button type="button" class="seat-btn" onclick="changeSeat(-1)">−</button>
-              <div class="seat-display" id="seatDisplay">2</div>
-              <button type="button" class="seat-btn" onclick="changeSeat(1)">+</button>
+            <div class="seat-counter" role="group" aria-labelledby="seatsLabel">
+              <button type="button" class="seat-btn" aria-label="Fewer seats" onclick="changeSeat(-1)">−</button>
+              <div class="seat-display" id="seatDisplay" aria-live="polite">2</div>
+              <button type="button" class="seat-btn" aria-label="More seats" onclick="changeSeat(1)">+</button>
             </div>
           </div>
           <!-- Price per seat -->
           <div class="form-group">
-            <label class="form-label">Price per Seat (CAD) <span class="required">*</span></label>
+            <label for="ridePrice" class="form-label">Price per Seat (CAD) <span class="required">*</span></label>
             <div class="input-wrap price-wrap">
               <span class="price-prefix">$</span>
-              <input type="number" name="price" class="form-input" placeholder="0.00" min="0.01" max="1000" step="0.01" oninput="updateProgress()" value="{{ form.price }}">
+              <input id="ridePrice" type="number" name="price" class="form-input" placeholder="0.00" min="0.01" max="1000" step="0.01" oninput="updateProgress()" value="{{ form.price }}">
             </div>
             {% if errors.price %}<small style="color:#ef4444;font-size:0.78rem;">{{ errors.price }}</small>{% endif %}
           </div>
           <!-- Gender preference -->
           <div class="form-group">
-            <label class="form-label">Passenger Preference</label>
+            <label for="rideGenderPref" class="form-label">Passenger Preference</label>
             <div class="input-wrap">
               <span class="input-icon"><svg viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg></span>
-              <select name="passenger_gender_pref" class="form-select">
+              <select id="rideGenderPref" name="passenger_gender_pref" class="form-select">
                 <option value="any">Any</option>
                 <option value="women_only"{% if form.passenger_gender_pref == "women_only" %} selected{% endif %}>Women Only</option>
                 <option value="men_only"{% if form.passenger_gender_pref == "men_only" %} selected{% endif %}>Men Only</option>
@@ -915,34 +918,34 @@ nav {
 
         <!-- Recurring toggle -->
         <div class="form-group mb-0">
-          <label class="form-label">Recurring Ride</label>
-          <div class="toggle-row" onclick="toggleRecurring()">
-            <div class="toggle-label-wrap">
+          <span class="form-label">Recurring Ride</span>
+          <button type="button" class="toggle-row" id="recurringSwitch" role="switch" aria-checked="false" onclick="toggleRecurring()">
+            <span class="toggle-label-wrap">
               <strong>Make this a recurring ride</strong>
               <span>Repeat this ride on selected days of the week</span>
-            </div>
-            <div class="toggle-switch" id="recurringToggle">
-              <div class="toggle-knob"></div>
-            </div>
-          </div>
+            </span>
+            <span class="toggle-switch" id="recurringToggle" aria-hidden="true">
+              <span class="toggle-knob"></span>
+            </span>
+          </button>
           <!-- Days picker + end date (shown when recurring is ON) -->
           <div id="daysSection" style="display:none">
-            <div class="days-picker" style="margin-bottom:14px">
-              <div class="day-pill" data-day="0" onclick="toggleDay(this)">Mon</div>
-              <div class="day-pill" data-day="1" onclick="toggleDay(this)">Tue</div>
-              <div class="day-pill" data-day="2" onclick="toggleDay(this)">Wed</div>
-              <div class="day-pill" data-day="3" onclick="toggleDay(this)">Thu</div>
-              <div class="day-pill" data-day="4" onclick="toggleDay(this)">Fri</div>
-              <div class="day-pill" data-day="5" onclick="toggleDay(this)">Sat</div>
-              <div class="day-pill" data-day="6" onclick="toggleDay(this)">Sun</div>
+            <div class="days-picker" role="group" aria-label="Repeat on these days" style="margin-bottom:14px">
+              <button type="button" class="day-pill" data-day="0" aria-label="Monday" aria-pressed="false" onclick="toggleDay(this)">Mon</button>
+              <button type="button" class="day-pill" data-day="1" aria-label="Tuesday" aria-pressed="false" onclick="toggleDay(this)">Tue</button>
+              <button type="button" class="day-pill" data-day="2" aria-label="Wednesday" aria-pressed="false" onclick="toggleDay(this)">Wed</button>
+              <button type="button" class="day-pill" data-day="3" aria-label="Thursday" aria-pressed="false" onclick="toggleDay(this)">Thu</button>
+              <button type="button" class="day-pill" data-day="4" aria-label="Friday" aria-pressed="false" onclick="toggleDay(this)">Fri</button>
+              <button type="button" class="day-pill" data-day="5" aria-label="Saturday" aria-pressed="false" onclick="toggleDay(this)">Sat</button>
+              <button type="button" class="day-pill" data-day="6" aria-label="Sunday" aria-pressed="false" onclick="toggleDay(this)">Sun</button>
             </div>
             <div class="form-group">
-              <label class="form-label">Repeat Until <span class="required">*</span></label>
+              <label for="recurringEndDate_display" class="form-label">Repeat Until <span class="required">*</span></label>
               <div class="input-wrap">
                 <span class="input-icon"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg></span>
                 <input type="text" id="recurringEndDate_display" class="form-input" placeholder="MM-DD-YYYY" maxlength="10" inputmode="numeric" autocomplete="off" oninput="autoDateFmt(this,'recurringEndDate')">
                 <input type="hidden" id="recurringEndDate">
-                <input type="date" class="date-picker-native" id="recurringEndDate_picker" tabindex="-1"
+                <input type="date" class="date-picker-native" aria-label="Choose a date from the calendar" id="recurringEndDate_picker" tabindex="-1"
                   onchange="pickNativeDate(this,'recurringEndDate_display','recurringEndDate')">
               </div>
               {% if errors.recurring_end_date %}<small style="color:#ef4444;font-size:0.78rem;">{{ errors.recurring_end_date }}</small>{% endif %}
@@ -967,10 +970,10 @@ nav {
       </div>
       <div class="section-body">
         <div class="form-group mb-0">
-          <label class="form-label">Notes for Passengers</label>
+          <label for="rideNotes" class="form-label">Notes for Passengers</label>
           <div class="input-wrap">
             <span class="input-icon" style="top:14px;transform:none"><svg viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></span>
-            <textarea name="notes" class="form-textarea" placeholder="e.g. I'll pick you up from the main entrance. Music will be on. Please be ready 5 mins early.">{{ form.notes }}</textarea>
+            <textarea id="rideNotes" name="notes" class="form-textarea" placeholder="e.g. I'll pick you up from the main entrance. Music will be on. Please be ready 5 mins early.">{{ form.notes }}</textarea>
           </div>
         </div>
       </div>
@@ -988,47 +991,47 @@ nav {
         </div>
       </div>
       <div class="section-body">
-        <div class="prefs-wrap">
-          <div class="pref-tag" onclick="this.classList.toggle('active')">
+        <div class="prefs-wrap" role="group" aria-label="Ride preferences">
+          <button type="button" class="pref-tag" aria-pressed="false" onclick="togglePrefTag(this)">
             <svg viewBox="0 0 24 24"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
             Music OK
-          </div>
-          <div class="pref-tag" onclick="this.classList.toggle('active')">
+          </button>
+          <button type="button" class="pref-tag" aria-pressed="false" onclick="togglePrefTag(this)">
             <svg viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
             Chatty Driver
-          </div>
-          <div class="pref-tag" onclick="this.classList.toggle('active')">
+          </button>
+          <button type="button" class="pref-tag" aria-pressed="false" onclick="togglePrefTag(this)">
             <svg viewBox="0 0 24 24"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
             Quiet Ride
-          </div>
-          <div class="pref-tag" onclick="this.classList.toggle('active')">
+          </button>
+          <button type="button" class="pref-tag" aria-pressed="false" onclick="togglePrefTag(this)">
             <svg viewBox="0 0 24 24"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>
             Pet Friendly
-          </div>
-          <div class="pref-tag" onclick="this.classList.toggle('active')">
+          </button>
+          <button type="button" class="pref-tag" aria-pressed="false" onclick="togglePrefTag(this)">
             <svg viewBox="0 0 24 24"><line x1="1" y1="1" x2="23" y2="23"/><path d="M30 1v4"/><rect x="2" y="7" width="20" height="10" rx="2"/></svg>
             No Smoking
-          </div>
-          <div class="pref-tag" onclick="this.classList.toggle('active')">
+          </button>
+          <button type="button" class="pref-tag" aria-pressed="false" onclick="togglePrefTag(this)">
             <svg viewBox="0 0 24 24"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg>
             Luggage OK
-          </div>
-          <div class="pref-tag" onclick="this.classList.toggle('active')">
+          </button>
+          <button type="button" class="pref-tag" aria-pressed="false" onclick="togglePrefTag(this)">
             <svg viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
             Verified Only
-          </div>
-          <div class="pref-tag" onclick="this.classList.toggle('active')">
+          </button>
+          <button type="button" class="pref-tag" aria-pressed="false" onclick="togglePrefTag(this)">
             <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
             On-Time Driver
-          </div>
-          <div class="pref-tag" onclick="this.classList.toggle('active')">
+          </button>
+          <button type="button" class="pref-tag" aria-pressed="false" onclick="togglePrefTag(this)">
             <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/></svg>
             Winter Tires
-          </div>
-          <div class="pref-tag" onclick="this.classList.toggle('active')">
+          </button>
+          <button type="button" class="pref-tag" aria-pressed="false" onclick="togglePrefTag(this)">
             <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/><path d="M5 3l2 2M19 3l-2 2M5 21l2-2M19 21l-2-2"/></svg>
             Flexible with Time
-          </div>
+          </button>
         </div>
       </div>
     </div>
@@ -1109,7 +1112,7 @@ nav {
         <div class="stop-content">
           <div class="stop-badge-row">
             <span class="stop-badge ${badgeClass}">${badgeText} ${num}</span>
-            <button type="button" class="remove-stop-btn" onclick="removeStop('${id}', '${type}')">
+            <button type="button" class="remove-stop-btn" aria-label="Remove stop" onclick="removeStop('${id}', '${type}')">
               <svg viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
             </button>
           </div>
@@ -1184,6 +1187,7 @@ nav {
     const d = document.getElementById('daysSection');
     t.classList.toggle('on');
     const on = t.classList.contains('on');
+    document.getElementById('recurringSwitch').setAttribute('aria-checked', on);
     d.style.display = on ? 'block' : 'none';
     document.getElementById('is_recurring_input').value = on ? '1' : '0';
     if (on) {
@@ -1194,8 +1198,13 @@ nav {
     }
   }
 
-  /* ── DAY PILLS ── */
-  function toggleDay(el) { el.classList.toggle('active'); }
+  /* ── DAY PILLS AND PREFERENCE TAGS ── */
+  function setPressed(el, on) {
+    el.classList.toggle('active', on);
+    el.setAttribute('aria-pressed', on);
+  }
+  function toggleDay(el) { setPressed(el, !el.classList.contains('active')); }
+  function togglePrefTag(el) { setPressed(el, !el.classList.contains('active')); }
 
   /* ── OSRM ROUTE INFO ── */
   async function fetchRouteInfo() {
@@ -1512,7 +1521,7 @@ nav {
     if (seats >= 1 && seats <= 8) changeSeat(seats - seatCount);
 
     document.querySelectorAll('.pref-tag').forEach(el => {
-      if (prefill.prefs.includes(el.textContent.trim())) el.classList.add('active');
+      if (prefill.prefs.includes(el.textContent.trim())) setPressed(el, true);
     });
 
     prefill.stops.forEach(s => {
@@ -1526,7 +1535,7 @@ nav {
     if (prefill.is_recurring) {
       toggleRecurring();
       document.querySelectorAll('.day-pill').forEach(el => {
-        if (prefill.recurring_days.includes(el.dataset.day)) el.classList.add('active');
+        if (prefill.recurring_days.includes(el.dataset.day)) setPressed(el, true);
       });
       const end = prefill.recurring_end_date;
       if (/^\d{4}-\d{2}-\d{2}$/.test(end)) {

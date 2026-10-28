@@ -7,6 +7,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Komüte – Complete Your Profile</title>
 <link rel="stylesheet" href="{% static 'css/fonts.css' %}">
+<link rel="stylesheet" href="{% static 'css/base.css' %}">
 
 <style>
 /* ── KOMÜTE BRAND TOKENS ── */
@@ -337,8 +338,10 @@ nav {
   padding: 0;
   display: flex;
   align-items: center;
+  justify-content: center;
+  min-width: 24px; min-height: 24px;
 }
-.pass-toggle svg { width: 15px; height: 15px; stroke: #9db8a2; fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.pass-toggle svg { width: 15px; height: 15px; stroke: #5a7060; fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
 
 /* ════════════════════════════
    UPLOAD ZONE
@@ -349,84 +352,6 @@ nav {
   gap: 20px;
   align-items: start;
 }
-
-.upload-zone-wrap { display: flex; flex-direction: column; gap: 10px; }
-
-.upload-preview-row {
-  display: flex;
-  align-items: center;
-  gap: 14px;
-}
-
-.avatar-ring {
-  width: 72px; height: 72px;
-  border-radius: 50%;
-  background: var(--input-bg);
-  border: 3px solid var(--input-border);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  overflow: hidden;
-  flex-shrink: 0;
-  position: relative;
-  transition: border-color 0.2s;
-}
-.avatar-ring.has-img { border-color: var(--brand-green); }
-.avatar-ring img { width: 100%; height: 100%; object-fit: cover; display: none; }
-.avatar-ring .avatar-placeholder svg { width: 28px; height: 28px; stroke: #b0c8b5; fill: none; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
-
-.upload-drop {
-  flex: 1;
-  border: 2px dashed var(--input-border);
-  border-radius: 12px;
-  background: var(--input-bg);
-  padding: 16px 14px;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 6px;
-  cursor: pointer;
-  transition: all 0.2s;
-  text-align: center;
-  min-height: 90px;
-  justify-content: center;
-}
-.upload-drop:hover,
-.upload-drop.dragover {
-  border-color: var(--brand-green);
-  background: var(--contrast-lt);
-}
-.upload-drop.has-file { border-style: solid; border-color: var(--brand-green); background: #f0fdf2; }
-
-.upload-cloud {
-  width: 36px; height: 36px;
-  border-radius: 50%;
-  background: linear-gradient(135deg, #0C63B4, #0CB439);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: transform 0.2s;
-}
-.upload-drop:hover .upload-cloud { transform: translateY(-2px); }
-.upload-cloud svg { width: 17px; height: 17px; stroke: white; fill: none; stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; }
-
-.upload-main-text { font-size: 0.78rem; color: var(--text-muted); line-height: 1.4; }
-.upload-main-text strong { color: var(--brand-green); font-weight: 600; }
-
-.upload-hint { font-size: 0.7rem; color: #9db8a2; }
-
-.upload-success {
-  display: none;
-  align-items: center;
-  gap: 5px;
-  font-size: 0.75rem;
-  color: var(--brand-green);
-  font-weight: 600;
-  background: #dcfce7;
-  padding: 4px 10px;
-  border-radius: 20px;
-}
-.upload-success svg { width: 12px; height: 12px; stroke: var(--brand-green); fill: none; stroke-width: 2.5; stroke-linecap: round; stroke-linejoin: round; }
 
 /* ════════════════════════════
    MULTI-VEHICLE ROWS
@@ -528,7 +453,8 @@ nav {
   margin-top: 4px;
 }
 .vehicle-img-prompt-cta strong { color: var(--brand-green); }
-.vehicle-img-prompt-hint { font-size: 0.7rem; color: #9db8a2; }
+.vehicle-img-pick { background: none; border: 0; padding: 0; font: inherit; color: var(--brand-green); font-weight: 700; cursor: pointer; text-decoration: underline; }
+.vehicle-img-prompt-hint { font-size: 0.7rem; color: #5a7060; }
 
 .vehicle-img-preview-wrap { position: relative; display: none; }
 .vehicle-img-zone.has-img .vehicle-img-preview-wrap { display: block; }
@@ -582,8 +508,8 @@ nav {
   font-size: 0.75rem; font-weight: 600;
   width: fit-content;
 }
-.vehicle-verified-badge.verified { background: #dcfce7; color: #16a34a; }
-.vehicle-verified-badge.unverified { background: #f3f4f6; color: #6b7280; }
+.vehicle-verified-badge.verified { background: #dcfce7; color: #15803d; }
+.vehicle-verified-badge.unverified { background: #f3f4f6; color: #4b5563; }
 @media (max-width: 520px) {
   .vehicle-row-top, .vehicle-row-bottom { grid-template-columns: 1fr; }
 }
@@ -1146,7 +1072,7 @@ body.role-rider .driver-only { display: none; }
 }
 .verify-badge--ok      { background:#dcfce7; color:#15803d; }
 .verify-badge--pending { background:#fef9c3; color:#92400e; }
-.verify-hint { font-size: 12px; color: #94a3b8; margin: 0; }
+.verify-hint { font-size: 12px; color: #64748b; margin: 0; }
 .btn-verify-identity {
   display: inline-flex;
   align-items: center;
@@ -1318,7 +1244,7 @@ body.role-rider .driver-only { display: none; }
               </svg>
             </div>
           </div>
-          <button type="button" class="photo-edit-badge" onclick="document.getElementById('selfieFile').click()" title="Upload selfie">
+          <button type="button" class="photo-edit-badge" aria-label="Upload selfie" onclick="document.getElementById('selfieFile').click()" title="Upload selfie">
             <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
               <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/>
               <circle cx="12" cy="13" r="4"/>
@@ -1341,23 +1267,23 @@ body.role-rider .driver-only { display: none; }
               Use Camera
             </button>
           </div>
-          <input type="file" id="selfieFile" name="selfie_file" data-upload-label="Profile photo" accept="image/*" style="position:absolute;width:1px;height:1px;opacity:0;overflow:hidden" onchange="handleSelfieUpload(this)">
-          <input type="file" id="selfieCameraFile" name="selfie_file" data-upload-label="Profile photo" accept="image/*" capture="user" style="position:absolute;width:1px;height:1px;opacity:0;overflow:hidden" onchange="handleSelfieUpload(this)">
+          <input type="file" id="selfieFile" aria-label="Upload a profile photo" name="selfie_file" data-upload-label="Profile photo" accept="image/*" style="position:absolute;width:1px;height:1px;opacity:0;overflow:hidden" onchange="handleSelfieUpload(this)">
+          <input type="file" id="selfieCameraFile" aria-label="Take a profile photo" name="selfie_file" data-upload-label="Profile photo" accept="image/*" capture="user" style="position:absolute;width:1px;height:1px;opacity:0;overflow:hidden" onchange="handleSelfieUpload(this)">
         </div>
       </div>
 
       <div class="form-grid-3 personal-grid" style="align-items: end;">
         <!-- Full Name -->
         <div class="form-group">
-          <label class="form-label">Full Name <span class="required">*</span></label>
+          <label for="profileFullName" class="form-label">Full Name <span class="required">*</span></label>
           <div class="input-wrap" style="text-transform: uppercase;">
             <span class="input-icon"><svg viewBox="0 0 24 24"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></span>
-            <input type="text" name="full_name" class="form-input" style="text-transform: uppercase;" value="{{ full_name }}" placeholder="John Doe" oninput="updateProgress()">
+            <input id="profileFullName" type="text" name="full_name" class="form-input" style="text-transform: uppercase;" value="{{ full_name }}" placeholder="John Doe" oninput="updateProgress()">
           </div>
         </div>
         <!-- Email -->
         <div class="form-group">
-          <label class="form-label">
+          <label for="emailInput" class="form-label">
             Email Address <span class="required">*</span>
             <button type="button" class="inline-edit" onclick="openEmailModal()" title="Change email">
               <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
@@ -1383,9 +1309,9 @@ body.role-rider .driver-only { display: none; }
         </div>
         <!-- Mobile -->
         <div class="form-group">
-          <label class="form-label">Mobile Number <span class="required">*</span></label>
+          <label class="form-label" for="profilePhone">Mobile Number <span class="required">*</span></label>
           <div class="phone-row">
-            <select name="country_code" class="form-select no-icon country-code-select" onchange="updateProgress(); syncCountryCodeTitle(this)">
+            <select name="country_code" aria-label="Country code" class="form-select no-icon country-code-select" onchange="updateProgress(); syncCountryCodeTitle(this)">
               <option value="" {% if not country_code %}selected{% endif %}>Code</option>
               {% for c in priority_countries %}
                 <option value="{{ c.dial_code }}" title="{{ c.name }}" {% if country_code == c.dial_code %}selected{% endif %}>{{ c.dial_code }}</option>
@@ -1397,7 +1323,7 @@ body.role-rider .driver-only { display: none; }
             </select>
             <div class="input-wrap">
               <span class="input-icon"><svg viewBox="0 0 24 24"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07A19.5 19.5 0 0 1 4.69 12 19.79 19.79 0 0 1 1.62 3.38 2 2 0 0 1 3.59 1h3a2 2 0 0 1 2 1.72c.127.96.361 1.903.7 2.81a2 2 0 0 1-.45 2.11L7.91 8.56a16 16 0 0 0 6.07 6.07l.96-.96a2 2 0 0 1 2.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0 1 22 16.92z"/></svg></span>
-              <input type="tel" name="phone_number" class="form-input" value="{{ phone_number }}" placeholder="4155552671" inputmode="numeric" oninput="updateProgress()">
+              <input type="tel" id="profilePhone" name="phone_number" class="form-input" value="{{ phone_number }}" placeholder="4155552671" inputmode="numeric" oninput="updateProgress()">
             </div>
           </div>
           {% if errors.country_code %}
@@ -1412,14 +1338,14 @@ body.role-rider .driver-only { display: none; }
       <div class="form-grid-3 personal-grid">
         <!-- Date of Birth -->
         <div class="form-group">
-          <label class="form-label">Date of Birth <span class="required">*</span></label>
+          <label for="dobDisplay" class="form-label">Date of Birth <span class="required">*</span></label>
           <div class="input-wrap">
             <span class="input-icon"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg></span>
             <input type="text" id="dobDisplay" class="form-input" placeholder="MM-DD-YYYY" maxlength="10" inputmode="numeric" autocomplete="off"
               value="{% if dob %}{{ dob|slice:'5:7' }}-{{ dob|slice:'8:10' }}-{{ dob|slice:'0:4' }}{% endif %}"
               oninput="autoDateFmt(this,'dobInput'); updateAge(); updateProgress()">
             <input type="hidden" name="dob" id="dobInput" value="{{ dob }}">
-            <input type="date" class="date-picker-native" id="dobPicker" tabindex="-1" value="{{ dob }}"
+            <input type="date" class="date-picker-native" aria-label="Choose a date from the calendar" id="dobPicker" tabindex="-1" value="{{ dob }}"
               oninput="pickNativeDate(this,'dobDisplay','dobInput'); updateAge(); updateProgress()"
               onchange="pickNativeDate(this,'dobDisplay','dobInput'); updateAge(); updateProgress()">
             <span class="age-pill" id="agePill" style="display:none">— yrs</span>
@@ -1432,10 +1358,10 @@ body.role-rider .driver-only { display: none; }
         </div>
         <!-- Gender -->
         <div class="form-group">
-          <label class="form-label">Gender</label>
+          <label for="profileGender" class="form-label">Gender</label>
           <div class="input-wrap">
             <span class="input-icon"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><line x1="12" y1="2" x2="12" y2="8"/><line x1="12" y1="16" x2="12" y2="22"/><line x1="2" y1="12" x2="8" y2="12"/><line x1="16" y1="12" x2="22" y2="12"/></svg></span>
-            <select class="form-select gender-select" name="gender">
+            <select id="profileGender" class="form-select gender-select" name="gender">
               <option value="">---- Select Gender ----</option>
               <option value="male" {% if gender == "male" %}selected{% endif %}>Male</option>
               <option value="female" {% if gender == "female" %}selected{% endif %}>Female</option>
@@ -1445,7 +1371,7 @@ body.role-rider .driver-only { display: none; }
         </div>
         <!-- Role -->
         <div class="form-group">
-          <label class="form-label">Role <span class="required">*</span></label>
+          <label for="roleSelect" class="form-label">Role <span class="required">*</span></label>
           <div class="input-wrap">
             <span class="input-icon"><svg viewBox="0 0 24 24"><rect x="1" y="3" width="15" height="13" rx="2"/><polygon points="16 8 20 8 23 11 23 16 16 16 16 8"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></svg></span>
             <select class="form-select" name="role" id="roleSelect" onchange="toggleDriverSections()">
@@ -1458,7 +1384,7 @@ body.role-rider .driver-only { display: none; }
 
       <!-- Password (full row) -->
       <div class="form-group">
-        <label class="form-label">
+        <label for="passInput" class="form-label">
           Password <span class="required">*</span>
           <button type="button" class="inline-edit" onclick="openPasswordModal()" title="Change password">
             <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
@@ -1468,7 +1394,7 @@ body.role-rider .driver-only { display: none; }
         <div class="input-wrap pass-wrap">
           <span class="input-icon"><svg viewBox="0 0 24 24"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg></span>
           <input type="password" class="form-input" id="passInput" value="••••••••" readonly>
-          <button type="button" class="pass-toggle" onclick="togglePass()">
+          <button type="button" class="pass-toggle" aria-label="Show password" onclick="togglePass()">
             <svg id="eyeIcon" viewBox="0 0 24 24"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
           </button>
         </div>
@@ -1476,7 +1402,7 @@ body.role-rider .driver-only { display: none; }
 
       <!-- Self Description (full width, last row) -->
       <div class="form-group mb-0">
-        <label class="form-label">
+        <label for="bioInput" class="form-label">
           Self Description
           <span class="label-hint">A short bio shown on your public profile</span>
         </label>
@@ -1506,15 +1432,15 @@ body.role-rider .driver-only { display: none; }
       <div class="form-grid-3">
         <!-- License Number -->
         <div class="form-group">
-          <label class="form-label">License Number <span class="required">*</span></label>
+          <label for="licenseNumber" class="form-label">License Number <span class="required">*</span></label>
           <div class="input-wrap">
             <span class="input-icon"><svg viewBox="0 0 24 24"><rect x="2" y="7" width="20" height="14" rx="2" ry="2"/><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/></svg></span>
-            <input type="text" name="license_number" class="form-input" value="{{ license_number }}" placeholder="e.g. DL1234567" oninput="updateProgress()">
+            <input id="licenseNumber" type="text" name="license_number" class="form-input" value="{{ license_number }}" placeholder="e.g. DL1234567" oninput="updateProgress()">
           </div>
         </div>
         <!-- Issuing Province -->
         <div class="form-group">
-          <label class="form-label">Issuing Province <span class="required">*</span></label>
+          <label for="issuingProvince" class="form-label">Issuing Province <span class="required">*</span></label>
           <div class="input-wrap">
             <span class="input-icon"><svg viewBox="0 0 24 24"><path d="M12 22s-8-4.5-8-11.8A8 8 0 0 1 12 2a8 8 0 0 1 8 8.2c0 7.3-8 11.8-8 11.8z"/><circle cx="12" cy="10" r="3"/></svg></span>
             <select class="form-select" name="license_province" id="issuingProvince" onchange="updateProgress()">
@@ -1537,44 +1463,17 @@ body.role-rider .driver-only { display: none; }
         </div>
         <!-- Expiry -->
         <div class="form-group">
-          <label class="form-label">License Expiry Date <span class="required">*</span></label>
+          <label for="licExpDisplay" class="form-label">License Expiry Date <span class="required">*</span></label>
           <div class="input-wrap">
             <span class="input-icon"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg></span>
             <input type="text" id="licExpDisplay" class="form-input" placeholder="MM-DD-YYYY" maxlength="10" inputmode="numeric" autocomplete="off"
               value="{% if license_expiry %}{{ license_expiry|slice:'5:7' }}-{{ license_expiry|slice:'8:10' }}-{{ license_expiry|slice:'0:4' }}{% endif %}"
               oninput="autoDateFmt(this,'licExpInput'); updateProgress()">
             <input type="hidden" name="license_expiry" id="licExpInput" value="{{ license_expiry }}">
-            <input type="date" class="date-picker-native" id="licExpPicker" tabindex="-1" min="{% now 'Y-m-d' %}" value="{{ license_expiry }}"
+            <input type="date" class="date-picker-native" aria-label="Choose a date from the calendar" id="licExpPicker" tabindex="-1" min="{% now 'Y-m-d' %}" value="{{ license_expiry }}"
               oninput="pickNativeDate(this,'licExpDisplay','licExpInput'); updateProgress()"
               onchange="pickNativeDate(this,'licExpDisplay','licExpInput'); updateProgress()">
           </div>
-        </div>
-      </div>
-
-      <!-- License Image Upload -->
-      <div class="form-group upload-zone-wrap mb-0">
-        <label class="form-label">License Image</label>
-        <div class="upload-preview-row">
-          <div class="avatar-ring" id="avatarRing">
-            <div class="avatar-placeholder">
-              <svg viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
-            </div>
-            <img id="licensePreview" src="" alt="License Preview">
-          </div>
-          <div class="upload-drop" id="dropZone" onclick="document.getElementById('licenseFile').click()">
-            <div class="upload-cloud">
-              <svg viewBox="0 0 24 24"><polyline points="16 16 12 12 8 16"/><line x1="12" y1="12" x2="12" y2="21"/><path d="M20.39 18.39A5 5 0 0 0 18 9h-1.26A8 8 0 1 0 3 16.3"/></svg>
-            </div>
-            <div class="upload-main-text">
-              <strong>Click to upload</strong> or drag & drop
-            </div>
-            <div class="upload-hint">JPG, PNG · Large photos are resized automatically</div>
-            <div class="upload-success" id="uploadSuccess">
-              <svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>
-              <span id="uploadFileName"></span>
-            </div>
-          </div>
-          <input type="file" id="licenseFile" name="license_file" data-upload-label="License photo" accept="image/*" style="display:none" onchange="handleUpload(this)">
         </div>
       </div>
 
@@ -1599,11 +1498,11 @@ body.role-rider .driver-only { display: none; }
             Not Verified
           </span>
           {% if license_expired %}
-          <p class="verify-hint" style="color:#b45309;font-weight:600;">⚠️ Your driving license expired on {{ user.license_expiry|date:"M j, Y" }}. Upload your renewed license, update the expiry date, save, then verify again.</p>
+          <p class="verify-hint" style="color:#b45309;font-weight:600;">⚠️ Your driving license expired on {{ user.license_expiry|date:"M j, Y" }}. Update the expiry date from your renewed license, save, then verify again with a photo of it.</p>
           {% elif reverify_expired %}
           <p class="verify-hint" style="color:#b45309;font-weight:600;">⚠️ Your identity verification expired on {{ reverify_due_at|date:"M j, Y" }}. Take a new selfie to post rides and accept bookings again.</p>
           {% else %}
-          <p class="verify-hint">Upload your driving license image above and save your profile. Then click the button to verify — you'll be asked to take a quick selfie at that point.</p>
+          <p class="verify-hint">Fill in your license details above and save your profile. Then click the button to verify — you'll be asked for a photo of your license and a quick selfie. We don't keep the license photo.</p>
           {% endif %}
           {% endif %}
         </div>
@@ -1618,15 +1517,15 @@ body.role-rider .driver-only { display: none; }
   </div>
 
   <!-- ── Verification Result Modal ── -->
-  <div id="verifyModal" style="display:none;position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,.6);align-items:center;justify-content:center;" class="verify-modal-backdrop">
+  <div id="verifyModal" data-dialog role="dialog" aria-modal="true" aria-label="Verification result" style="display:none;position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,.6);align-items:center;justify-content:center;" class="verify-modal-backdrop">
     <div class="verify-modal-box" id="verifyModalBox">
       <div id="verifyModalContent"></div>
-      <button type="button" class="btn-verify-modal-close" onclick="closeVerifyModal()">Close</button>
+      <button type="button" class="btn-verify-modal-close" data-dialog-close onclick="closeVerifyModal()">Close</button>
     </div>
   </div>
 
   <!-- ── Verification Selfie Step Modal ── -->
-  <div id="verifySelfieModal" style="display:none;position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,.6);align-items:center;justify-content:center;">
+  <div id="verifySelfieModal" data-dialog role="dialog" aria-modal="true" aria-label="Driver verification" style="display:none;position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,.6);align-items:center;justify-content:center;">
     <div class="verify-modal-box" style="max-width:420px;">
       <!-- Step 1: biometric notice and consent (privacy policy s.12). The
            camera can't open until the box is ticked; the server records the
@@ -1637,10 +1536,10 @@ body.role-rider .driver-only { display: none; }
         <div class="verify-consent-text" style="max-height:46vh;overflow-y:auto;font-size:13px;line-height:1.5;color:#334155;">
           <p style="margin:0 0 8px;">To confirm you are the person on your driver's licence, Komüte compares a selfie you take now with the photo on your licence.</p>
           <ul style="margin:0 0 8px;padding-left:18px;">
-            <li><strong>What we collect:</strong> a selfie from your camera, the licence photo you uploaded, and a face-match score worked out from them. The score is a measurement of your facial geometry, which some laws treat as biometric information.</li>
+            <li><strong>What we collect:</strong> a selfie from your camera, a photo of your licence that you add in the next step, and a face-match score worked out from them. The score is a measurement of your facial geometry, which some laws treat as biometric information.</li>
             <li><strong>Why:</strong> only to confirm your identity before you can offer rides. We don't use it for anything else, and we never sell it.</li>
             <li><strong>Who processes it:</strong> our identity verification service, which processes the images on our behalf under a written contract, only to produce this result.</li>
-            <li><strong>How long we keep it:</strong> Komüte doesn't store the selfie. The face-match score is permanently deleted within 30 days of the verification decision. We keep only a pass or fail result, for up to 1 year. Your licence photo stays on your profile until you replace it or delete your account.</li>
+            <li><strong>How long we keep it:</strong> Komüte doesn't store the selfie or the licence photo: they are used for this check only and never saved. The face-match score is permanently deleted within 30 days of the verification decision. We keep only a pass or fail result, for up to 1 year.</li>
             <li><strong>Your choice:</strong> you don't have to agree. If you don't, you can still use Komüte as a rider, but you can't be verified as a driver. You can withdraw consent at any time by writing to <a href="mailto:privacy@komute.net">privacy@komute.net</a>; we then delete any biometric data we still hold.</li>
             <li><strong>A person can review the result:</strong> if the automated check rejects you, you can ask for a person to review it at <a href="mailto:privacy@komute.net">privacy@komute.net</a>.</li>
           </ul>
@@ -1656,7 +1555,30 @@ body.role-rider .driver-only { display: none; }
         </div>
       </div>
 
-      <!-- Step 2: selfie capture -->
+      <!-- Step 2: licence photo. Held in the page and sent with the selfie;
+           the server never stores it (audit P-5/P-13). -->
+      <div id="verifyLicenseStep" style="display:none;">
+        <div class="verify-modal-icon">🪪</div>
+        <p class="verify-modal-title" style="font-size:18px;">Photo of your licence</p>
+        <p class="verify-modal-score" style="text-align:left;font-size:13px;">
+          Take or choose a clear photo of the front of your driving licence: flat, well lit, all four corners showing, no glare. It is used only for this check and isn't saved.
+        </p>
+        <div id="vlPreviewWrap" style="display:none;text-align:center;margin-bottom:10px;">
+          <img id="vlPreview" alt="Licence photo"
+            style="max-width:100%;max-height:200px;border-radius:10px;border:2px solid #e2e8f0;display:block;margin:0 auto;">
+        </div>
+        <div style="display:flex;gap:10px;justify-content:center;flex-wrap:wrap;">
+          <button type="button" class="btn-modal btn-modal-primary" onclick="document.getElementById('verifyLicenseCameraInput').click()">Take Photo</button>
+          <button type="button" class="btn-modal btn-modal-secondary" onclick="document.getElementById('verifyLicenseFileInput').click()">Choose Photo</button>
+        </div>
+        <input type="file" id="verifyLicenseCameraInput" accept="image/*" capture="environment" style="display:none" onchange="handleVerifyLicenseInput(this)">
+        <input type="file" id="verifyLicenseFileInput" accept="image/*" style="display:none" onchange="handleVerifyLicenseInput(this)">
+        <div style="display:flex;justify-content:center;margin-top:12px;">
+          <button type="button" id="vlNextBtn" class="btn-verify-identity" disabled onclick="acceptVerifyLicense()">Next: selfie</button>
+        </div>
+      </div>
+
+      <!-- Step 3: selfie capture -->
       <div id="verifyCaptureStep" style="display:none;">
       <div class="verify-modal-icon">🤳</div>
       <p class="verify-modal-title" style="font-size:18px;">Verification Selfie</p>
@@ -1697,7 +1619,7 @@ body.role-rider .driver-only { display: none; }
       </div>
       </div>
 
-      <button type="button" class="btn-verify-modal-close" style="margin-top:4px;" onclick="closeVerifySelfieModal()">Cancel</button>
+      <button type="button" class="btn-verify-modal-close" style="margin-top:4px;" data-dialog-close onclick="closeVerifySelfieModal()">Cancel</button>
     </div>
   </div>
 
@@ -1918,6 +1840,7 @@ body.role-rider .driver-only { display: none; }
 
 
 
+  let _vehicleRowSeq = 0;
   function createVehicleRow(data) {
     const carSvg = `<svg viewBox="0 0 24 24"><rect x="1" y="3" width="15" height="13" rx="2"/><polygon points="16 8 20 8 23 11 23 16 16 16 16 8"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></svg>`;
     const calSvg = `<svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>`;
@@ -1931,78 +1854,79 @@ body.role-rider .driver-only { display: none; }
     const editSvg   = `<svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>`;
     const trashSvg  = `<svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg>`;
 
+    const uid = 'veh' + (++_vehicleRowSeq);
     const row = document.createElement('div');
     row.className = 'vehicle-row';
     row.innerHTML = `
       <div class="vehicle-row-header">
         <div class="vehicle-verified-badge"></div>
-        <button type="button" class="remove-vehicle-btn" onclick="removeVehicle(this)" title="Remove vehicle">×</button>
+        <button type="button" class="remove-vehicle-btn" onclick="removeVehicle(this)" title="Remove vehicle" aria-label="Remove vehicle">×</button>
       </div>
       <div class="vehicle-row-fields">
         <input type="hidden" name="vehicle_id" value="">
         <div class="vehicle-row-top">
           <div class="form-group">
-            <label class="form-label">Make</label>
+            <label class="form-label" for="${uid}-make">Make</label>
             <div class="input-wrap">
               <span class="input-icon">${carSvg}</span>
-              <select class="form-select vehicle-make-select" name="vehicle_make" onchange="populateRowModels(this)">
+              <select id="${uid}-make" class="form-select vehicle-make-select" name="vehicle_make" onchange="populateRowModels(this)">
                 ${_makeOpts('— Make —', Object.keys(vehicleModels))}
                 <option value="other">Other (not listed)…</option>
               </select>
             </div>
-            <input type="text" class="form-input vehicle-custom-make" placeholder="Enter make (e.g. BYD, Rivian)" style="display:none;margin-top:8px;" oninput="updateProgress()">
+            <input type="text" class="form-input vehicle-custom-make" aria-label="Make (not listed)" placeholder="Enter make (e.g. BYD, Rivian)" style="display:none;margin-top:8px;" oninput="updateProgress()">
           </div>
           <div class="form-group">
-            <label class="form-label">Model</label>
+            <label class="form-label" for="${uid}-model">Model</label>
             <div class="input-wrap vehicle-model-wrap">
               <span class="input-icon">${carSvg}</span>
-              <select class="form-select vehicle-model-select" name="vehicle_model" onchange="toggleModelOther(this)">
+              <select id="${uid}-model" class="form-select vehicle-model-select" name="vehicle_model" onchange="toggleModelOther(this)">
                 <option value="">— Select Make First —</option>
               </select>
             </div>
-            <input type="text" class="form-input vehicle-custom-model" placeholder="Enter model (e.g. Cybertruck)" style="display:none;margin-top:8px;" oninput="updateProgress()">
+            <input type="text" class="form-input vehicle-custom-model" aria-label="Model (not listed)" placeholder="Enter model (e.g. Cybertruck)" style="display:none;margin-top:8px;" oninput="updateProgress()">
           </div>
         </div>
         <div class="vehicle-row-bottom">
           <div class="form-group">
-            <label class="form-label">Year</label>
+            <label class="form-label" for="${uid}-year">Year</label>
             <div class="input-wrap">
               <span class="input-icon">${calSvg}</span>
-              <select class="form-select" name="vehicle_year" onchange="updateProgress()">${yearOpts}</select>
+              <select id="${uid}-year" class="form-select" name="vehicle_year" onchange="updateProgress()">${yearOpts}</select>
             </div>
           </div>
           <div class="form-group">
-            <label class="form-label">Color</label>
+            <label class="form-label" for="${uid}-color">Color</label>
             <div class="input-wrap">
               <span class="input-icon">${colSvg}</span>
-              <select class="form-select" name="vehicle_color" onchange="updateProgress()">
+              <select id="${uid}-color" class="form-select" name="vehicle_color" onchange="updateProgress()">
                 ${_makeOpts('— Color —', _vehicleColors)}
               </select>
             </div>
           </div>
           <div class="form-group">
-            <label class="form-label">Plate</label>
+            <label class="form-label" for="${uid}-plate">Plate</label>
             <div class="input-wrap">
               <span class="input-icon">${plateSvg}</span>
-              <input type="text" class="form-input" name="vehicle_plate" placeholder="e.g. DL01AB1234" oninput="updateProgress()">
+              <input type="text" id="${uid}-plate" class="form-input" name="vehicle_plate" placeholder="e.g. DL01AB1234" oninput="updateProgress()">
             </div>
           </div>
         </div>
         <div class="vehicle-row-photo">
-          <label class="form-label">
+          <span class="form-label">
             Vehicle Photo
             <span class="plate-note">
               <svg viewBox="0 0 24 24" width="10" height="10" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
               Number plate must be clearly visible
             </span>
-          </label>
+          </span>
           <div class="vehicle-img-zone" onclick="if(!this.classList.contains('has-img')) this.querySelector('.vehicle-img-file').click()">
             <div class="vehicle-img-prompt">
               <div class="vehicle-img-prompt-icon">${uploadSvg}</div>
               <h5 class="vehicle-img-prompt-title">Upload a photo of your vehicle</h5>
               <p class="vehicle-img-prompt-desc">Take a clear, well-lit photo from the rear or front-three-quarter angle. Make sure the <strong>number plate is legible</strong> — this helps us verify your vehicle and builds trust with passengers.</p>
               <div class="vehicle-img-prompt-cta">
-                <strong>Click to upload</strong> or drag &amp; drop
+                <button type="button" class="vehicle-img-pick" onclick="event.stopPropagation(); this.closest('.vehicle-img-zone').querySelector('.vehicle-img-file').click()">Click to upload</button> or drag &amp; drop
               </div>
               <div class="vehicle-img-prompt-hint">JPG, PNG · Large photos are resized automatically</div>
             </div>
@@ -2152,6 +2076,7 @@ body.role-rider .driver-only { display: none; }
     const hiding = input.type === 'text';
     input.type  = hiding ? 'password' : 'text';
     input.value = hiding ? '••••••••' : 'Use “Change” to update password';
+    document.querySelector('.pass-toggle').setAttribute('aria-label', hiding ? 'Show password' : 'Hide password');
     icon.innerHTML = hiding
       ? '<path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>'
       : '<path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/>';
@@ -2234,42 +2159,6 @@ body.role-rider .driver-only { display: none; }
     t.classList.add('show');
     setTimeout(() => t.classList.remove('show'), 5000);
   }
-
-  /* ── FILE UPLOAD ── */
-  function handleUpload(input) {
-    if (input.files && input.files[0]) {
-      const file = input.files[0];
-      const reader = new FileReader();
-      reader.onload = e => {
-        const img = document.getElementById('licensePreview');
-        img.src = e.target.result;
-        img.style.display = 'block';
-        document.querySelector('.avatar-placeholder').style.display = 'none';
-        document.getElementById('avatarRing').classList.add('has-img');
-        const drop = document.getElementById('dropZone');
-        drop.classList.add('has-file');
-        document.getElementById('uploadFileName').textContent = file.name.length > 18 ? file.name.substring(0,15)+'...' : file.name;
-        document.getElementById('uploadSuccess').style.display = 'flex';
-      };
-      reader.readAsDataURL(file);
-    }
-  }
-
-  /* ── DRAG & DROP ── */
-  const dropZone = document.getElementById('dropZone');
-  dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('dragover'); });
-  dropZone.addEventListener('dragleave', () => dropZone.classList.remove('dragover'));
-  dropZone.addEventListener('drop', e => {
-    e.preventDefault();
-    dropZone.classList.remove('dragover');
-    const file = e.dataTransfer.files[0];
-    if (file && file.type.startsWith('image/')) {
-      const dt = new DataTransfer();
-      dt.items.add(file);
-      document.getElementById('licenseFile').files = dt.files;
-      handleUpload(document.getElementById('licenseFile'));
-    }
-  });
 
   /* ── SELFIE / PROFILE PHOTO UPLOAD ── */
   function handleSelfieUpload(input) {
@@ -2606,6 +2495,7 @@ body.role-rider .driver-only { display: none; }
   // _camMode: 'profile' (default) or 'verify' (verification selfie step)
   let _camMode = 'profile';
   let _verifySelfieBlob = null;
+  let _verifyLicenseFile = null;
   let _verifyModalHiddenForCamera = false;
   // Consent is asked on every attempt, so a driver re-verifying after
   // DRIVER_REVERIFY_DAYS agrees again and gets a fresh consent record.
@@ -2617,7 +2507,9 @@ body.role-rider .driver-only { display: none; }
     document.getElementById('vsConsentCheck').checked = false;
     document.getElementById('vsConsentAgreeBtn').disabled = true;
     document.getElementById('verifyConsentStep').style.display = 'block';
+    document.getElementById('verifyLicenseStep').style.display = 'none';
     document.getElementById('verifyCaptureStep').style.display = 'none';
+    _clearVerifyLicense();
     _verifySelfieBlob = null;
     document.getElementById('vsCameraError').style.display = 'none';
     document.getElementById('vsPreviewWrap').style.display  = 'none';
@@ -2634,11 +2526,39 @@ body.role-rider .driver-only { display: none; }
     if (!document.getElementById('vsConsentCheck').checked) return;
     _biometricConsent = true;
     document.getElementById('verifyConsentStep').style.display = 'none';
+    document.getElementById('verifyLicenseStep').style.display = 'block';
+  }
+
+  function handleVerifyLicenseInput(input) {
+    if (!input.files || !input.files[0]) return;
+    _verifyLicenseFile = input.files[0];
+    input.value = '';
+    const img = document.getElementById('vlPreview');
+    if (img._blobUrl) URL.revokeObjectURL(img._blobUrl);
+    img._blobUrl = URL.createObjectURL(_verifyLicenseFile);
+    img.src = img._blobUrl;
+    document.getElementById('vlPreviewWrap').style.display = 'block';
+    document.getElementById('vlNextBtn').disabled = false;
+  }
+
+  function _clearVerifyLicense() {
+    _verifyLicenseFile = null;
+    const img = document.getElementById('vlPreview');
+    if (img._blobUrl) { URL.revokeObjectURL(img._blobUrl); img._blobUrl = null; }
+    img.removeAttribute('src');
+    document.getElementById('vlPreviewWrap').style.display = 'none';
+    document.getElementById('vlNextBtn').disabled = true;
+  }
+
+  function acceptVerifyLicense() {
+    if (!_verifyLicenseFile) return;
+    document.getElementById('verifyLicenseStep').style.display = 'none';
     document.getElementById('verifyCaptureStep').style.display = 'block';
   }
 
   function closeVerifySelfieModal() {
     document.getElementById('verifySelfieModal').style.display = 'none';
+    _clearVerifyLicense();
     _verifySelfieBlob = null;
     _biometricConsent = false;
     _camMode = 'profile';
@@ -2680,17 +2600,18 @@ body.role-rider .driver-only { display: none; }
   }
 
   function submitVerificationWithSelfie() {
-    if (!_verifySelfieBlob || !_biometricConsent) return;
+    if (!_verifySelfieBlob || !_verifyLicenseFile || !_biometricConsent) return;
 
     const vBtn = document.getElementById('vsVerifyBtn');
     const lbl  = document.getElementById('vsVerifyBtnLabel');
     vBtn.disabled = true;
     lbl.textContent = 'Verifying…';
 
-    shrinkImage(_verifySelfieBlob)
-    .then(selfie => {
+    Promise.all([shrinkImage(_verifySelfieBlob), shrinkImage(_verifyLicenseFile)])
+    .then(([selfie, license]) => {
       const fd = new FormData();
       fd.append('selfie', selfie, 'verify_selfie.jpg');
+      fd.append('license_image', license, 'verify_license.jpg');
       fd.append('biometric_consent', '1');
       fd.append('notice_version', '{{ biometric_notice_version }}');
       return fetch('/profile/verify-driver/', {
@@ -2701,7 +2622,7 @@ body.role-rider .driver-only { display: none; }
     })
     .then(r => {
       // A 413 comes from Nginx as an HTML page, not JSON.
-      if (r.status === 413) return { error: 'That photo is too large to upload. Please take the selfie again.' };
+      if (r.status === 413) return { error: 'These photos are too large to upload. Please use a smaller licence photo and take the selfie again.' };
       return r.json().catch(() => ({ error: 'Verification service error. Please try again later.' }));
     })
     .then(data => {
@@ -2817,19 +2738,6 @@ body.role-rider .driver-only { display: none; }
 
   {% if selfie_url %}
   document.getElementById('selfieBtnLabel').textContent = 'Change Photo';
-  {% endif %}
-
-  {% if license_front_url %}
-  (function() {
-    const img = document.getElementById('licensePreview');
-    img.src = '{{ license_front_url }}';
-    img.style.display = 'block';
-    document.querySelector('.avatar-placeholder').style.display = 'none';
-    document.getElementById('avatarRing').classList.add('has-img');
-    document.getElementById('dropZone').classList.add('has-file');
-    document.getElementById('uploadSuccess').style.display = 'flex';
-    document.getElementById('uploadFileName').textContent = 'Current license';
-  })();
   {% endif %}
 
   const _savedVehicles = JSON.parse(document.getElementById('vehicles-data').textContent);
@@ -3060,12 +2968,12 @@ body.role-rider .driver-only { display: none; }
 <!-- ══════════════════════════════════
      MODAL: Remove Vehicle
      ══════════════════════════════════ -->
-<div class="modal-backdrop" id="vehicleDeleteModal" onclick="if(event.target===this) closeVehicleDeleteModal()">
+<div class="modal-backdrop" id="vehicleDeleteModal" data-dialog role="dialog" aria-modal="true" aria-labelledby="vehicleDeleteTitle" onclick="if(event.target===this) closeVehicleDeleteModal()">
   <div class="modal">
-    <h3>Remove Vehicle?</h3>
+    <h3 id="vehicleDeleteTitle">Remove Vehicle?</h3>
     <p class="modal-sub">This vehicle will be permanently deleted when you save your profile. This action cannot be undone.</p>
     <div class="modal-actions">
-      <button class="btn-modal btn-modal-secondary" onclick="closeVehicleDeleteModal()">Keep it</button>
+      <button class="btn-modal btn-modal-secondary" data-dialog-close data-dialog-initial onclick="closeVehicleDeleteModal()">Keep it</button>
       <button class="btn-modal" style="background:#dc2626;color:#fff;box-shadow:0 4px 14px rgba(220,38,38,0.25);" onclick="confirmVehicleDelete()">Yes, Remove</button>
     </div>
   </div>
@@ -3074,13 +2982,13 @@ body.role-rider .driver-only { display: none; }
 <!-- ══════════════════════════════════
      MODAL: Change Email
      ══════════════════════════════════ -->
-<div class="modal-backdrop" id="emailModal" onclick="if(event.target===this) closeEmailModal()">
+<div class="modal-backdrop" id="emailModal" data-dialog role="dialog" aria-modal="true" aria-labelledby="emailModalTitle" onclick="if(event.target===this) closeEmailModal()">
   <div class="modal">
-    <h3>Change Email Address</h3>
+    <h3 id="emailModalTitle">Change Email Address</h3>
     <p class="modal-sub">Enter your new email and your current password. We'll send a verification link to your new address before the change takes effect.</p>
 
     <div class="form-group">
-      <label class="form-label">New Email Address</label>
+      <label for="newEmailInput" class="form-label">New Email Address</label>
       <div class="input-wrap">
         <span class="input-icon"><svg viewBox="0 0 24 24"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg></span>
         <input type="email" class="form-input" id="newEmailInput" placeholder="new@example.com">
@@ -3088,7 +2996,7 @@ body.role-rider .driver-only { display: none; }
     </div>
 
     <div class="form-group mb-0">
-      <label class="form-label">Current Password</label>
+      <label for="emailModalPwd" class="form-label">Current Password</label>
       <div class="input-wrap">
         <span class="input-icon"><svg viewBox="0 0 24 24"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg></span>
         <input type="password" class="form-input" id="emailModalPwd" placeholder="Your current password">
@@ -3096,7 +3004,7 @@ body.role-rider .driver-only { display: none; }
     </div>
 
     <div class="modal-actions">
-      <button class="btn-modal btn-modal-secondary" onclick="closeEmailModal()">Cancel</button>
+      <button class="btn-modal btn-modal-secondary" data-dialog-close onclick="closeEmailModal()">Cancel</button>
       <button class="btn-modal btn-modal-primary" onclick="submitEmailChange()">Send Verification</button>
     </div>
   </div>
@@ -3105,13 +3013,13 @@ body.role-rider .driver-only { display: none; }
 <!-- ══════════════════════════════════
      MODAL: Change Password
      ══════════════════════════════════ -->
-<div class="modal-backdrop" id="passwordModal" onclick="if(event.target===this) closePasswordModal()">
+<div class="modal-backdrop" id="passwordModal" data-dialog role="dialog" aria-modal="true" aria-labelledby="passwordModalTitle" onclick="if(event.target===this) closePasswordModal()">
   <div class="modal">
-    <h3>Change Password</h3>
+    <h3 id="passwordModalTitle">Change Password</h3>
     <p class="modal-sub">Choose a new password — minimum 12 characters, with uppercase, lowercase, a number, and a special symbol.</p>
 
     <div class="form-group">
-      <label class="form-label">Current Password</label>
+      <label for="curPwd" class="form-label">Current Password</label>
       <div class="input-wrap">
         <span class="input-icon"><svg viewBox="0 0 24 24"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg></span>
         <input type="password" class="form-input" id="curPwd" placeholder="Current password">
@@ -3119,7 +3027,7 @@ body.role-rider .driver-only { display: none; }
     </div>
 
     <div class="form-group">
-      <label class="form-label">New Password</label>
+      <label for="newPwd" class="form-label">New Password</label>
       <div class="input-wrap">
         <span class="input-icon"><svg viewBox="0 0 24 24"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg></span>
         <input type="password" class="form-input" id="newPwd" placeholder="New password (min 12 chars)">
@@ -3127,7 +3035,7 @@ body.role-rider .driver-only { display: none; }
     </div>
 
     <div class="form-group mb-0">
-      <label class="form-label">Confirm New Password</label>
+      <label for="confirmPwd" class="form-label">Confirm New Password</label>
       <div class="input-wrap">
         <span class="input-icon"><svg viewBox="0 0 24 24"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg></span>
         <input type="password" class="form-input" id="confirmPwd" placeholder="Re-enter new password">
@@ -3135,7 +3043,7 @@ body.role-rider .driver-only { display: none; }
     </div>
 
     <div class="modal-actions">
-      <button class="btn-modal btn-modal-secondary" onclick="closePasswordModal()">Cancel</button>
+      <button class="btn-modal btn-modal-secondary" data-dialog-close onclick="closePasswordModal()">Cancel</button>
       <button class="btn-modal btn-modal-primary" onclick="submitPasswordChange()">Update Password</button>
     </div>
   </div>
@@ -3143,13 +3051,13 @@ body.role-rider .driver-only { display: none; }
 <!-- ══════════════════════════════════
      MODAL: Delete Account
      ══════════════════════════════════ -->
-<div class="modal-backdrop" id="deleteAccountModal" onclick="if(event.target===this) closeDeleteAccountModal()">
+<div class="modal-backdrop" id="deleteAccountModal" data-dialog role="dialog" aria-modal="true" aria-labelledby="deleteAccountTitle" onclick="if(event.target===this) closeDeleteAccountModal()">
   <div class="modal">
-    <h3>Delete Account</h3>
+    <h3 id="deleteAccountTitle">Delete Account</h3>
     <p class="modal-sub">We'll send a confirmation link to <strong>{{ email }}</strong>. Nothing happens until you click it. Once you do, your account is closed and you're signed out. It is permanently deleted after {{ account_deletion_grace_days }} days. Contact support within that time if you change your mind. Some records (e.g. completed ride history) are kept for the periods in our <a href="{% url 'privacy-policy' %}" target="_blank" rel="noopener">Privacy Policy</a>.</p>
 
     <div class="modal-actions">
-      <button class="btn-modal btn-modal-secondary" onclick="closeDeleteAccountModal()">Cancel</button>
+      <button class="btn-modal btn-modal-secondary" data-dialog-close data-dialog-initial onclick="closeDeleteAccountModal()">Cancel</button>
       <button class="btn-modal" id="deleteAccountConfirmBtn" style="background:#dc2626;color:#fff;box-shadow:0 4px 14px rgba(220,38,38,0.25);" onclick="submitDeleteAccount()">Send Confirmation Link</button>
     </div>
   </div>
@@ -3158,15 +3066,15 @@ body.role-rider .driver-only { display: none; }
 <!-- ══════════════════════════════════
      MODAL: In-browser Camera
      ══════════════════════════════════ -->
-<div class="modal-backdrop" id="cameraModal" onclick="if(event.target===this) closeCameraModal()">
+<div class="modal-backdrop" id="cameraModal" data-dialog role="dialog" aria-modal="true" aria-label="Take a selfie" onclick="if(event.target===this) closeCameraModal()">
   <div class="modal" style="max-width:520px; padding:0; overflow:hidden; border-radius:14px;">
     <div class="camera-shell">
       <video id="cameraVideo" playsinline autoplay muted></video>
       <canvas id="cameraCanvas" style="display:none;"></canvas>
     </div>
     <div class="camera-footer">
-      <button class="btn-modal btn-modal-secondary" onclick="closeCameraModal()" style="flex:0 0 auto; min-width:88px;">Cancel</button>
-      <button class="camera-shutter" id="cameraShutterBtn" onclick="cameraCapture()" title="Take photo"></button>
+      <button class="btn-modal btn-modal-secondary" data-dialog-close onclick="closeCameraModal()" style="flex:0 0 auto; min-width:88px;">Cancel</button>
+      <button class="camera-shutter" id="cameraShutterBtn" aria-label="Take photo" onclick="cameraCapture()" title="Take photo"></button>
       <button class="btn-modal btn-modal-secondary" id="cameraRetakeBtn" onclick="cameraRetake()" style="display:none; flex:0 0 auto; min-width:88px;">Retake</button>
       <button class="btn-modal btn-modal-primary" id="cameraUseBtn" onclick="cameraUse()" style="display:none; flex:0 0 auto; min-width:88px;">Use Photo</button>
     </div>

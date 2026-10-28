@@ -7,6 +7,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Komüte App – Login</title>
 <link rel="stylesheet" href="{% static 'css/fonts.css' %}">
+<link rel="stylesheet" href="{% static 'css/base.css' %}">
 
 <style>
 /* ── KOMÜTE BRAND TOKENS ── */
@@ -363,16 +364,16 @@ body {
     {% csrf_token %}
     {% if next %}<input type="hidden" name="next" value="{{ next }}">{% endif %}
     <div class="form-group">
-      <label class="form-label">
+      <label for="loginEmail" class="form-label">
         <svg viewBox="0 0 24 24"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
         Email Address
       </label>
-      <input type="email" name="email" class="form-input" placeholder="john@example.com" required>
+      <input id="loginEmail" type="email" name="email" class="form-input" placeholder="john@example.com" required>
     </div>
 
 
     <div class="form-group">
-      <label class="form-label">
+      <label for="password" class="form-label">
         <svg viewBox="0 0 24 24"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
         Password
       </label>
@@ -428,7 +429,7 @@ body {
 -->
     <div class="join-banner">
       <svg viewBox="0 0 24 24"><path d="M11 20A7 7 0 0 1 9.8 6.1C15.5 5 17 4.48 19 2c1 2 2 4.18 2 8 0 5.5-4.78 10-10 10z"/><path d="M2 21c0-3 1.85-5.36 5.08-6C9.5 14.52 12 13 13 12"/></svg>
-      Join 25,000+ eco-conscious commuters
+      Join a community of eco-conscious commuters
     </div>
 
   </form>

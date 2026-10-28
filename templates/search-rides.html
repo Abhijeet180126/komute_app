@@ -7,6 +7,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Komüte – Search for Rides</title>
 <link rel="stylesheet" href="{% static 'css/fonts.css' %}">
+<link rel="stylesheet" href="{% static 'css/base.css' %}">
 
 <style>
 /* ── KOMÜTE BRAND TOKENS ── */
@@ -573,7 +574,7 @@ nav {
           <div class="from-to-wrap">
             <!-- FROM -->
             <div class="form-group">
-              <label class="form-label">
+              <label for="searchFrom" class="form-label">
                 <svg viewBox="0 0 24 24"><circle cx="12" cy="10" r="3"/><path d="M12 2a8 8 0 0 0-8 8c0 5.25 8 12 8 12s8-6.75 8-12a8 8 0 0 0-8-8z"/></svg>
                 From
               </label>
@@ -584,7 +585,7 @@ nav {
                        style="padding-right: 116px"
                        oninput="resetLatLng('originLat','originLng')"
                        value="{{ search_from|default:'' }}">
-                <button class="clear-btn" tabindex="-1" style="right:90px" onclick="clearInput('searchFrom')"><svg viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
+                <button class="clear-btn" tabindex="-1" aria-label="Clear starting point" style="right:90px" onclick="clearInput('searchFrom')"><svg viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
                 <button type="button" class="locate-btn" id="locateBtn" onclick="locateMe()">
                   <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><line x1="12" y1="2" x2="12" y2="6"/><line x1="12" y1="18" x2="12" y2="22"/><line x1="2" y1="12" x2="6" y2="12"/><line x1="18" y1="12" x2="22" y2="12"/></svg>
                   Locate me
@@ -594,13 +595,13 @@ nav {
             </div>
 
             <!-- Swap button -->
-            <button class="swap-btn" tabindex="-1" onclick="swapLocations()" title="Swap">
+            <button class="swap-btn" tabindex="-1" aria-label="Swap from and to" onclick="swapLocations()" title="Swap">
               <svg viewBox="0 0 24 24"><polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg>
             </button>
 
             <!-- TO -->
             <div class="form-group">
-              <label class="form-label">
+              <label for="searchTo" class="form-label">
                 <svg viewBox="0 0 24 24"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>
                 To
               </label>
@@ -610,7 +611,7 @@ nav {
                        placeholder="Destination" autocomplete="off"
                        oninput="resetLatLng('destLat','destLng')"
                        value="{{ search_to|default:'' }}">
-                <button class="clear-btn" tabindex="-1" onclick="clearInput('searchTo')"><svg viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
+                <button class="clear-btn" tabindex="-1" aria-label="Clear destination" onclick="clearInput('searchTo')"><svg viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
               </div>
               <p class="field-error{% if errors.to %} visible{% endif %}" id="toError">{{ errors.to|default:'' }}</p>
             </div>
@@ -619,7 +620,7 @@ nav {
 
         <!-- DATE -->
         <div class="form-group">
-          <label class="form-label">
+          <label for="searchDate_display" class="form-label">
             <svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
             Date
           </label>
@@ -628,7 +629,7 @@ nav {
             <input type="text" id="searchDate_display" class="form-input" placeholder="MM-DD-YYYY" maxlength="10" inputmode="numeric" autocomplete="off" oninput="autoDateFmt(this,'searchDate');enforceSearchDateBounds(this)"
               value="{% if search_date %}{{ search_date|slice:'5:7' }}-{{ search_date|slice:'8:10' }}-{{ search_date|slice:'0:4' }}{% endif %}">
             <input type="hidden" id="searchDate" name="date" value="{{ search_date|default:'' }}">
-            <input type="date" class="date-picker-native" id="searchDate_picker" tabindex="-1" min="{% now 'Y-m-d' %}" value="{{ search_date|default:'' }}"
+            <input type="date" class="date-picker-native" aria-label="Choose a date from the calendar" id="searchDate_picker" tabindex="-1" min="{% now 'Y-m-d' %}" value="{{ search_date|default:'' }}"
               onchange="pickNativeDate(this,'searchDate_display','searchDate')">
           </div>
           <p class="field-error{% if errors.date %} visible{% endif %}" id="searchDateClientError">{{ errors.date|default:'' }}</p>
@@ -652,10 +653,10 @@ nav {
       <div class="advanced-panel" id="advPanel">
         <div class="advanced-grid">
           <div class="form-group">
-            <label class="form-label">Seats Needed</label>
+            <label for="searchSeats" class="form-label">Seats Needed</label>
             <div class="input-wrap">
               <span class="input-icon"><svg viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg></span>
-              <select name="seats" class="form-select" style="padding-left:36px">
+              <select id="searchSeats" name="seats" class="form-select" style="padding-left:36px">
                 <option value="">Any</option>
                 <option value="1" {% if filter_seats == '1' %}selected{% endif %}>1</option>
                 <option value="2" {% if filter_seats == '2' %}selected{% endif %}>2</option>
@@ -665,17 +666,17 @@ nav {
             </div>
           </div>
           <div class="form-group">
-            <label class="form-label">Max Price (CAD)</label>
+            <label for="searchMaxPrice" class="form-label">Max Price (CAD)</label>
             <div class="input-wrap">
               <span class="input-icon"><svg viewBox="0 0 24 24"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg></span>
-              <input type="number" name="max_price" class="form-input" placeholder="No limit" min="0" value="{{ filter_max_price }}">
+              <input id="searchMaxPrice" type="number" name="max_price" class="form-input" placeholder="No limit" min="0" value="{{ filter_max_price }}">
             </div>
           </div>
           <div class="form-group">
-            <label class="form-label">Departure Time</label>
+            <label for="searchTimeSlot" class="form-label">Departure Time</label>
             <div class="input-wrap">
               <span class="input-icon"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg></span>
-              <select name="depart_time_slot" class="form-select" style="padding-left:36px">
+              <select id="searchTimeSlot" name="depart_time_slot" class="form-select" style="padding-left:36px">
                 <option value="">Any time</option>
                 <option value="early_morning" {% if filter_time_slot == 'early_morning' %}selected{% endif %}>Early morning (5–8 AM)</option>
                 <option value="morning"       {% if filter_time_slot == 'morning'       %}selected{% endif %}>Morning (8–12 PM)</option>
@@ -685,10 +686,10 @@ nav {
             </div>
           </div>
           <div class="form-group">
-            <label class="form-label">Preferences</label>
+            <label for="searchPreference" class="form-label">Preferences</label>
             <div class="input-wrap">
               <span class="input-icon"><svg viewBox="0 0 24 24"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg></span>
-              <select name="preference" class="form-select" style="padding-left:36px">
+              <select id="searchPreference" name="preference" class="form-select" style="padding-left:36px">
                 <option value="">Any</option>
                 <option value="Winter Tires"  {% if filter_preference == 'Winter Tires'  %}selected{% endif %}>Winter Tires</option>
                 <option value="Pet Friendly"  {% if filter_preference == 'Pet Friendly'  %}selected{% endif %}>Pet Friendly</option>

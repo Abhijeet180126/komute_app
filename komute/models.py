@@ -156,30 +156,26 @@ class CustomUser(AbstractUser):
         blank=True
     )
 
-    license_number = models.TextField(
+    # Encrypted at rest (privacy policy s.9, audit P-5). Only compared in
+    # Python, never filtered on in SQL.
+    license_number = EncryptedTextField(
         null=True,
         blank=True
     )
 
-    license_province = models.TextField(
+    license_province = EncryptedTextField(
         null=True,
         blank=True
     )
 
+    # Left plain: expire_driver_verification filters on it in SQL.
     license_expiry = models.DateField(
         null=True,
         blank=True
     )
 
-    license_front_url = models.TextField(
-        null=True,
-        blank=True
-    )
-
-    license_back_url = models.TextField(
-        null=True,
-        blank=True
-    )
+    # No licence image field: the photo is sent with the verification
+    # request and never stored (audit P-5/P-13).
 
     selfie_url = models.TextField(
         null=True,

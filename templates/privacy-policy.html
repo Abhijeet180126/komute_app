@@ -6,6 +6,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Komüte – Privacy Policy</title>
 <link rel="stylesheet" href="{% static 'css/fonts.css' %}">
+<link rel="stylesheet" href="{% static 'css/base.css' %}">
 
 <style>
 :root {
@@ -250,7 +251,7 @@ body {
   <p class="policy-hero-sub">How we collect, use, and protect your personal information.</p>
   <div class="policy-hero-date">
     <svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
-    Last Updated: July 9, 2026
+    Last Updated: October 26, 2026
   </div>
 </div>
 
@@ -272,10 +273,10 @@ body {
       <div class="policy-section-title">Information We Collect</div>
     </div>
     <div class="policy-section-body">
-      <p>To create an account and use KOMUTE, you may be asked to provide certain personal information such as your name, email address, phone number, and other details needed to identify you. This information enables us to verify your account, communicate with you, and support your use of our service.</p>
+      <p>To create an account and use KOMUTE, you may be asked to provide certain personal information such as your name, email address, phone number, date of birth, and other details needed to identify you. We ask for your date of birth to confirm that you are 18 or over. This information enables us to verify your account, communicate with you, and support your use of our service.</p>
       <p>Depending on how you use KOMUTE, we may also collect:</p>
       <ul>
-        <li><strong>Identity verification data (drivers):</strong> images of your government-issued driver's licence, information extracted from that licence (name, address, date of birth, licence number, expiry date), and a selfie used for facial comparison. See Sections 9 and 12 for how this data is protected, retained, and deleted.</li>
+        <li><strong>Identity verification data (drivers):</strong> a photo of your government-issued driver's licence, which is used only during verification and is not stored; the licence details you enter on your profile (licence number, issuing province and expiry date) along with your name and date of birth; and a selfie used for facial comparison, which is also not stored. See Sections 9 and 12 for how this data is protected, retained, and deleted.</li>
         <li><strong>Location data:</strong> origin and destination coordinates you enter when posting or searching for a trip, and (with your permission) your device's GPS location when you use the "Locate Me" feature.</li>
         <li><strong>Trip and booking data:</strong> trips posted, seats booked, cancellations, and ride history.</li>
         <li><strong>Communications:</strong> messages you exchange with other users through the in-app chat, and messages you send to our support team.</li>
@@ -390,8 +391,9 @@ body {
       <p>For safety and compliance, drivers must complete identity verification before posting a trip. Verification involves reading information from your government-issued driver's licence (using optical character recognition) and comparing your licence photo against a selfie. KOMUTE may use trusted third-party services to perform parts of this verification.</p>
       <ul>
         <li><strong>Purpose limitation:</strong> verification data is used solely to confirm your identity and eligibility to drive. It is never used for advertising and is never sold, leased, or traded.</li>
-        <li><strong>Data minimization:</strong> once verification is complete, we retain only the verification outcome (approved or rejected) and the minimum details needed (such as name match and licence expiry). The full extracted licence data is deleted after the verification decision is recorded.</li>
-        <li><strong>Security:</strong> licence data is encrypted at rest, and access is restricted to authorized personnel who need it to perform verification and safety functions.</li>
+        <li><strong>Licence photo, processed only:</strong> you add the photo of your licence when you start verification. It is sent to the verification service with your selfie, used for that check, and never saved by KOMUTE: not in our database, our file storage or our logs.</li>
+        <li><strong>Data minimization:</strong> after verification we keep the verification outcome (approved or rejected) and the licence details you entered on your profile (licence number, issuing province and expiry date), which we need to know when your licence expires and to tell when your details change. The information the verification service reads from your licence photo is not stored; we keep only which checks passed.</li>
+        <li><strong>Security:</strong> your licence number and issuing province are encrypted in our database, and access is restricted to authorized personnel who need it to perform verification and safety functions.</li>
         <li><strong>Biometric data:</strong> the facial comparison process is subject to the additional protections, consent requirements, and retention limits described in Section 12 (Biometric Information).</li>
       </ul>
     </div>
@@ -412,13 +414,15 @@ body {
   <div class="policy-section">
     <div class="policy-section-head">
       <div class="policy-num">11</div>
-      <div class="policy-section-title">Location Data and Third-Party Geocoding</div>
+      <div class="policy-section-title">Location Data, Third-Party Geocoding and Routing</div>
     </div>
     <div class="policy-section-body">
       <p>KOMUTE uses location information to match drivers and passengers travelling in the same direction. Origin and destination coordinates you enter when posting or searching for trips are associated with your account so the platform can function.</p>
       <ul>
         <li><strong>Search logs:</strong> ride search records (including origin and destination coordinates) are automatically deleted no later than 90 days after the search, and are deleted immediately when you delete your account.</li>
         <li><strong>"Locate Me" feature:</strong> when you tap "Locate Me," your device's GPS coordinates are sent to Komoot's Photon geocoding service (photon.komoot.io), a third-party provider, to convert your position into a readable address. This transmission is transient — KOMUTE does not store the coordinates from this call, and Komoot processes them only to return the address. If you prefer not to share your GPS position with this provider, you can type your address manually instead.</li>
+        <li><strong>Address search:</strong> as you type a place into a search or ride form, the text is sent to Komoot's Photon service (photon.komoot.io) to suggest matching addresses. Komoot receives the text you type, plus your IP address and browser information, but not your name or account details.</li>
+        <li><strong>Route calculation:</strong> to show a trip's distance, estimated drive time and route on the map, your browser sends the trip's origin, stop and destination coordinates to the Open Source Routing Machine (OSRM) public routing service (router.project-osrm.org), a third-party provider hosted outside Canada. This happens when a driver posts or edits a ride and when the trip's details or summary are viewed. As with any web request, the provider also receives your IP address and browser information. It does not receive your name or account details, and it uses the coordinates only to return the route. KOMUTE keeps the resulting estimated drive time with the trip.</li>
         <li><strong>No continuous tracking:</strong> KOMUTE does not track your location in the background or outside of the features described above.</li>
       </ul>
     </div>
@@ -452,7 +456,9 @@ body {
       <p>We keep personal data only as long as necessary for the purpose it was collected, after which it is deleted or anonymized. Our standard retention periods are:</p>
       <ul>
         <li><strong>Biometric verification data (facial similarity scores):</strong> destroyed within 30 days after the verification decision (see Section 12).</li>
-        <li><strong>Extracted driver's licence data (OCR output):</strong> deleted once the verification decision is recorded; only the outcome and minimum matching details are retained.</li>
+        <li><strong>Driver's licence photo:</strong> not stored; used only while the verification check runs.</li>
+        <li><strong>Information read from the licence photo (OCR output):</strong> not stored; only which checks passed is kept.</li>
+        <li><strong>Licence details you enter (number, province, expiry):</strong> for as long as your account is active, then deleted per Section 8.</li>
         <li><strong>Verification records (outcome only):</strong> up to 1 year after the verification decision.</li>
         <li><strong>Ride search logs:</strong> up to 90 days.</li>
         <li><strong>Completed rides and bookings:</strong> up to 2 years after trip completion.</li>
@@ -473,7 +479,7 @@ body {
       <div class="policy-section-title">Data Security and Breach Notification</div>
     </div>
     <div class="policy-section-body">
-      <p>We use administrative, technical, and physical safeguards designed to protect personal data, including encryption of sensitive data at rest and in transit, role-based access controls that restrict sensitive records (such as verification data) to authorized personnel, and scheduled deletion processes that enforce the retention periods above.</p>
+      <p>We use administrative, technical, and physical safeguards designed to protect personal data, including encryption of all data in transit, field-level encryption of sensitive data at rest (such as licence numbers and facial similarity scores), role-based access controls that restrict sensitive records (such as verification data) to authorized personnel, and scheduled deletion processes that enforce the retention periods above.</p>
       <p>No method of transmission or storage is completely secure, and we cannot guarantee absolute security. If a breach of security affecting your personal data occurs, we will notify you and the relevant regulators or authorities as required by applicable law (including US state breach notification laws, Canada's PIPEDA, and the GDPR), without undue delay and within the timeframes those laws require.</p>
     </div>
   </div>
