@@ -1504,6 +1504,7 @@ nav {
     todayYMD.slice(5,7) + '-' + todayYMD.slice(8,10) + '-' + todayYMD.slice(0,4);
   document.getElementById('depart_date_picker').value = todayYMD;
   document.getElementById('depart_date_picker').max = getMaxDateStr();
+  document.getElementById('recurringEndDate_picker').max = getMaxDateStr();
 
   // Pre-fill time to now+30 on load
   applyTimeMin();

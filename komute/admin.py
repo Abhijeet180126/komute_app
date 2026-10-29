@@ -12,6 +12,7 @@ from komute.models import (
     RideSearch, VerificationLog, Review, RideInvite, UserReport, UserBlock,
     BiometricConsent, LegalAcceptance, EmailLog,
 )
+from komute.tasks import send_later
 
 User = get_user_model()
 logger = logging.getLogger(__name__)
@@ -79,9 +80,106 @@ class VerificationLogAdmin(admin.ModelAdmin):
     # them for the actual manual-review workflow, just not in a scrolling list.
     # stage_results / reason_codes hold no licence values (C3), so support
     # can see why an attempt failed straight from the list.
-    list_display = ('id', 'user', 'result', 'stage_results', 'reason_codes', 'reviewer', 'created_at')
-    list_filter = ('result',)
+    #
+    # Review queue (audit P-10, Law 25 s.12.1): filter "Review status" =
+    # "Waiting for review". The photos aren't kept, so the reviewer works
+    # from the checks, reasons, the driver's comment, the profile and the
+    # vehicle photo, and can email the driver or ask them to verify again.
+    list_display = ('id', 'user', 'result', 'review_status', 'review_source', 'stage_results',
+                    'reason_codes', 'reviewer', 'created_at')
+    list_filter = ('review_status', 'review_source', 'result')
     search_fields = ('user__email',)
+    list_select_related = ('user', 'reviewer')
+    fields = ('user', 'created_at', 'result', 'stage_results', 'reason_codes', 'face_score',
+              'review_status', 'review_source', 'review_requested_at', 'driver_comment',
+              'reviewer', 'reviewed_at', 'notes')
+    readonly_fields = ('user', 'created_at', 'result', 'stage_results', 'reason_codes', 'face_score',
+                       'review_status', 'review_source', 'review_requested_at', 'driver_comment',
+                       'reviewer', 'reviewed_at')
+    actions = ('approve_after_review', 'reject_after_review')
+
+    def has_add_permission(self, request):
+        return False
+
+    def _decide(self, request, queryset, approve):
+        done = 0
+        for log in queryset.select_related('user'):
+            if log.review_status != VerificationLog.REVIEW_PENDING:
+                self.message_user(request, f'#{log.id} is not waiting for review; skipped.', messages.WARNING)
+                continue
+            user = log.user
+            if approve:
+                # Already verified by a later attempt: keep its date.
+                if not user.driver_verified:
+                    user.driver_verified = True
+                    user.driver_verified_at = timezone.now()
+                    user.reverify_reminder_sent_at = None
+                    user.save(update_fields=['driver_verified', 'driver_verified_at', 'reverify_reminder_sent_at'])
+                # Like a service approval, this covers the vehicle the check used.
+                vehicle = user.vehicles.filter(is_primary=True).first() or user.vehicles.first()
+                if vehicle and not vehicle.vehicle_verified:
+                    vehicle.vehicle_verified = True
+                    vehicle.save(update_fields=['vehicle_verified'])
+            elif user.driver_verified:
+                user.driver_verified = False
+                user.save(update_fields=['driver_verified'])
+            stamp = f'{timezone.localdate():%Y-%m-%d} {request.user.email}: {"approved" if approve else "rejected"} after review'
+            log.result = VerificationLog.RESULT_APPROVED if approve else VerificationLog.RESULT_REJECTED
+            log.review_status = VerificationLog.REVIEW_DONE
+            log.reviewer = request.user
+            log.reviewed_at = timezone.now()
+            log.notes = f'{log.notes or ""}\n{stamp}'.strip()
+            log.save(update_fields=['result', 'review_status', 'reviewer', 'reviewed_at', 'notes'])
+            _send_review_result_email(request, log, approve)
+            done += 1
+        if done:
+            self.message_user(request, f'{done} review(s) closed; the driver(s) have been emailed.')
+
+    @admin.action(description='Approve after review (verify the driver and their vehicle)')
+    def approve_after_review(self, request, queryset):
+        self._decide(request, queryset, approve=True)
+
+    @admin.action(description='Reject after review (driver stays unverified)')
+    def reject_after_review(self, request, queryset):
+        self._decide(request, queryset, approve=False)
+
+
+REVIEW_APPROVED_EMAIL_BODY = """Hi {name},
+
+A member of our team has reviewed your driver verification and approved it.
+You can now post rides on Komüte.
+
+{profile_url}
+
+The Komüte team
+"""
+
+REVIEW_REJECTED_EMAIL_BODY = """Hi {name},
+
+A member of our team has reviewed your driver verification and could not
+confirm your identity from it, so you are not verified as a driver.
+
+You can check that your profile details match your licence exactly and
+verify again from your profile:
+{profile_url}
+
+If you think this is wrong, reply to this email and tell us why.
+
+The Komüte team
+"""
+
+
+def _send_review_result_email(request, log, approved):
+    user = log.user
+    body = REVIEW_APPROVED_EMAIL_BODY if approved else REVIEW_REJECTED_EMAIL_BODY
+    send_later(EmailMultiAlternatives(
+        subject='[Komüte] Your driver verification has been reviewed',
+        body=body.format(name=user.full_name or 'there',
+                         profile_url=request.build_absolute_uri(reverse('profile'))),
+        from_email=settings.DEFAULT_FROM_EMAIL,
+        to=[user.email],
+        reply_to=[settings.REPLY_TO_EMAIL_SUPPORT_CONTACT],
+    ), EmailLog.KIND_REVIEW_RESULT, user)
 
 
 @admin.register(BiometricConsent)

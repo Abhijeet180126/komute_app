@@ -1,5 +1,7 @@
 from django.urls import path,include
+from django.contrib.sitemaps.views import sitemap
 from django.views.generic import RedirectView
+from .sitemaps import PublicPagesSitemap
 from .views import (
     home_view, signup_view, login_view, profile_view, about_view,
     role_select_view, post_ride_view, how_it_works_view,
@@ -8,6 +10,7 @@ from .views import (
     create_price_offer_view, respond_price_offer_view, privacy_policy_view,
     contact_view, terms_view, communityguide_view, accessibility_view, download_my_data_view, CustomConfirmEmailView,
     ride_success_view, driver_inbox_view, rider_inbox_view, verify_driver_view,
+    request_verification_review_view,
     ride_summary_view, ride_receipt_pdf_view, edit_ride_view,
     cancel_booking_view, cancel_ride_view,
     accept_booking_view, reject_booking_view,
@@ -18,11 +21,13 @@ from .views import (
     forgot_password_view, reset_password_view,
     private_media_view, upload_too_large_view,
     report_user_view, block_user_view, unblock_user_view,
-    accept_terms_view, csp_report_view,
+    accept_terms_view, csp_report_view, robots_txt_view,
 )
 
 urlpatterns = [
     path('', home_view, name='home'),
+    path('robots.txt', robots_txt_view, name='robots-txt'),
+    path('sitemap.xml', sitemap, {'sitemaps': {'pages': PublicPagesSitemap}}, name='sitemap'),
     path('signup/', signup_view, name='signup'),
     path('login/', login_view, name='login'),
     path('forgot-password/', forgot_password_view, name='forgot-password'),
@@ -75,6 +80,7 @@ urlpatterns = [
     path('driver-inbox/', driver_inbox_view, name='driver-inbox'),
     path('rider-inbox/', rider_inbox_view, name='rider-inbox'),
     path('profile/verify-driver/', verify_driver_view, name='verify-driver'),
+    path('profile/verify-driver/review/', request_verification_review_view, name='verify-driver-review'),
     path('private-media/<path:path>', private_media_view, name='private-media'),
     path('upload-too-large/', upload_too_large_view, name='upload-too-large'),
     path('csp-report/', csp_report_view, name='csp-report'),

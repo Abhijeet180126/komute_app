@@ -1224,7 +1224,9 @@ class RecurringRideTimezoneTests(TestCase):
         today = timezone.localdate(timezone=tz)
         first = today + timedelta(days=(7 - today.weekday()) % 7 or 7)   # next Monday
         depart = datetime.combine(first, datetime.min.time().replace(hour=20), tzinfo=tz)
-        end = first + timedelta(weeks=26)   # half a year always crosses a DST change
+        # As far as the 4-month limit allows (audit D-8), on whole weeks.
+        from komute.views import _max_ride_date
+        end = first + timedelta(weeks=(_max_ride_date() - first).days // 7)
         c = Client()
         c.login(username='rr_driver@example.com', password='TestPass123')
         resp = c.post(reverse('post-ride'), {
@@ -1239,12 +1241,16 @@ class RecurringRideTimezoneTests(TestCase):
         })
         self.assertEqual(resp.status_code, 302)
         rides = list(Rides.objects.filter(driver=driver).order_by('depart_at'))
-        self.assertEqual(len(rides), 27)
+        self.assertEqual(len(rides), (end - first).days // 7 + 1)
         local = [r.depart_at.astimezone(tz) for r in rides]
+        # 20:00 local on every date, on either side of a DST change.
         self.assertTrue(all(d.weekday() == 0 and (d.hour, d.minute) == (20, 0) for d in local))
         self.assertEqual(local[0].date(), first)
-        offsets = {d.utcoffset() for d in local}
-        self.assertEqual(len(offsets), 2)   # both EDT and EST in the range
+        # Four months doesn't always cross a DST change, so compare with
+        # what the calendar says rather than expecting both offsets.
+        expected = {datetime.combine(d.date(), datetime.min.time().replace(hour=20), tzinfo=tz).utcoffset()
+                    for d in local}
+        self.assertEqual({d.utcoffset() for d in local}, expected)
 
 
 class RouteDemandViewTests(TestCase):
@@ -3984,21 +3990,41 @@ class VerificationResultStorageTests(TestCase):
              patch('requests.post', return_value=mock_resp):
             return c.post(reverse('verify-driver'), self._selfie_file())
 
-    def test_combined_approval_verifies_vehicle_even_if_its_stage_failed(self):
+    def test_approval_with_any_failed_check_is_a_rejection(self):
+        # The service's combined score can approve with a failed check; a
+        # driver needs face, licence and vehicle to pass (audit P-10).
+        failed_reason = {'license_ocr': 'OTHER', 'face_biometrics': 'FACE_MISMATCH',
+                         'vehicle_verification': 'VEHICLE_MISMATCH'}
         vehicle = self._make_verifiable()
-        self._call({
-            "decision": "APPROVED",
-            "stages": {"license_ocr": {"passed": True},
-                       "face_biometrics": {"passed": True, "vlm_confidence": 0.95},
-                       "vehicle_verification": {"passed": False}},
-            "rejection_reasons": [],
-        })
-        vehicle.refresh_from_db()
-        self.assertTrue(vehicle.vehicle_verified)
-        log = VerificationLog.objects.get(user=self.driver)
-        self.assertEqual(log.stage_results, {
-            'license_ocr': True, 'face_biometrics': True, 'vehicle_verification': False})
-        self.assertIsNone(log.reason_codes)
+        for failed, code in failed_reason.items():
+            with self.subTest(failed=failed):
+                cache.clear()
+                VerificationLog.objects.all().delete()
+                stages = {name: {"passed": name != failed} for name in failed_reason}
+                stages["face_biometrics"]["vlm_confidence"] = 0.95
+                data = json.loads(self._call({"decision": "APPROVED", "stages": stages,
+                                              "rejection_reasons": []}).content)
+                self.assertFalse(data['verified'])
+                self.assertTrue(data['can_request_review'])
+                self.assertIn("check didn't pass", data['decision']['details'])
+                self.driver.refresh_from_db()
+                self.assertFalse(self.driver.driver_verified)
+                vehicle.refresh_from_db()
+                self.assertEqual(vehicle.vehicle_verified, failed != 'vehicle_verification')
+                vehicle.vehicle_verified = False
+                vehicle.save(update_fields=['vehicle_verified'])
+                log = VerificationLog.objects.get(user=self.driver)
+                self.assertEqual(log.result, VerificationLog.RESULT_REJECTED)
+                self.assertEqual(log.reason_codes, [code])
+                self.assertEqual(log.review_status, '')
+
+    def test_approval_missing_a_check_is_a_rejection(self):
+        self._make_verifiable()
+        data = json.loads(self._call({"decision": "APPROVED",
+                                      "stages": {"face_biometrics": {"passed": True}}}).content)
+        self.assertFalse(data['verified'])
+        self.driver.refresh_from_db()
+        self.assertFalse(self.driver.driver_verified)
 
     def test_only_outcome_details_stored_not_licence_text(self):
         # Privacy policy s.9/s.13: the driver sees the full reasons, but only
@@ -4043,6 +4069,147 @@ class VerificationResultStorageTests(TestCase):
             with self.subTest(text=text):
                 self.assertEqual(_reason_codes([text]), [code])
         self.assertEqual(_reason_codes(["Name mismatch", "Name mismatch (surname)"]), ['NAME_MISMATCH'])
+
+
+class VerificationReviewQueueTests(TestCase):
+    """Audit P-10 (Quebec Law 25 s.12.1): borderline checks and driver
+    requests go to a staff review queue in the admin."""
+
+    setUp = VerifyDriverViewGateTests.setUp
+    _make_verifiable = VerifyDriverViewGateTests._make_verifiable
+    _selfie_file = VerifyDriverViewGateTests._selfie_file
+    _call = VerificationResultStorageTests._call
+
+    REJECTED = {"decision": "REJECTED",
+                "stages": {"license_ocr": {"passed": True},
+                           "face_biometrics": {"passed": False, "vlm_confidence": 0.3},
+                           "vehicle_verification": {"passed": True}},
+                "rejection_reasons": ["Face mismatch"]}
+
+    def _driver_client(self):
+        c = Client()
+        c.login(username='vd_driver@example.com', password='TestPass123')
+        return c
+
+    def _admin_action(self, action, log):
+        staff = make_user('vr_admin@example.com', is_staff=True, is_superuser=True)
+        c = Client()
+        c.login(username=staff.email, password='TestPass123')
+        resp = c.post(reverse('admin:komute_verificationlog_changelist'),
+                      {'action': action, '_selected_action': [log.id]})
+        self.assertEqual(resp.status_code, 302)
+        log.refresh_from_db()
+        self.driver.refresh_from_db()
+        return staff
+
+    def test_clear_rejection_is_not_queued_but_can_be_reviewed(self):
+        self._make_verifiable()
+        data = json.loads(self._call(self.REJECTED).content)
+        self.assertFalse(data['review_pending'])
+        self.assertTrue(data['can_request_review'])
+        log = VerificationLog.objects.get(user=self.driver)
+        self.assertEqual(log.review_status, '')
+        self.assertEqual(len(mail.outbox), 0)
+
+    def test_unclear_decision_is_queued_and_driver_stays_unverified(self):
+        self._make_verifiable()
+        data = json.loads(self._call({"decision": "MANUAL_REVIEW", "stages": {}}).content)
+        self.assertFalse(data['verified'])
+        self.assertTrue(data['review_pending'])
+        self.assertFalse(data['can_request_review'])
+        log = VerificationLog.objects.get(user=self.driver)
+        self.assertEqual(log.result, VerificationLog.RESULT_MANUAL_REVIEW)
+        self.assertEqual(log.review_status, VerificationLog.REVIEW_PENDING)
+        self.assertEqual(log.review_source, VerificationLog.REVIEW_SOURCE_BORDERLINE)
+        self.driver.refresh_from_db()
+        self.assertFalse(self.driver.driver_verified)
+        self.assertEqual(len(mail.outbox), 1)
+        self.assertEqual(mail.outbox[0].to, [settings.ADMIN_EMAIL])
+        self.assertIn(f'/admin/komute/verificationlog/{log.id}/', mail.outbox[0].body)
+
+    def test_clean_approval_is_not_queued(self):
+        self._make_verifiable()
+        self._call({"decision": "APPROVED",
+                    "stages": {name: {"passed": True} for name in
+                               ("license_ocr", "face_biometrics", "vehicle_verification")}})
+        self.assertEqual(VerificationLog.objects.get(user=self.driver).review_status, '')
+
+    def test_driver_requests_review_of_rejection(self):
+        self._make_verifiable()
+        self._call(self.REJECTED)
+        c = self._driver_client()
+        self.assertContains(c.get(reverse('profile')), 'Ask a person to review it')
+        resp = c.post(reverse('verify-driver-review'), {'comment': 'I have grown a beard since.'})
+        self.assertEqual(resp.status_code, 200)
+        log = VerificationLog.objects.get(user=self.driver)
+        self.assertEqual(log.review_status, VerificationLog.REVIEW_PENDING)
+        self.assertEqual(log.review_source, VerificationLog.REVIEW_SOURCE_DRIVER)
+        self.assertEqual(log.driver_comment, 'I have grown a beard since.')
+        self.assertIsNotNone(log.review_requested_at)
+        self.assertEqual(len(mail.outbox), 1)
+        self.assertIn('I have grown a beard since.', mail.outbox[0].body)
+        self.assertContains(c.get(reverse('profile')), 'is reviewing your last verification')
+        # Only once per attempt.
+        self.assertEqual(c.post(reverse('verify-driver-review')).status_code, 409)
+
+    def test_review_request_needs_a_rejected_latest_attempt(self):
+        c = self._driver_client()
+        self.assertEqual(c.post(reverse('verify-driver-review')).status_code, 400)
+        VerificationLog.objects.create(user=self.driver, result=VerificationLog.RESULT_APPROVED)
+        self.assertEqual(c.post(reverse('verify-driver-review')).status_code, 400)
+        self.assertEqual(c.post(reverse('verify-driver-review'), {'comment': 'x' * 2001}).status_code, 400)
+        self.assertEqual(Client().post(reverse('verify-driver-review')).status_code, 302)
+
+    def test_admin_approve_verifies_driver_and_vehicle(self):
+        vehicle = self._make_verifiable(is_primary=True)
+        log = VerificationLog.objects.create(
+            user=self.driver, result=VerificationLog.RESULT_REJECTED,
+            review_status=VerificationLog.REVIEW_PENDING, review_source=VerificationLog.REVIEW_SOURCE_DRIVER)
+        staff = self._admin_action('approve_after_review', log)
+        self.assertEqual(log.result, VerificationLog.RESULT_APPROVED)
+        self.assertEqual(log.review_status, VerificationLog.REVIEW_DONE)
+        self.assertEqual(log.reviewer, staff)
+        self.assertIsNotNone(log.reviewed_at)
+        self.assertTrue(self.driver.driver_verified)
+        self.assertIsNotNone(self.driver.driver_verified_at)
+        vehicle.refresh_from_db()
+        self.assertTrue(vehicle.vehicle_verified)
+        self.assertEqual(mail.outbox[-1].to, [self.driver.email])
+        self.assertIn('approved', mail.outbox[-1].body)
+
+    def test_admin_reject_closes_unclear_result(self):
+        log = VerificationLog.objects.create(
+            user=self.driver, result=VerificationLog.RESULT_MANUAL_REVIEW,
+            review_status=VerificationLog.REVIEW_PENDING, review_source=VerificationLog.REVIEW_SOURCE_BORDERLINE)
+        self._admin_action('reject_after_review', log)
+        self.assertEqual(log.result, VerificationLog.RESULT_REJECTED)
+        self.assertEqual(log.review_status, VerificationLog.REVIEW_DONE)
+        self.assertFalse(self.driver.driver_verified)
+        self.assertEqual(mail.outbox[-1].to, [self.driver.email])
+
+    def test_admin_skips_attempts_not_in_the_queue(self):
+        log = VerificationLog.objects.create(user=self.driver, result=VerificationLog.RESULT_REJECTED)
+        self._admin_action('approve_after_review', log)
+        self.assertEqual(log.result, VerificationLog.RESULT_REJECTED)
+        self.assertFalse(self.driver.driver_verified)
+        self.assertEqual(len(mail.outbox), 0)
+
+    def test_notice_text_on_profile_and_privacy_policy(self):
+        profile = self._driver_client().get(reverse('profile')).content.decode()
+        self.assertIn('It was made automatically by Komüte', profile)
+        self.assertIn('Ask for a review', profile)
+        policy = self.client.get(reverse('privacy-policy')).content.decode()
+        self.assertIn('Automated decision and human review', policy)
+        self.assertIn('s.12.1', policy)
+
+    def test_data_export_includes_review_but_not_staff_notes(self):
+        VerificationLog.objects.create(
+            user=self.driver, result=VerificationLog.RESULT_REJECTED,
+            review_status=VerificationLog.REVIEW_DONE, driver_comment='my comment', notes='staff only')
+        resp = self._driver_client().get(reverse('download-my-data'))
+        body = b''.join(resp.streaming_content) if resp.streaming else resp.content
+        self.assertIn(b'my comment', body)
+        self.assertNotIn(b'staff only', body)
 
 
 class AuditFixTests(TestCase):
@@ -4587,7 +4754,9 @@ class AuditChatFixTests(TransactionTestCase):
 
 
 class AuditRecurringRideTests(TestCase):
-    def test_recurring_series_capped_at_one_year(self):
+    def test_recurring_series_capped_at_four_months(self):
+        # Audit D-8: the same limit as a single ride.
+        from komute.views import _max_ride_date
         driver = make_driver_with_vehicle('ar_driver@example.com')
         tz = ZoneInfo('America/Toronto')
         first = timezone.localdate(timezone=tz) + timedelta(days=7)
@@ -4608,9 +4777,13 @@ class AuditRecurringRideTests(TestCase):
         self.assertEqual(resp.status_code, 200)
         self.assertIn('recurring_end_date', resp.context['errors'])
         self.assertFalse(Rides.objects.filter(driver=driver).exists())
-        resp = c.post(reverse('post-ride'), {**base, 'recurring_end_date': (first + timedelta(days=366)).isoformat()})
+        max_date = _max_ride_date()
+        resp = c.post(reverse('post-ride'), {**base, 'recurring_end_date': (max_date + timedelta(days=1)).isoformat()})
+        self.assertIn('recurring_end_date', resp.context['errors'])
+        self.assertFalse(Rides.objects.filter(driver=driver).exists())
+        resp = c.post(reverse('post-ride'), {**base, 'recurring_end_date': max_date.isoformat()})
         self.assertEqual(resp.status_code, 302)
-        self.assertEqual(Rides.objects.filter(driver=driver).count(), 367)
+        self.assertEqual(Rides.objects.filter(driver=driver).count(), (max_date - first).days + 1)
 
 
 class ContentSecurityPolicyTests(TestCase):
@@ -5121,6 +5294,41 @@ class LegalTextAccuracyTests(TestCase):
         for name, version in (('privacy-policy', settings.PRIVACY_VERSION), ('terms-condition', settings.TERMS_VERSION)):
             d = date.fromisoformat(version)
             self.assertContains(Client().get(reverse(name)), f'{d:%B} {d.day}, {d.year}', msg_prefix=name)
+
+
+class SearchEngineFilesTests(TestCase):
+    """robots.txt, sitemap.xml and a meta description on every public page."""
+
+    def test_robots_txt_points_at_the_sitemap_and_hides_private_areas(self):
+        resp = Client().get('/robots.txt')
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp['Content-Type'], 'text/plain')
+        body = resp.content.decode()
+        self.assertIn('Sitemap: https://komute.net/sitemap.xml', body)
+        self.assertIn('Disallow: /profile/', body)
+        self.assertNotIn(settings.ADMIN_URL.strip('/'), body)
+
+    def test_sitemap_lists_only_public_pages(self):
+        from komute.sitemaps import PUBLIC_PAGES
+        resp = Client().get('/sitemap.xml')
+        self.assertEqual(resp.status_code, 200)
+        body = resp.content.decode()
+        for name in PUBLIC_PAGES:
+            self.assertIn(f'<loc>https://komute.net{reverse(name)}</loc>', body)
+        self.assertNotIn('/profile/', body)
+
+    def test_public_pages_open_without_login_and_have_a_description(self):
+        from komute.sitemaps import PUBLIC_PAGES
+        for name in PUBLIC_PAGES:
+            resp = Client().get(reverse(name))
+            self.assertEqual(resp.status_code, 200, name)
+            self.assertContains(resp, 'name="description"', count=1, msg_prefix=name)
+
+    def test_signed_in_user_who_has_not_accepted_terms_still_gets_them(self):
+        c = Client()
+        c.force_login(make_user('gate@example.com'))
+        self.assertEqual(c.get('/robots.txt').status_code, 200)
+        self.assertEqual(c.get('/sitemap.xml').status_code, 200)
 
 
 class DataExportTests(TestCase):
