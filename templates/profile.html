@@ -948,6 +948,20 @@ nav {
   transition: opacity 0.2s, transform 0.15s;
 }
 .btn-danger:hover { opacity: 0.9; transform: translateY(-1px); }
+.btn-download-data {
+  flex-shrink: 0;
+  padding: 11px 22px;
+  border-radius: 10px;
+  border: 1.5px solid var(--input-border);
+  background: var(--light-bg);
+  color: var(--brand-green);
+  font-family: 'DM Sans', sans-serif;
+  font-size: 0.85rem;
+  font-weight: 700;
+  text-decoration: none;
+  transition: opacity 0.2s, transform 0.15s;
+}
+.btn-download-data:hover { opacity: 0.9; transform: translateY(-1px); }
 
 /* ── Vehicle Image Upload ── */
 .vehicle-image-block {
@@ -1504,6 +1518,11 @@ body.role-rider .driver-only { display: none; }
           {% else %}
           <p class="verify-hint">Fill in your license details above and save your profile. Then click the button to verify — you'll be asked for a photo of your license and a quick selfie. We don't keep the license photo.</p>
           {% endif %}
+          {% if verification_review == "pending" %}
+          <p class="verify-hint" id="verifyReviewHint" style="font-weight:600;">A member of our team is reviewing your last verification. We'll email you the result.</p>
+          {% elif verification_review == "available" %}
+          <p class="verify-hint" id="verifyReviewHint">Our automated check rejected your last verification. <button type="button" onclick="showReviewRequest()" style="background:none;border:0;padding:0;color:#2563eb;text-decoration:underline;cursor:pointer;font:inherit;">Ask a person to review it</button></p>
+          {% endif %}
           {% endif %}
         </div>
         {% if not driver_verified or reverify_soon or has_unverified_vehicle %}
@@ -1538,16 +1557,16 @@ body.role-rider .driver-only { display: none; }
           <ul style="margin:0 0 8px;padding-left:18px;">
             <li><strong>What we collect:</strong> a selfie from your camera, a photo of your licence that you add in the next step, and a face-match score worked out from them. The score is a measurement of your facial geometry, which some laws treat as biometric information.</li>
             <li><strong>Why:</strong> only to confirm your identity before you can offer rides. We don't use it for anything else, and we never sell it.</li>
-            <li><strong>Who processes it:</strong> our identity verification service, which processes the images on our behalf under a written contract, only to produce this result.</li>
+            <li><strong>Who processes it:</strong> Komüte's own verification system, on our servers, only to produce this result. The images aren't sent to any other company.</li>
             <li><strong>How long we keep it:</strong> Komüte doesn't store the selfie or the licence photo: they are used for this check only and never saved. The face-match score is permanently deleted within 30 days of the verification decision. We keep only a pass or fail result, for up to 1 year.</li>
             <li><strong>Your choice:</strong> you don't have to agree. If you don't, you can still use Komüte as a rider, but you can't be verified as a driver. You can withdraw consent at any time by writing to <a href="mailto:privacy@komute.net">privacy@komute.net</a>; we then delete any biometric data we still hold.</li>
-            <li><strong>A person can review the result:</strong> if the automated check rejects you, you can ask for a person to review it at <a href="mailto:privacy@komute.net">privacy@komute.net</a>.</li>
+            <li><strong>A person can review the result:</strong> the decision is made by an automated check. If it rejects you, you can ask a member of our team to review it from the result screen or your profile, or at <a href="mailto:privacy@komute.net">privacy@komute.net</a>. If the check can't reach a clear result, a person decides.</li>
           </ul>
           <p style="margin:0;">More detail: <a href="{% url 'privacy-policy' %}" target="_blank" rel="noopener">Privacy Policy, section 12</a>.</p>
         </div>
         <label style="display:flex;gap:8px;align-items:flex-start;margin:12px 0 4px;font-size:13px;cursor:pointer;">
           <input type="checkbox" id="vsConsentCheck" onchange="document.getElementById('vsConsentAgreeBtn').disabled = !this.checked" style="margin-top:3px;">
-          <span>I have read this notice and I agree to Komüte and its verification service collecting and using my biometric information as described above.</span>
+          <span>I have read this notice and I agree to Komüte collecting and using my biometric information as described above.</span>
         </label>
         <p style="margin:0 0 10px;font-size:11px;color:#64748b;">Notice version {{ biometric_notice_version }}</p>
         <div style="display:flex;justify-content:center;">
@@ -1690,6 +1709,28 @@ body.role-rider .driver-only { display: none; }
       {% empty %}
       <p class="blocked-empty">You haven't blocked anyone. To block someone, use Report or Block in your chat with them, on the ride details page, or in your inbox.</p>
       {% endfor %}
+    </div>
+  </div>
+
+  <!-- ── YOUR DATA (audit P-9) ── -->
+  <div class="section-card" id="your-data">
+    <div class="section-header">
+      <div class="section-icon">
+        <svg viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+      </div>
+      <div class="section-header-text">
+        <h3>Your Data</h3>
+        <p>A copy of what Komüte holds about you</p>
+      </div>
+    </div>
+    <div class="section-body">
+      <div class="danger-zone-row">
+        <div>
+          <h4>Download my data</h4>
+          <p>A JSON file with your account details, vehicles, rides, bookings, messages, reviews, searches and other records we keep about you. Other people appear only by the name you see in the app. See our <a href="{% url 'privacy-policy' %}" target="_blank" rel="noopener">Privacy Policy</a>.</p>
+        </div>
+        <a class="btn-download-data" href="{% url 'download-my-data' %}" download>Download my data</a>
+      </div>
     </div>
   </div>
 
@@ -2634,7 +2675,10 @@ body.role-rider .driver-only { display: none; }
           failMsg = data.decision.details;
       }
 
-      showVerifyModal(data.verified, data.similarity, failMsg);
+      showVerifyModal(data.verified, data.similarity, failMsg, {
+        canRequestReview: data.can_request_review,
+        reviewPending: data.review_pending,
+      });
       if (data.verified) {
         const badge = document.getElementById('verifyStatusBadge');
         if (badge) {
@@ -2654,10 +2698,22 @@ body.role-rider .driver-only { display: none; }
     });
   }
 
-  function showVerifyModal(verified, score, errorMsg) {
+  function showVerifyModal(verified, score, errorMsg, opts) {
+    opts = opts || {};
     const modal   = document.getElementById('verifyModal');
     const content = document.getElementById('verifyModalContent');
     modal.style.display = 'flex';
+    const review = opts.canRequestReview ? _reviewRequestHtml(true) : '';
+
+    if (opts.reviewPending) {
+      content.innerHTML = `
+        <div class="verify-modal-icon">🔎</div>
+        <p class="verify-modal-title">A person will review this</p>
+        <p class="verify-modal-score">Our automated check couldn't reach a clear result, so a member of our team will look at it and email you. You'll stay unverified until then.</p>`;
+      const hint = document.getElementById('verifyReviewHint');
+      if (hint) hint.textContent = "A member of our team is reviewing your last verification. We'll email you the result.";
+      return;
+    }
 
     if (errorMsg) {
       // errorMsg can quote text OCR'd from the license, so it is escaped;
@@ -2670,7 +2726,8 @@ body.role-rider .driver-only { display: none; }
         <div class="verify-modal-icon">⚠️</div>
         <p class="verify-modal-title" style="color:#b91c1c">Verification Failed</p>
         ${body}
-        <p class="verify-modal-score" style="margin-top:10px;font-size:13px;">Check that your license photo is sharp and well lit and that your profile details match your license exactly, then try again.</p>`;
+        <p class="verify-modal-score" style="margin-top:10px;font-size:13px;">Check that your license photo is sharp and well lit and that your profile details match your license exactly, then try again.</p>
+        ${review}`;
       return;
     }
 
@@ -2683,8 +2740,64 @@ body.role-rider .driver-only { display: none; }
       content.innerHTML = `
         <div class="verify-modal-icon">❌</div>
         <p class="verify-modal-title" style="color:#b91c1c">Verification Failed</p>
-        <p class="verify-modal-score">We couldn't confirm your details. Make sure your license photo is sharp and well lit, then try again.</p>`;
+        <p class="verify-modal-score">We couldn't confirm your details. Make sure your license photo is sharp and well lit, then try again.</p>
+        ${review}`;
     }
+  }
+
+  // Quebec Law 25 s.12.1 notice for a decision made only by the automated
+  // check, with the way to send it to a person (audit P-10). Keep it in
+  // line with Privacy Policy section 12, "Automated decision".
+  function _reviewRequestHtml(withResult) {
+    return `
+      <div id="reviewRequestBox" style="text-align:left;margin-top:14px;padding-top:12px;border-top:1px solid #e2e8f0;font-size:13px;line-height:1.5;color:#334155;">
+        <p style="margin:0 0 8px;"><strong>About this decision.</strong> It was made automatically by Komüte's verification system, without a person. The system used your selfie and licence photo, your vehicle's details and photo, and the name, date of birth and licence details in your profile. It compared the selfie with the photo on your licence, and your details with what it read from the photos. ${withResult ? 'The main reasons are listed above.' : 'The main reasons were shown with the result.'}</p>
+        <p style="margin:0 0 8px;">You can correct your profile details and verify again, or ask a member of our team to review the decision. They will see which checks failed and anything you write here, and will email you the result.</p>
+        <label for="reviewComment" style="display:block;font-weight:600;margin-bottom:4px;">Anything the reviewer should know (optional)</label>
+        <textarea id="reviewComment" maxlength="2000" rows="3" style="width:100%;box-sizing:border-box;border:1px solid #cbd5e1;border-radius:8px;padding:8px;font:inherit;"></textarea>
+        <div style="display:flex;justify-content:center;margin-top:8px;">
+          <button type="button" id="reviewRequestBtn" class="btn-verify-identity" onclick="requestVerificationReview()">Ask for a review</button>
+        </div>
+        <p id="reviewRequestMsg" role="status" style="margin:8px 0 0;"></p>
+      </div>`;
+  }
+
+  function showReviewRequest() {
+    const modal   = document.getElementById('verifyModal');
+    const content = document.getElementById('verifyModalContent');
+    modal.style.display = 'flex';
+    content.innerHTML = `
+      <p class="verify-modal-title">Ask a person to review</p>
+      ${_reviewRequestHtml(false)}`;
+  }
+
+  function requestVerificationReview() {
+    const btn = document.getElementById('reviewRequestBtn');
+    const msg = document.getElementById('reviewRequestMsg');
+    btn.disabled = true;
+    const fd = new FormData();
+    fd.append('comment', document.getElementById('reviewComment').value);
+    fetch('{% url "verify-driver-review" %}', {
+      method: 'POST',
+      headers: { 'X-CSRFToken': getCsrfToken() },
+      body: fd,
+    })
+    .then(r => r.json().catch(() => ({ error: 'Something went wrong. Please try again.' })))
+    .then(data => {
+      if (data.error) {
+        msg.textContent = data.error;
+        btn.disabled = false;
+        return;
+      }
+      document.getElementById('reviewRequestBox').innerHTML =
+        "<p style=\"margin:0;font-weight:600;\">Thanks. A member of our team will review your verification and email you the result.</p>";
+      const hint = document.getElementById('verifyReviewHint');
+      if (hint) hint.textContent = "A member of our team is reviewing your last verification. We'll email you the result.";
+    })
+    .catch(() => {
+      msg.textContent = 'Could not reach the server. Please try again.';
+      btn.disabled = false;
+    });
   }
 
   function _escapeHtml(s) {

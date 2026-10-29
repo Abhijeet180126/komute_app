@@ -482,7 +482,6 @@ def _clean_stops(post):
 
 
 _MAX_RIDE_LEAD_MONTHS = 4
-_MAX_RECURRING_SPAN_DAYS = 366
 
 
 def _max_ride_date(today=None):
@@ -1122,6 +1121,9 @@ def profile_view(request):
         # live camera.
         "allow_verify_selfie_upload": settings.DEBUG,
         "biometric_notice_version": settings.BIOMETRIC_NOTICE_VERSION,
+        # Human review of the latest attempt (audit P-10): "pending" while
+        # it's in the queue, "available" if a rejection can still be sent.
+        "verification_review": _verification_review_state(user),
         "image_upload_max_mb": settings.IMAGE_UPLOAD_MAX_MB,
         "upload_request_max_mb": settings.UPLOAD_REQUEST_MAX_MB,
         # Was verified, and that verification has run out.
@@ -1336,10 +1338,11 @@ def post_ride_view(request):
                     recurring_end = date.fromisoformat(recurring_end_str)
                     if depart_at and recurring_end <= depart_at.astimezone(driver_tz).date():
                         errors["recurring_end_date"] = "End date must be after the departure date."
-                    # One ride row per matching day is created below, so an
-                    # unbounded end date was a one-request database flood.
-                    elif depart_at and recurring_end > depart_at.astimezone(driver_tz).date() + timedelta(days=_MAX_RECURRING_SPAN_DAYS):
-                        errors["recurring_end_date"] = "Recurring rides can repeat for up to one year."
+                    # Same 4-month limit as a single ride (audit D-8). One ride
+                    # row per matching day is created below, so this also
+                    # stops a one-request database flood.
+                    elif recurring_end > _max_ride_date():
+                        errors["recurring_end_date"] = "Recurring rides can repeat up to 4 months in advance."
                 except ValueError:
                     errors["recurring_end_date"] = "Invalid end date."
 
@@ -2020,7 +2023,7 @@ def reject_booking_view(request, booking_id):
 
     updated = RideBooking.objects.filter(
         id=booking.id, status=RideBooking.STATUS_REQUESTED,
-    ).update(status=RideBooking.STATUS_REJECTED)
+    ).update(status=RideBooking.STATUS_REJECTED, rejected_at=timezone.now())
     if not updated:
         return JsonResponse({'error': f'Cannot reject a booking that is already {booking.status}.'}, status=400)
     booking.status = RideBooking.STATUS_REJECTED
@@ -2439,6 +2442,26 @@ def communityguide_view(request):
 
 def accessibility_view(request):
     return render(request, 'accessibility.html')
+
+
+# Signed-in areas: they redirect to login anyway, so crawlers skip them.
+# The admin path is left out on purpose; listing it would publish it.
+ROBOTS_DISALLOW = (
+    '/profile/', '/my-rides/', '/driver-inbox/', '/rider-inbox/', '/driver-dashboard/',
+    '/post-ride/', '/search-rides/', '/route-demand/', '/role-select/', '/accept-terms/',
+    '/ride-', '/rides/', '/bookings/', '/reviews/', '/negotiations/', '/chat/', '/invite/',
+    '/change-password/', '/reset-password/', '/delete-account/confirm/', '/deactivate/',
+    '/accounts/', '/private-media/', '/logout/',
+)
+
+
+def robots_txt_view(request):
+    """GET /robots.txt - keeps crawlers on the public pages and points them at
+    the sitemap."""
+    from django.contrib.sites.shortcuts import get_current_site
+    lines = ['User-agent: *'] + [f'Disallow: {p}' for p in ROBOTS_DISALLOW]
+    lines.append(f"Sitemap: https://{get_current_site(request).domain}{reverse('sitemap')}")
+    return HttpResponse('\n'.join(lines) + '\n', content_type='text/plain')
 
 
 @login_required
@@ -3841,6 +3864,154 @@ def request_delete_account_view(request):
     return JsonResponse({'message': f'A confirmation link has been sent to {user.email}. Click it to delete your account.'})
 
 
+def _iso(value):
+    return value.isoformat() if value else None
+
+
+def _ride_summary(ride):
+    return {'ride_id': encode_id(ride.id), 'from': ride.origin, 'to': ride.destination,
+            'departs_at': _iso(ride.depart_at), 'status': ride.status}
+
+
+def _build_data_export(user):
+    """Everything Komüte holds about `user`, for "Download my data" (audit P-9).
+    Other people appear only by the display name the app already shows. Left
+    out: the password hash, staff notes, and reports made about the user (the
+    policy promises reporters stay anonymous)."""
+    other = _display_name
+
+    rides = (Rides.objects.filter(driver=user).select_related('vehicle')
+             .prefetch_related('stops', 'bookings__passenger').order_by('depart_at'))
+    bookings = (RideBooking.objects.filter(passenger=user)
+                .select_related('ride__driver').order_by('booked_at'))
+    messages_qs = (Message.objects.filter(Q(sender=user) | Q(receiver=user))
+                   .select_related('sender', 'receiver').order_by('created_at'))
+
+    return {
+        'exported_at': timezone.now().isoformat(),
+        'account': {
+            'full_name': user.full_name, 'email': user.email, 'email_verified': user.email_verified,
+            'pending_email': user.pending_email, 'phone': user.phone, 'role': user.role,
+            'date_of_birth': _iso(user.dob), 'gender': user.gender, 'bio': user.bio,
+            'has_profile_photo': bool(user.avatar_url),
+            'driver_verified': user.driver_verified, 'driver_verified_at': _iso(user.driver_verified_at),
+            'licence_number': user.license_number, 'licence_province': user.license_province,
+            'licence_expiry': _iso(user.license_expiry), 'face_match_score': user.face_match_score,
+            'average_rating': user.avg_rating, 'total_rides': user.total_rides,
+            'created_at': _iso(user.created_at), 'updated_at': _iso(user.updated_at),
+        },
+        'vehicles': [
+            {'make': v.make, 'model': v.model, 'year': v.year, 'color': v.color, 'plate': v.plate,
+             'seat_capacity': v.seat_capacity, 'has_photo': bool(v.photo_url),
+             'verified': v.vehicle_verified, 'added_at': _iso(v.created_at)}
+            for v in user.vehicles.order_by('created_at')
+        ],
+        'rides_as_driver': [
+            {**_ride_summary(r), 'arrives_at': _iso(r.arrive_at),
+             'origin_coordinates': [r.origin_lat, r.origin_lng],
+             'destination_coordinates': [r.dest_lat, r.dest_lng],
+             'stops': [{'location': s.location, 'coordinates': [s.lat, s.lng]} for s in r.stops.all()],
+             'seats_total': r.seats_total, 'price_per_seat_cents': r.price_cents, 'currency': r.currency,
+             'passenger_preference': r.passenger_gender_pref, 'preferences': r.preferences_json,
+             'notes': r.notes, 'vehicle': f'{r.vehicle.make} {r.vehicle.model}' if r.vehicle else None,
+             'created_at': _iso(r.created_at), 'cancelled_at': _iso(r.cancelled_at),
+             'bookings': [{'passenger': other(b.passenger), 'seats': b.seats, 'status': b.status,
+                           'price_cents': b.agreed_price_cents, 'booked_at': _iso(b.booked_at)}
+                          for b in r.bookings.all()]}
+            for r in rides
+        ],
+        'bookings_as_passenger': [
+            {**_ride_summary(b.ride), 'driver': other(b.ride.driver), 'seats': b.seats,
+             'status': b.status, 'price_cents': b.agreed_price_cents, 'booked_at': _iso(b.booked_at),
+             'confirmed_at': _iso(b.confirmed_at), 'cancelled_at': _iso(b.cancelled_at),
+             'rejected_at': _iso(b.rejected_at), 'cancellation_reason': b.cancellation_reason}
+            for b in bookings
+        ],
+        'price_offers': [
+            {'ride_id': encode_id(o.booking.ride_id), 'price_cents': o.price_cents, 'status': o.status,
+             'made_by_you': o.proposed_by_id == user.id, 'created_at': _iso(o.created_at),
+             'responded_at': _iso(o.responded_at)}
+            for o in PriceOffer.objects.filter(Q(booking__passenger=user) | Q(booking__ride__driver=user))
+                                       .select_related('booking').order_by('created_at')
+        ],
+        'messages': [
+            {'ride_id': encode_id(m.ride_id), 'direction': 'sent' if m.sender_id == user.id else 'received',
+             'with': other(m.receiver if m.sender_id == user.id else m.sender),
+             'text': m.body, 'sent_at': _iso(m.created_at), 'read_at': _iso(m.read_at)}
+            for m in messages_qs
+        ],
+        'reviews_written': [
+            {'about': other(r.reviewee), 'rating': r.rating, 'text': r.body, 'tags': r.tags_json,
+             'subratings': r.subratings_json, 'anonymous': r.is_anonymous, 'created_at': _iso(r.created_at)}
+            for r in Review.objects.filter(reviewer=user).select_related('reviewee').order_by('created_at')
+        ],
+        'reviews_received': [
+            {'from': 'Anonymous' if r.is_anonymous or not r.reviewer else other(r.reviewer),
+             'rating': r.rating, 'text': r.body, 'tags': r.tags_json, 'subratings': r.subratings_json,
+             'created_at': _iso(r.created_at)}
+            for r in Review.objects.filter(reviewee=user).select_related('reviewer').order_by('created_at')
+        ],
+        'reports_you_made': [
+            {'about': other(r.reported), 'reason': r.reason, 'details': r.details, 'status': r.status,
+             'created_at': _iso(r.created_at)}
+            for r in UserReport.objects.filter(reporter=user).select_related('reported').order_by('created_at')
+        ],
+        'users_you_blocked': [
+            {'name': other(b.blocked), 'since': _iso(b.created_at)}
+            for b in UserBlock.objects.filter(blocker=user).select_related('blocked').order_by('created_at')
+        ],
+        'ride_searches': [
+            {'from': s.origin, 'to': s.destination, 'origin_coordinates': [s.origin_lat, s.origin_lng],
+             'destination_coordinates': [s.dest_lat, s.dest_lng], 'date': _iso(s.search_date),
+             'passengers': s.passenger_count, 'searched_at': _iso(s.created_at)}
+            for s in RideSearch.objects.filter(user=user).order_by('created_at')
+        ],
+        'ride_invites': [
+            {**_ride_summary(i.ride), 'direction': 'sent' if i.driver_id == user.id else 'received',
+             'with': other(i.passenger if i.driver_id == user.id else i.driver), 'status': i.status,
+             'sent_at': _iso(i.sent_at), 'responded_at': _iso(i.responded_at)}
+            for i in RideInvite.objects.filter(Q(driver=user) | Q(passenger=user))
+                                       .select_related('ride', 'driver', 'passenger').order_by('sent_at')
+        ],
+        'terms_acceptances': [
+            {'terms_version': a.terms_version, 'privacy_version': a.privacy_version, 'source': a.source,
+             'ip_address': a.ip_address, 'browser': a.user_agent, 'accepted_at': _iso(a.accepted_at)}
+            for a in LegalAcceptance.objects.filter(user=user).order_by('accepted_at')
+        ],
+        'biometric_consents': [
+            {'notice_version': c.notice_version, 'ip_address': c.ip_address, 'browser': c.user_agent,
+             'accepted_at': _iso(c.accepted_at)}
+            for c in BiometricConsent.objects.filter(user=user).order_by('accepted_at')
+        ],
+        'driver_verifications': [
+            {'result': v.result, 'checks': v.stage_results, 'reasons': v.reason_codes,
+             'face_score': v.face_score, 'created_at': _iso(v.created_at),
+             'review': v.review_status, 'review_requested_at': _iso(v.review_requested_at),
+             'your_review_comment': v.driver_comment, 'reviewed_at': _iso(v.reviewed_at)}
+            for v in VerificationLog.objects.filter(user=user).order_by('created_at')
+        ],
+        'emails_sent_to_you': [
+            {'kind': e.kind, 'subject': e.subject, 'status': e.status, 'queued_at': _iso(e.created_at),
+             'sent_at': _iso(e.sent_at)}
+            for e in EmailLog.objects.filter(user=user).order_by('created_at')
+        ],
+    }
+
+
+@login_required
+@never_cache
+def download_my_data_view(request):
+    """Profile → "Download my data": the account's data as a JSON file (audit P-9)."""
+    user = request.user
+    if _rate_limited(request, 'data-export', extra_key=str(user.id), per_ip=False):
+        messages.error(request, _TOO_MANY_ATTEMPTS_MSG)
+        return redirect('profile')
+    body = json.dumps(_build_data_export(user), indent=2, ensure_ascii=False, default=str)
+    resp = HttpResponse(body, content_type='application/json; charset=utf-8')
+    resp['Content-Disposition'] = f'attachment; filename="komute-my-data-{timezone.now():%Y-%m-%d}.json"'
+    return resp
+
+
 _DELETE_ACCOUNT_SENT_MESSAGE = (
     "If an account exists for that email, we've sent it a link to confirm the deletion. "
     "Nothing happens until the link is clicked."
@@ -4329,6 +4500,14 @@ _REASON_PATTERNS = [
 ]
 
 
+# Shown when a check failed but the service gave no reason for it.
+_STAGE_FAILED_REASONS = {
+    "license_ocr": "The licence check didn't pass: the details read from your licence photo didn't match your profile.",
+    "face_biometrics": "The face check didn't pass: your selfie didn't match the photo on your licence.",
+    "vehicle_verification": "The vehicle check didn't pass: your vehicle photo didn't match your vehicle details.",
+}
+
+
 def _reason_codes(reasons):
     """Categories for the service's rejection reasons, deduplicated in order."""
     codes = []
@@ -4480,10 +4659,17 @@ def _verify_driver_view(request):
                               user.id, getattr(resp, "status_code", "-"))
         return JsonResponse({"error": "Verification service error. Please try again later."}, status=503)
 
-    verified = result.get("decision") == "APPROVED"
+    decision = result.get("decision")
     stages = result.get("stages", {})
+    stage_results = {
+        name: bool((stages.get(name) or {}).get("passed", False))
+        for name in ("license_ocr", "face_biometrics", "vehicle_verification")
+    }
+    # The service approves on one combined score (licence OCR + face +
+    # vehicle, > 85%), which can carry a failed check. A driver passes only
+    # if every check passed as well; a missing check counts as failed.
+    verified = decision == "APPROVED" and all(stage_results.values())
     stage2 = stages.get("face_biometrics", {})
-    stage3 = stages.get("vehicle_verification", {})
     try:
         similarity = float(stage2.get("vlm_confidence", 0.0))
     except (TypeError, ValueError):
@@ -4499,39 +4685,46 @@ def _verify_driver_view(request):
         update_fields += ["driver_verified_at", "reverify_reminder_sent_at"]
     user.save(update_fields=update_fields)
 
-    # The service approves on one combined score (license OCR + face +
-    # vehicle, > 85%), so an approval covers the vehicle that was sent even
-    # if its own stage scored low.
-    if verified or stage3.get("passed", False):
+    if stage_results["vehicle_verification"]:
         user_vehicle.vehicle_verified = True
         user_vehicle.save(update_fields=["vehicle_verified"])
-
-    log_result = VerificationLog.RESULT_APPROVED if verified else VerificationLog.RESULT_REJECTED
 
     rejection_reasons = result.get("rejection_reasons") or []
     if not isinstance(rejection_reasons, list):
         rejection_reasons = [str(rejection_reasons)]
     rejection_reasons = [str(r) for r in rejection_reasons]
+    # An approval with a failed check comes with no reasons; name the checks.
+    if not verified and not rejection_reasons:
+        rejection_reasons = [_STAGE_FAILED_REASONS[name] for name, ok in stage_results.items() if not ok]
 
     # Privacy policy s.9/s.13: keep the outcome and minimum details only. The
     # OCR output and the reason text (which can quote licence values) are not
     # stored; the driver sees the reasons in this response.
-    stage_results = {
-        name: bool((stages.get(name) or {}).get("passed", False))
-        for name in ("license_ocr", "face_biometrics", "vehicle_verification")
-    }
     reason_codes = _reason_codes(rejection_reasons)
-    VerificationLog.objects.create(
+
+    # No clear decision from the service: a person decides (audit P-10) and
+    # the driver waits, unverified.
+    if decision not in ("APPROVED", "REJECTED"):
+        log_result = VerificationLog.RESULT_MANUAL_REVIEW
+    else:
+        log_result = VerificationLog.RESULT_APPROVED if verified else VerificationLog.RESULT_REJECTED
+    borderline = log_result == VerificationLog.RESULT_MANUAL_REVIEW
+    log = VerificationLog.objects.create(
         user=user,
         stage_results=stage_results,
         reason_codes=reason_codes or None,
         face_score=similarity,
         result=log_result,
+        **({"review_status": VerificationLog.REVIEW_PENDING,
+            "review_source": VerificationLog.REVIEW_SOURCE_BORDERLINE,
+            "review_requested_at": timezone.now()} if borderline else {}),
     )
+    if borderline:
+        _send_review_admin_email(request, log)
     # Reason codes only, never the reason text (see above).
     upload_logger.info(
         "verification result: user=%s decision=%s stages=%s reasons=%s image_bytes=selfie:%d,license:%d,vehicle:%d",
-        user.id, result.get("decision"), stage_results, reason_codes,
+        user.id, decision, stage_results, reason_codes,
         len(selfie_bytes), len(license_bytes), len(vehicle_bytes),
     )
 
@@ -4541,8 +4734,77 @@ def _verify_driver_view(request):
         "verified":   verified,
         "similarity": round(similarity * 100, 1),
         "face_match": stage2,
-        "decision":   {"status": result.get("decision"), "details": details},
+        "decision":   {"status": decision, "details": details},
+        # A person will look at this result anyway (borderline).
+        "review_pending": borderline,
+        # Law 25 s.12.1: a rejection can be sent to a person for review.
+        "can_request_review": log_result == VerificationLog.RESULT_REJECTED,
     })
+
+
+VERIFICATION_REVIEW_COMMENT_MAX_CHARS = 2000
+
+
+def _latest_verification(user):
+    return VerificationLog.objects.filter(user=user).order_by('-created_at', '-id').first()
+
+
+def _verification_review_state(user):
+    log = _latest_verification(user)
+    if not log:
+        return ""
+    if log.review_status == VerificationLog.REVIEW_PENDING:
+        return "pending"
+    if log.result == VerificationLog.RESULT_REJECTED and not log.review_status:
+        return "available"
+    return ""
+
+
+def _send_review_admin_email(request, log):
+    """Tell staff a verification attempt is waiting in the review queue."""
+    admin_url = request.build_absolute_uri(reverse('admin:komute_verificationlog_change', args=[log.id]))
+    user = log.user
+    lines = [
+        f"Verification #{log.id} needs a review ({log.get_review_source_display()})",
+        '─' * 45,
+        '',
+        f"Driver:    {user.full_name} <{user.email}> (user {user.id})",
+        f"Result:    {log.get_result_display()}",
+        f"Checks:    {log.stage_results}",
+        f"Reasons:   {', '.join(log.reason_codes or []) or '(none)'}",
+    ]
+    if log.driver_comment:
+        lines += ['', "Driver's comment:", log.driver_comment]
+    lines += ['', f"Review it in the admin: {admin_url}"]
+    send_later(EmailMultiAlternatives(
+        subject=f"[Komüte Verification] Review needed — #{log.id}",
+        body='\n'.join(lines),
+        from_email=settings.DEFAULT_FROM_EMAIL,
+        to=[settings.ADMIN_EMAIL],
+    ), EmailLog.KIND_REVIEW_ADMIN)
+
+
+@login_required
+@require_POST
+def request_verification_review_view(request):
+    """POST /profile/verify-driver/review/ - the driver asks a person to
+    review their latest rejected verification (Quebec Law 25 s.12.1, GDPR
+    Art. 22). Puts it in the admin's review queue with their comment."""
+    comment = request.POST.get('comment', '').strip()
+    if len(comment) > VERIFICATION_REVIEW_COMMENT_MAX_CHARS:
+        return JsonResponse({'error': f'Please keep your comment under {VERIFICATION_REVIEW_COMMENT_MAX_CHARS} characters.'}, status=400)
+    log = _latest_verification(request.user)
+    if log and log.review_status == VerificationLog.REVIEW_PENDING:
+        return JsonResponse({'error': 'A review of your verification is already under way.'}, status=409)
+    if not log or log.result != VerificationLog.RESULT_REJECTED or log.review_status:
+        return JsonResponse({'error': 'There is no rejected verification to review.'}, status=400)
+    log.review_status = VerificationLog.REVIEW_PENDING
+    log.review_source = VerificationLog.REVIEW_SOURCE_DRIVER
+    log.driver_comment = comment or None
+    log.review_requested_at = timezone.now()
+    log.save(update_fields=['review_status', 'review_source', 'driver_comment', 'review_requested_at'])
+    _send_review_admin_email(request, log)
+    return JsonResponse({'ok': True})
 
 
 @login_required

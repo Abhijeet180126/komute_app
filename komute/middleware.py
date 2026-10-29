@@ -93,7 +93,7 @@ class LegalAcceptanceMiddleware:
     user after TERMS_VERSION or PRIVACY_VERSION changes.
 
     Left open: the legal pages themselves, logout, account deletion, contact,
-    email confirmation, private media and the admin. Unnamed routes are
+    email confirmation, private media, robots.txt, the sitemap and the admin. Unnamed routes are
     either redirects to named ones or the old deactivate link. Websocket chat
     isn't covered, but the chat page that opens it is."""
 
@@ -102,7 +102,7 @@ class LegalAcceptanceMiddleware:
         'accept-terms', 'logout', 'terms-condition', 'privacy-policy',
         'community-guidelines', 'accessibility', 'contact-us', 'request-delete-account',
         'delete-account', 'confirm-delete-account', 'account_confirm_email',
-        'private-media', 'upload-too-large', 'csp-report',
+        'private-media', 'upload-too-large', 'csp-report', 'robots-txt', 'sitemap',
     }
 
     def __init__(self, get_response):

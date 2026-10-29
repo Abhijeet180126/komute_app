@@ -471,6 +471,13 @@ class RideBooking(models.Model):
         blank=True,
     )
 
+    # When the driver rejected the request. purge_cancelled_rides deletes
+    # rejected bookings CANCELLED_RIDE_RETENTION_DAYS after this (audit P-17).
+    rejected_at = models.DateTimeField(
+        null=True,
+        blank=True,
+    )
+
     cancellation_reason = models.TextField(
         null=True,
         blank=True,
@@ -647,6 +654,31 @@ class VerificationLog(models.Model):
     )
 
     notes = models.TextField(null=True, blank=True)
+
+    # Human review (audit P-10, Quebec Law 25 s.12.1). REVIEW_PENDING puts
+    # the attempt in the admin's review queue: either the driver asked a
+    # person to look at a rejection (REVIEW_SOURCE_DRIVER, with their
+    # comment), or the service sent no clear decision (REVIEW_SOURCE_BORDERLINE,
+    # result RESULT_MANUAL_REVIEW).
+    # `result` is the reviewer's decision once review_status is DONE.
+    REVIEW_PENDING = "pending"
+    REVIEW_DONE = "done"
+    REVIEW_STATUS_CHOICES = [
+        (REVIEW_PENDING, "Waiting for review"),
+        (REVIEW_DONE, "Reviewed"),
+    ]
+    REVIEW_SOURCE_DRIVER = "driver"
+    REVIEW_SOURCE_BORDERLINE = "borderline"
+    REVIEW_SOURCE_CHOICES = [
+        (REVIEW_SOURCE_DRIVER, "Driver asked"),
+        (REVIEW_SOURCE_BORDERLINE, "Borderline check"),
+    ]
+    review_status = models.CharField(max_length=10, choices=REVIEW_STATUS_CHOICES, blank=True, default="", db_index=True)
+    review_source = models.CharField(max_length=10, choices=REVIEW_SOURCE_CHOICES, blank=True, default="")
+    # What the driver wrote when asking for review; may hold personal details.
+    driver_comment = EncryptedTextField(null=True, blank=True)
+    review_requested_at = models.DateTimeField(null=True, blank=True)
+    reviewed_at = models.DateTimeField(null=True, blank=True)
 
     created_at = models.DateTimeField(auto_now_add=True)
 
@@ -966,6 +998,8 @@ class EmailLog(models.Model):
     KIND_WELCOME           = "welcome"
     KIND_INVITE            = "invite"
     KIND_REPORT_ADMIN      = "report_admin"
+    KIND_REVIEW_ADMIN      = "review_admin"
+    KIND_REVIEW_RESULT     = "review_result"
 
     KIND_CHOICES = [
         (KIND_BOOKING_REQUEST, "Booking request (to driver)"),
@@ -976,6 +1010,8 @@ class EmailLog(models.Model):
         (KIND_WELCOME, "Welcome"),
         (KIND_INVITE, "Ride invite"),
         (KIND_REPORT_ADMIN, "User report (to staff)"),
+        (KIND_REVIEW_ADMIN, "Verification review needed (to staff)"),
+        (KIND_REVIEW_RESULT, "Verification review result (to driver)"),
     ]
 
     STATUS_QUEUED   = "queued"
