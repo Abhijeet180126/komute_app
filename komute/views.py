@@ -503,6 +503,15 @@ _MAX_PRICE_CENTS = 100_000                 # $1,000 a seat, the price-offer cap 
 _MAX_DURATION_SECONDS = 7 * 24 * 3600      # longer than any US/Canada drive
 _MAX_TZ_OFFSET_MINUTES = 14 * 60           # real UTC offsets run -12:00..+14:00
 
+# Ride preference tags, in the order post-ride.html shows them. Edit Ride
+# uses this list and search filters match these exact names, so keep all
+# three in step (RidePreferenceOptionsTests checks post-ride.html).
+RIDE_PREFERENCE_OPTIONS = [
+    'Music OK', 'Chatty Driver', 'Quiet Ride', 'Pet Friendly', 'No Smoking',
+    'Luggage OK', 'Verified Only', 'On-Time Driver', 'Winter Tires',
+    'Flexible with Time',
+]
+
 
 def _parse_dollars_to_cents(value):
     """Dollar string → whole cents. Raises ValueError for text, NaN or
@@ -2673,10 +2682,10 @@ def edit_ride_view(request, ride_id):
 
     stops_data = [{'location': s.location, 'lat': s.lat, 'lng': s.lng} for s in stops]
 
-    pref_options = [
-        'No Smoking', 'Pets OK', 'Music On', 'Quiet Ride',
-        'AC On', 'Luggage OK', 'Conversation OK', 'Kids Friendly',
-    ]
+    # Same tags as post-ride.html, so search filters match edited rides too.
+    # Tags saved under an old name (e.g. "Pets OK") stay listed so the driver
+    # can still see and remove them.
+    pref_options = RIDE_PREFERENCE_OPTIONS + [p for p in prefs if p not in RIDE_PREFERENCE_OPTIONS]
     return render(request, 'edit-ride.html', {
         'ride':         ride,
         'depart_date':  ride.depart_at.strftime('%Y-%m-%d'),
