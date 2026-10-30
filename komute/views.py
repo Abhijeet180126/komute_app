@@ -4087,7 +4087,7 @@ def confirm_delete_account_view(request, token):
 # ──────────────────────────────────────────────────────────────────
 
 _PASSWORD_RESET_SALT = 'komute-password-reset-v1'
-_PASSWORD_RESET_LINK_MAX_AGE_SECONDS = 3600
+_PASSWORD_RESET_LINK_MAX_AGE_SECONDS = settings.PASSWORD_RESET_LINK_MINUTES * 60
 
 
 def _password_reset_state_hash(user):
@@ -4109,7 +4109,8 @@ def _make_password_reset_token(user):
 
 def _decode_password_reset_token(token):
     """Decode and verify a token produced by _make_password_reset_token.
-    Raises signing.SignatureExpired if older than 1h, signing.BadSignature if
+    Raises signing.SignatureExpired if older than PASSWORD_RESET_LINK_MINUTES,
+    signing.BadSignature if
     tampered, expired, or if the user's password has changed since issuance."""
     data = signing.loads(
         token,
@@ -4149,7 +4150,11 @@ def forgot_password_view(request):
             reset_url = request.build_absolute_uri(
                 reverse('reset-password', args=[token])
             )
-            ctx = {'user': user, 'reset_url': reset_url}
+            ctx = {
+                'user': user,
+                'reset_url': reset_url,
+                'expiry_minutes': settings.PASSWORD_RESET_LINK_MINUTES,
+            }
             try:
                 text_body = render_to_string('account/email/password_reset_email.txt', ctx)
                 html_body = render_to_string('account/email/password_reset_email.html', ctx)
