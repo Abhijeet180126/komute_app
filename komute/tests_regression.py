@@ -370,7 +370,7 @@ class PasswordResetFlowTests(TestCase):
     def test_reset_with_expired_token_rejected(self):
         from komute.views import _make_password_reset_token
         token = _make_password_reset_token(self.user)
-        future = time.time() + 3700  # just past the 1-hour expiry window
+        future = time.time() + settings.PASSWORD_RESET_LINK_MINUTES * 60 + 100  # just past the expiry window
         c = Client()
         with patch('django.core.signing.time.time', return_value=future):
             resp = c.get(reverse('reset-password', args=[token]))

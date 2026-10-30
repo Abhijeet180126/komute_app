@@ -266,6 +266,9 @@ AXES_USERNAME_FORM_FIELD = 'username'
 # non-guessable value (e.g. "mgmt-x7k2p9/"). Keep the trailing slash.
 ADMIN_URL = config('ADMIN_URL', default='admin/')
 
+# How long a "forgot password" email link stays valid, in minutes.
+PASSWORD_RESET_LINK_MINUTES = config('PASSWORD_RESET_LINK_MINUTES', default=15, cast=int)
+
 # Email configuration (Amazon SES, via django-anymail)
 EMAIL_BACKEND = "anymail.backends.amazon_ses.EmailBackend"
 
