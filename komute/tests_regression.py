@@ -2364,6 +2364,29 @@ class EditRideViewTests(TestCase):
         resp = c.get(reverse('edit-ride', args=[encode_id(self.ride.id)]))
         self.assertEqual(resp.status_code, 404)
 
+    def test_edit_page_offers_post_ride_preference_tags(self):
+        from komute.views import RIDE_PREFERENCE_OPTIONS
+        Rides.objects.filter(pk=self.ride.pk).update(preferences_json=['Pet Friendly', 'Pets OK'])
+        c = Client()
+        c.login(username='edrv_driver@example.com', password='TestPass123')
+        resp = c.get(reverse('edit-ride', args=[encode_id(self.ride.id)]))
+        # The post-ride tags first; an old-name tag stays visible so it can be removed.
+        self.assertEqual(resp.context['pref_options'], RIDE_PREFERENCE_OPTIONS + ['Pets OK'])
+        self.assertContains(resp, 'data-pref="Pet Friendly"')
+
+    def test_preference_list_matches_post_ride_and_search(self):
+        import re
+        from pathlib import Path
+        from komute.views import RIDE_PREFERENCE_OPTIONS
+        templates = Path(settings.BASE_DIR) / 'templates'
+        post = (templates / 'post-ride.html').read_text(encoding='utf-8')
+        post_tags = re.findall(r'togglePrefTag\(this\)">\s*<svg.*?</svg>\s*([^<]+?)\s*</button>', post, re.S)
+        self.assertEqual(post_tags, RIDE_PREFERENCE_OPTIONS)
+        search = (templates / 'search-rides.html').read_text(encoding='utf-8')
+        filters = re.findall(r'<option value="([^"]+)"\s+\{% if filter_preference', search)
+        self.assertTrue(filters)
+        self.assertTrue(set(filters) <= set(RIDE_PREFERENCE_OPTIONS), filters)
+
     def test_cannot_edit_non_posted_ride(self):
         Rides.objects.filter(pk=self.ride.pk).update(status='completed')
         c = Client()
