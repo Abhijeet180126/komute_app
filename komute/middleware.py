@@ -47,7 +47,8 @@ class PermissionsPolicyMiddleware:
 # also covers the chat and notification websockets on the same host.
 # 'unsafe-inline' stays until the inline <script> blocks and onclick=
 # handlers are gone (patch 01, step 3). Add a host here before using it.
-# Fonts are self-hosted from static/fonts (audit F-7), so Google is gone.
+# Fonts are self-hosted from static/fonts (audit F-7), so Google is gone
+# from everything but form-action (sign-in).
 CONTENT_SECURITY_POLICY = '; '.join([
     "default-src 'self'",
     "script-src 'self' 'unsafe-inline' https://unpkg.com",
@@ -59,7 +60,9 @@ CONTENT_SECURITY_POLICY = '; '.join([
     "media-src 'self' blob:",
     "frame-ancestors 'none'",
     "base-uri 'self'",
-    "form-action 'self'",
+    # The Google/Apple sign-in buttons post here, then get redirected to
+    # the provider; browsers check that redirect against form-action.
+    "form-action 'self' https://accounts.google.com https://appleid.apple.com",
     "object-src 'none'",
     "report-uri /csp-report/",
 ])

@@ -17,6 +17,10 @@ psycopg2-binary==2.9.12
 # Auth
 django-allauth==65.17.0
 django-axes==8.3.1
+# Google / Apple sign-in through allauth.socialaccount
+PyJWT[crypto]==2.15.1
+requests-oauthlib==2.0.0
+oauthlib==4.0.1
 
 # Email
 django-anymail==15.0

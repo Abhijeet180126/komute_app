@@ -2,6 +2,7 @@ from django.urls import path,include
 from django.contrib.sitemaps.views import sitemap
 from django.views.generic import RedirectView
 from .sitemaps import PublicPagesSitemap
+from .social import SocialSignupView
 from .views import (
     home_view, signup_view, login_view, profile_view, about_view,
     role_select_view, post_ride_view, how_it_works_view,
@@ -58,6 +59,13 @@ urlpatterns = [
     path('accounts/password/change/', RedirectView.as_view(pattern_name='profile')),
     path('accounts/password/set/', RedirectView.as_view(pattern_name='profile')),
     path('accounts/email/', RedirectView.as_view(pattern_name='profile')),
+    # Google/Apple sign-in (komute/social.py) uses allauth's provider routes.
+    # Its finish-signup page is drawn with signup.html; its connections,
+    # cancelled and error pages aren't used.
+    path('accounts/3rdparty/signup/', SocialSignupView.as_view(), name='socialaccount_signup'),
+    path('accounts/3rdparty/', RedirectView.as_view(pattern_name='profile')),
+    path('accounts/3rdparty/login/cancelled/', RedirectView.as_view(pattern_name='login')),
+    path('accounts/3rdparty/login/error/', RedirectView.as_view(pattern_name='login')),
     # the upper line overrides the default allauth confirm email view to redirect to the home page after email confirmation
     path('accounts/', include('allauth.urls')),
     path('profile/send-verification/', send_verification_email, name='send_verification_email'),

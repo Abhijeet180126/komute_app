@@ -1,4 +1,4 @@
-from allauth.account.signals import email_confirmed
+from allauth.account.signals import email_confirmed, user_logged_in
 from django.contrib import messages
 from django.contrib.auth import get_user_model
 from django.db import IntegrityError, transaction
@@ -37,3 +37,16 @@ def email_verified_update(sender, request, email_address, **kwargs):
                 "That email address was just claimed by another account. "
                 "Please try changing your email again with a different address.",
             )
+
+
+@receiver(user_logged_in)
+def social_email_verified(sender, request, user, sociallogin=None, **kwargs):
+    """Google/Apple sign-in (komute.social): an address the provider has
+    verified counts as verified here. Runs after allauth's password wipe,
+    which needs to see the address as it was."""
+    if sociallogin is None:
+        return
+    from komute.social import mark_email_verified
+    for address in sociallogin.email_addresses:
+        if address.verified:
+            mark_email_verified(user, address.email)

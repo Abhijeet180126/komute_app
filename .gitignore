@@ -43,3 +43,6 @@ dist/
 
 # Security audit (describes vulnerabilities)
 /audit/
+
+# Apple sign-in private keys (komute/social.py): keep outside the repo
+*.p8

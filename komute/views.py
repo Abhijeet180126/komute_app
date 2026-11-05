@@ -37,6 +37,7 @@ from django.contrib.auth.password_validation import validate_password
 from allauth.account.models import EmailAddress
 from allauth.account.models import EmailConfirmationHMAC
 from allauth.account.views import ConfirmEmailView as AllauthConfirmEmailView
+from allauth.socialaccount.models import SocialAccount
 from django.core.mail import EmailMultiAlternatives
 from django.core import signing
 from django.utils.crypto import salted_hmac, constant_time_compare
@@ -663,6 +664,39 @@ def _safe_next(request):
     return ""
 
 
+def _check_signup_details(full_name, country_code, phone_number, dob_str, agreed_to_terms):
+    """Checks the fields both signup pages ask for (email/password signup and
+    the Google/Apple one, komute.social). Returns (errors, E.164 phone, dob)."""
+    errors = {}
+    if not full_name:
+        errors["full_name"] = "Full name is required."
+
+    phone = ""
+    if not country_code:
+        errors["country_code"] = "Please select a country code."
+    elif country_code not in _valid_dial_codes():
+        errors["country_code"] = "Please select a valid country code."
+
+    if not phone_number:
+        errors["phone_number"] = "Phone number is required."
+    elif not _PHONE_NUMBER_RE.match(phone_number):
+        errors["phone_number"] = "Enter a valid phone number (digits only)."
+
+    if not errors.get("country_code") and not errors.get("phone_number"):
+        phone = f"{country_code}{phone_number}"
+        if not _PHONE_RE.match(phone):
+            errors["phone_number"] = "Phone must be in E.164 format (e.g. +14155552671)."
+
+    # 18+ only (audit L-5): checked here, not first at booking.
+    dob, dob_error = _parse_dob(dob_str)
+    if dob_error:
+        errors["dob"] = dob_error
+
+    if agreed_to_terms != "1":
+        errors["agreed_to_terms"] = "You must accept the Terms & Conditions and the Privacy Policy to sign up."
+    return errors, phone, dob
+
+
 def _with_next(url_name, next_url):
     url = reverse(url_name)
     # safe='/', as Django's own login redirect and the |urlencode filter do.
@@ -701,8 +735,8 @@ def signup_view(request):
                                                      "dob_max": _latest_adult_dob().isoformat(),
                                                      "priority_countries": priority_countries, "countries": countries})
 
-        if not full_name:
-            errors["full_name"] = "Full name is required."
+        errors, phone, dob = _check_signup_details(full_name, country_code, phone_number,
+                                                   dob_str, agreed_to_terms)
 
         if not email:
             errors["email"] = "Email address is required."
@@ -714,27 +748,6 @@ def signup_view(request):
             else:
                 if User.objects.filter(email__iexact=email).exists():
                     errors["email"] = "An account with this email already exists."
-
-        phone = ""
-        if not country_code:
-            errors["country_code"] = "Please select a country code."
-        elif country_code not in _valid_dial_codes():
-            errors["country_code"] = "Please select a valid country code."
-
-        if not phone_number:
-            errors["phone_number"] = "Phone number is required."
-        elif not _PHONE_NUMBER_RE.match(phone_number):
-            errors["phone_number"] = "Enter a valid phone number (digits only)."
-
-        if not errors.get("country_code") and not errors.get("phone_number"):
-            phone = f"{country_code}{phone_number}"
-            if not _PHONE_RE.match(phone):
-                errors["phone_number"] = "Phone must be in E.164 format (e.g. +14155552671)."
-
-        # 18+ only (audit L-5): checked here, not first at booking.
-        dob, dob_error = _parse_dob(dob_str)
-        if dob_error:
-            errors["dob"] = dob_error
 
         if not password:
             errors["password"] = "Password is required."
@@ -749,9 +762,6 @@ def signup_view(request):
 
         if password != confirm_password:
             errors["confirm_password"] = "Passwords do not match."
-
-        if agreed_to_terms != "1":
-            errors["agreed_to_terms"] = "You must accept the Terms & Conditions and the Privacy Policy to sign up."
 
         if not errors:
             with transaction.atomic():
@@ -3909,6 +3919,13 @@ def _build_data_export(user):
             'average_rating': user.avg_rating, 'total_rides': user.total_rides,
             'created_at': _iso(user.created_at), 'updated_at': _iso(user.updated_at),
         },
+        # Google/Apple sign-in links (komute/social.py), with what we kept
+        # from the provider.
+        'sign_in_with': [
+            {'provider': a.provider, 'account_id': a.uid, 'details': a.extra_data,
+             'linked_at': _iso(a.date_joined), 'last_used_at': _iso(a.last_login)}
+            for a in SocialAccount.objects.filter(user=user).order_by('date_joined')
+        ],
         'vehicles': [
             {'make': v.make, 'model': v.model, 'year': v.year, 'color': v.color, 'plate': v.plate,
              'seat_capacity': v.seat_capacity, 'has_photo': bool(v.photo_url),

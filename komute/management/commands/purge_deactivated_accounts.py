@@ -7,6 +7,7 @@ from django.core.management.base import BaseCommand
 from django.db import transaction
 from django.db.models import Q
 from allauth.account.models import EmailAddress
+from allauth.socialaccount.models import SocialAccount
 from django.utils import timezone
 
 from komute.models import (
@@ -74,6 +75,8 @@ class Command(BaseCommand):
                     # allauth's copy of the address (and any old ones) would
                     # otherwise outlive the anonymized user row.
                     EmailAddress.objects.filter(user=user).delete()
+                    # Google/Apple sign-in links (komute/social.py).
+                    SocialAccount.objects.filter(user=user).delete()
                     # Consent records stay as proof of what was agreed and
                     # when (against the anonymized row); the network details
                     # that could identify the person go.
