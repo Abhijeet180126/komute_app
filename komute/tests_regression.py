@@ -5275,6 +5275,9 @@ class PrivacyPolicyProcessorTests(TestCase):
         'images.unsplash.com': 'Unsplash',
         'photon.komoot.io': 'Photon',
         'router.project-osrm.org': 'OSRM',
+        # form-action only: the sign-in buttons redirect there.
+        'accounts.google.com': 'Google',
+        'appleid.apple.com': 'Apple',
     }
 
     def setUp(self):
@@ -5301,13 +5304,23 @@ class PrivacyPolicyProcessorTests(TestCase):
 class LegalTextAccuracyTests(TestCase):
     """Audit P-16: the legal pages don't promise things the site doesn't do."""
 
-    def test_no_analytics_social_sign_in_or_mobile_app_claims(self):
+    def test_no_analytics_or_mobile_app_claims(self):
         import re
         for name in ('privacy-policy', 'terms-condition', 'signup', 'how-it-works', 'community-guidelines', 'delete-account'):
             html = re.sub(r'<!--.*?-->', '', Client().get(reverse(name)).content.decode(), flags=re.S)
-            for claim in ('analyze usage', 'Analyze trends', 'Google or Apple', 'Google / Apple',
-                          'mobile app', 'through the app', 'use the app', 'sign-in providers'):
+            for claim in ('analyze usage', 'Analyze trends',
+                          'mobile app', 'through the app', 'use the app'):
                 self.assertNotIn(claim, html, f'{claim!r} on {name}')
+
+    def test_google_and_apple_sign_in_are_described(self):
+        # Sign in with Google / Apple (komute/social.py), in both legal texts.
+        terms = 'or with your Google or Apple account'
+        self.assertContains(Client().get(reverse('terms-condition')), terms)
+        self.assertContains(Client().get(reverse('signup')), terms)
+        policy = Client().get(reverse('privacy-policy'))
+        self.assertContains(policy, 'Google or Apple sign-in:')
+        self.assertContains(policy, "We don't receive your Google or Apple password")
+        self.assertContains(policy, 'Google or Apple sign-in link:')
 
     def test_cookie_section_matches_the_site(self):
         html = Client().get(reverse('privacy-policy')).content.decode()
@@ -5418,3 +5431,208 @@ class DataExportTests(TestCase):
     def test_profile_and_policy_offer_it(self):
         self.assertContains(self.c.get(reverse('profile')), reverse('download-my-data'))
         self.assertContains(Client().get(reverse('privacy-policy')), 'Download my data</strong> on your profile page')
+
+
+class SocialSignInTests(TestCase):
+    """Sign in with Google / Apple (komute/social.py). The provider round trip
+    is skipped: each test hands allauth the profile Google or Apple would
+    send back, as their callback views do."""
+
+    GOOGLE = {'sub': 'g-123', 'email': 'new.user@gmail.com', 'email_verified': True,
+              'name': 'New User', 'given_name': 'New', 'family_name': 'User',
+              'picture': 'https://lh3.googleusercontent.com/x', 'locale': 'en'}
+
+    def setUp(self):
+        cache.clear()
+
+    def _sign_in(self, provider_id, data, state=None):
+        """Completes a sign-in as the provider's callback would, and gives
+        self.client that session. Returns (response, messages)."""
+        from allauth.core import context
+        from allauth.socialaccount.adapter import get_adapter
+        from allauth.socialaccount.helpers import complete_social_login
+        from django.contrib.messages.storage.fallback import FallbackStorage
+        from django.contrib.sessions.middleware import SessionMiddleware
+        from django.test import RequestFactory
+        request = RequestFactory().get(f'/accounts/{provider_id}/login/callback/')
+        SessionMiddleware(lambda r: None).process_request(request)
+        request.user = AnonymousUser()
+        request._messages = FallbackStorage(request)
+        with context.request_context(request):
+            provider = get_adapter(request).get_provider(request, provider_id)
+            sociallogin = provider.sociallogin_from_response(request, data)
+            sociallogin.state = state or {}
+            resp = complete_social_login(request, sociallogin)
+        request.session.save()
+        self.client.cookies[settings.SESSION_COOKIE_NAME] = request.session.session_key
+        return resp, [str(m) for m in request._messages]
+
+    def _finish(self, **fields):
+        data = {'full_name': 'New User', 'country_code': '+1', 'phone_number': '4155552671',
+                'dob': '1990-05-01', 'agreed_to_terms': '1', **fields}
+        return self.client.post(reverse('socialaccount_signup'), data)
+
+    def _logged_in_user(self):
+        return self.client.get(reverse('profile')).wsgi_request.user
+
+    def test_buttons_post_to_the_providers(self):
+        for name in ('login', 'signup'):
+            html = Client().get(reverse(name)).content.decode()
+            self.assertIn('action="/accounts/google/login/', html, name)
+            self.assertIn('action="/accounts/apple/login/', html, name)
+            self.assertIn('Continue with Google', html, name)
+
+    @override_settings(SOCIALACCOUNT_PROVIDERS={})
+    def test_no_buttons_without_keys(self):
+        for name in ('login', 'signup'):
+            html = Client().get(reverse(name)).content.decode()
+            self.assertNotIn('/accounts/google/login/', html, name)
+            self.assertNotIn('or continue with', html, name)
+
+    def test_start_sends_the_registered_callback_url(self):
+        resp = Client().post('/accounts/google/login/')
+        self.assertEqual(resp.status_code, 302)
+        self.assertTrue(resp['Location'].startswith('https://accounts.google.com/'))
+        self.assertIn('redirect_uri=http%3A%2F%2Ftestserver%2Faccounts%2Fgoogle%2Flogin%2Fcallback%2F',
+                      resp['Location'])
+        # allauth refuses to start on a GET (login CSRF).
+        self.assertNotEqual(Client().get('/accounts/google/login/').status_code, 302)
+
+    def test_csp_allows_the_redirect_to_the_providers(self):
+        policy = Client().get(reverse('login'))['Content-Security-Policy-Report-Only']
+        self.assertIn("form-action 'self' https://accounts.google.com https://appleid.apple.com", policy)
+
+    def test_new_user_finishes_signup_with_phone_dob_and_terms(self):
+        from allauth.socialaccount.models import SocialAccount
+        resp, _ = self._sign_in('google', self.GOOGLE)
+        self.assertRedirects(resp, reverse('socialaccount_signup'), fetch_redirect_response=False)
+        self.assertFalse(CustomUser.objects.filter(email='new.user@gmail.com').exists())
+
+        page = self.client.get(reverse('socialaccount_signup'))
+        self.assertContains(page, 'Signed in with Google')
+        self.assertContains(page, 'value="new.user@gmail.com"')
+        self.assertContains(page, 'value="New User"')
+        self.assertNotContains(page, 'name="password"')
+
+        resp = self._finish(email='attacker@example.com')
+        self.assertRedirects(resp, reverse('role-select'), fetch_redirect_response=False)
+        user = CustomUser.objects.get(email='new.user@gmail.com')
+        self.assertEqual(user.username, 'new.user@gmail.com')
+        self.assertEqual(user.phone, '+14155552671')
+        self.assertEqual(user.dob, date(1990, 5, 1))
+        self.assertTrue(user.email_verified)
+        self.assertFalse(user.has_usable_password())
+        self.assertFalse(CustomUser.objects.filter(email='attacker@example.com').exists())
+        self.assertTrue(LegalAcceptance.objects.filter(
+            user=user, terms_version=settings.TERMS_VERSION, privacy_version=settings.PRIVACY_VERSION,
+            source=LegalAcceptance.SOURCE_SIGNUP).exists())
+        account = SocialAccount.objects.get(user=user, provider='google', uid='g-123')
+        self.assertEqual(set(account.extra_data), {'sub', 'email', 'email_verified'})
+        self.assertEqual([m.to for m in mail.outbox], [['new.user@gmail.com']])
+        self.assertEqual(self._logged_in_user(), user)
+
+    def test_new_user_picks_a_role_even_when_sent_elsewhere(self):
+        # Started from /login/?next=/profile/: allauth carries `next` in the state.
+        resp, _ = self._sign_in('google', self.GOOGLE, state={'next': '/profile/'})
+        self.assertRedirects(resp, reverse('socialaccount_signup'), fetch_redirect_response=False)
+        resp = self._finish()
+        self.assertRedirects(resp, f"{reverse('role-select')}?next=/profile/", fetch_redirect_response=False)
+
+    def test_finish_signup_applies_the_signup_rules(self):
+        self._sign_in('google', self.GOOGLE)
+        too_young = (date.today() - timedelta(days=17 * 365)).isoformat()
+        resp = self._finish(dob=too_young, phone_number='12ab', agreed_to_terms='')
+        self.assertEqual(resp.status_code, 200)
+        self.assertContains(resp, 'You must be at least 18 years old.')
+        self.assertContains(resp, 'Enter a valid phone number (digits only).')
+        self.assertContains(resp, 'You must accept the Terms')
+        self.assertFalse(CustomUser.objects.filter(email='new.user@gmail.com').exists())
+
+    def test_apple_name_and_hidden_email(self):
+        resp, _ = self._sign_in('apple', {
+            'sub': '001234.abcd', 'email': 'x7k2@privaterelay.appleid.com', 'email_verified': 'true',
+            'is_private_email': 'true', 'name': {'firstName': 'Ada', 'lastName': 'Lovelace'}})
+        self.assertRedirects(resp, reverse('socialaccount_signup'), fetch_redirect_response=False)
+        self.assertContains(self.client.get(reverse('socialaccount_signup')), 'value="Ada Lovelace"')
+        self._finish(full_name='Ada Lovelace')
+        user = CustomUser.objects.get(email='x7k2@privaterelay.appleid.com')
+        self.assertEqual(user.full_name, 'Ada Lovelace')
+        self.assertTrue(user.email_verified)
+
+    def test_returning_user_signs_straight_in(self):
+        self._sign_in('google', self.GOOGLE)
+        self._finish()
+        self.client.logout()
+        resp, _ = self._sign_in('google', self.GOOGLE)
+        self.assertEqual(resp.status_code, 302)
+        self.assertNotEqual(resp['Location'], reverse('socialaccount_signup'))
+        self.assertEqual(self._logged_in_user().email, 'new.user@gmail.com')
+
+    def test_existing_verified_account_is_linked_and_keeps_its_password(self):
+        from allauth.socialaccount.models import SocialAccount
+        # Verified by the old flow, with no allauth EmailAddress row.
+        user = make_user('new.user@gmail.com', email_verified=True)
+        resp, _ = self._sign_in('google', self.GOOGLE)
+        self.assertEqual(resp.status_code, 302)
+        self.assertEqual(self._logged_in_user(), user)
+        user.refresh_from_db()
+        self.assertTrue(user.check_password('TestPass123'))
+        self.assertTrue(SocialAccount.objects.filter(user=user, provider='google').exists())
+
+    def test_unverified_account_loses_the_password_it_was_created_with(self):
+        # Someone signed up with this address but never proved they own it.
+        user = make_user('new.user@gmail.com', email_verified=False)
+        self._sign_in('google', self.GOOGLE)
+        self.assertEqual(self._logged_in_user(), user)
+        user.refresh_from_db()
+        self.assertFalse(user.has_usable_password())
+        self.assertTrue(user.email_verified)
+
+    def test_unverified_provider_email_does_not_take_over_an_account(self):
+        user = make_user('new.user@gmail.com')
+        resp, _ = self._sign_in('google', {**self.GOOGLE, 'email_verified': False})
+        self.assertRedirects(resp, reverse('socialaccount_signup'), fetch_redirect_response=False)
+        resp = self._finish()
+        self.assertContains(resp, 'An account already uses this email address.')
+        self.assertFalse(self._logged_in_user().is_authenticated)
+        self.assertFalse(user.socialaccount_set.exists())
+
+    def test_closed_account_cannot_sign_in(self):
+        make_user('new.user@gmail.com', is_active=False, deactivated_at=timezone.now())
+        resp, msgs = self._sign_in('google', self.GOOGLE)
+        self.assertRedirects(resp, reverse('login'), fetch_redirect_response=False)
+        self.assertIn('This account is closed or deactivated.', msgs[0])
+        self.assertFalse(self._logged_in_user().is_authenticated)
+
+    def test_cancel_at_google_returns_to_login(self):
+        from urllib.parse import parse_qs, urlsplit
+        start = self.client.post('/accounts/google/login/')
+        state = parse_qs(urlsplit(start['Location']).query)['state'][0]
+        resp = self.client.get(f'/accounts/google/login/callback/?error=access_denied&state={state}')
+        self.assertRedirects(resp, reverse('login'), fetch_redirect_response=False)
+        self.assertContains(self.client.get(reverse('login')), 'Sign-in with Google was cancelled.')
+
+    def test_failed_sign_in_returns_to_login(self):
+        resp = self.client.get('/accounts/google/login/callback/?code=x&state=unknown')
+        self.assertRedirects(resp, reverse('login'), fetch_redirect_response=False)
+        self.assertContains(self.client.get(reverse('login')), "Sign-in with Google didn&#x27;t work.")
+
+    def test_allauth_social_pages_are_not_reachable(self):
+        self.assertRedirects(self.client.get('/accounts/3rdparty/'), reverse('profile'),
+                             fetch_redirect_response=False)
+        # No sign-in in progress: allauth's login URL, which redirects to ours.
+        self.assertRedirects(self.client.get(reverse('socialaccount_signup')), reverse('account_login'),
+                             fetch_redirect_response=False)
+
+    def test_export_and_purge_cover_the_sign_in_link(self):
+        from allauth.socialaccount.models import SocialAccount
+        self._sign_in('google', self.GOOGLE)
+        self._finish()
+        user = CustomUser.objects.get(email='new.user@gmail.com')
+        export = json.loads(self.client.get(reverse('download-my-data')).content)
+        self.assertEqual(export['sign_in_with'][0]['provider'], 'google')
+        self.assertNotIn('picture', export['sign_in_with'][0]['details'])
+        CustomUser.objects.filter(pk=user.pk).update(
+            is_active=False, deactivated_at=timezone.now() - timedelta(days=settings.ACCOUNT_DELETION_GRACE_DAYS + 1))
+        call_command('purge_deactivated_accounts')
+        self.assertFalse(SocialAccount.objects.filter(uid='g-123').exists())

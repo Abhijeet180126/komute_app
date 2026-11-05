@@ -72,6 +72,18 @@ AXES_ENABLED = False
 PRIVATE_MEDIA_ROOT = Path(tempfile.gettempdir()) / 'komute_regression_private_media'
 PRIVATE_MEDIA_USE_ACCEL = False
 
+# Google/Apple sign-in (komute/social.py) with dummy keys, so the flow can be
+# tested without real ones in .env. No test talks to Google or Apple.
+for _provider in ('google', 'apple'):
+    if f'allauth.socialaccount.providers.{_provider}' not in INSTALLED_APPS:  # noqa: F405
+        INSTALLED_APPS.append(f'allauth.socialaccount.providers.{_provider}')  # noqa: F405
+SOCIALACCOUNT_PROVIDERS = {
+    'google': {'APPS': [{'client_id': 'test-google-client', 'secret': 'test-google-secret'}],
+               'SCOPE': ['profile', 'email']},
+    'apple': {'APPS': [{'client_id': 'net.komute.test', 'secret': 'TESTKEYID', 'key': 'TESTTEAMID',
+                        'settings': {'certificate_key': 'not-a-real-key'}}]},
+}
+
 # The per-upload log lines would flood the test output; tests that check
 # them use assertLogs, which lowers the level itself.
 LOGGING['loggers']['komute.uploads']['level'] = 'ERROR'  # noqa: F405

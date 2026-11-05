@@ -161,6 +161,7 @@ TEMPLATES = [
                 'django.template.context_processors.request',
                 'django.contrib.auth.context_processors.auth',
                 'django.contrib.messages.context_processors.messages',
+                'komute.social.social_providers',
             ],
         },
     },
@@ -315,8 +316,8 @@ BIOMETRIC_NOTICE_VERSION = '2026-10-29'
 # "Last updated" dates. Change one whenever that page changes: signed-in
 # users are then asked to accept again (LegalAcceptanceMiddleware), and each
 # acceptance is stored as a LegalAcceptance row.
-TERMS_VERSION   = '2026-10-28'
-PRIVACY_VERSION = '2026-10-29'
+TERMS_VERSION   = '2026-11-04'
+PRIVACY_VERSION = '2026-11-04'
 # Content-Security-Policy (komute/middleware.py, audit S-8). False sends it
 # as Report-Only: violations are logged by /csp-report/ (logger komute.csp)
 # and nothing is blocked. Set True in .env once the log shows no
@@ -420,6 +421,45 @@ ACCOUNT_EMAIL_VERIFICATION = "mandatory"
 # allauth puts "[<Site name>] " in front of its subjects. Fixed here so an
 # unset Site row can't send "[example.com]" mail (audit S-18).
 ACCOUNT_EMAIL_SUBJECT_PREFIX = "[Komüte] "
+
+# Sign in with Google / Apple (komute/social.py). A provider is on only when
+# all its keys are in .env; leave them empty to turn it off.
+# Google: the OAuth web client from Google Cloud Console.
+# Apple: the Services ID, Team ID, Key ID, and the path to the .p8 key file
+# (outside the project, readable by www-data). Callback URLs to register:
+# https://komute.net/accounts/<google|apple>/login/callback/ (and www.).
+SOCIALACCOUNT_PROVIDERS = {}
+_GOOGLE_CLIENT_ID     = config('GOOGLE_CLIENT_ID', default='')
+_GOOGLE_CLIENT_SECRET = config('GOOGLE_CLIENT_SECRET', default='')
+if _GOOGLE_CLIENT_ID and _GOOGLE_CLIENT_SECRET:
+    INSTALLED_APPS.append('allauth.socialaccount.providers.google')
+    SOCIALACCOUNT_PROVIDERS['google'] = {
+        'APPS': [{'client_id': _GOOGLE_CLIENT_ID, 'secret': _GOOGLE_CLIENT_SECRET}],
+        'SCOPE': ['profile', 'email'],
+        'OAUTH_PKCE_ENABLED': True,
+    }
+_APPLE_CLIENT_ID = config('APPLE_CLIENT_ID', default='')
+_APPLE_TEAM_ID   = config('APPLE_TEAM_ID', default='')
+_APPLE_KEY_ID    = config('APPLE_KEY_ID', default='')
+_APPLE_KEY_PATH  = config('APPLE_PRIVATE_KEY_PATH', default='')
+if _APPLE_CLIENT_ID and _APPLE_TEAM_ID and _APPLE_KEY_ID and _APPLE_KEY_PATH:
+    INSTALLED_APPS.append('allauth.socialaccount.providers.apple')
+    SOCIALACCOUNT_PROVIDERS['apple'] = {
+        # allauth's names: "secret" is the Key ID, "key" the Team ID.
+        'APPS': [{'client_id': _APPLE_CLIENT_ID, 'secret': _APPLE_KEY_ID, 'key': _APPLE_TEAM_ID,
+                  'settings': {'certificate_key': Path(_APPLE_KEY_PATH).read_text()}}],
+    }
+SOCIALACCOUNT_ADAPTER = 'komute.social.SocialAccountAdapter'
+SOCIALACCOUNT_FORMS = {'signup': 'komute.social.SocialSignupForm'}
+# Always show the finish-signup page: phone, date of birth and the Terms.
+SOCIALACCOUNT_AUTO_SIGNUP = False
+SOCIALACCOUNT_EMAIL_REQUIRED = True
+# The provider has checked the address (komute.signals.social_email_verified).
+SOCIALACCOUNT_EMAIL_VERIFICATION = "none"
+# A provider-verified address logs into the existing account that has it.
+SOCIALACCOUNT_EMAIL_AUTHENTICATION = True
+SOCIALACCOUNT_EMAIL_AUTHENTICATION_AUTO_CONNECT = True
+SOCIALACCOUNT_STORE_TOKENS = False
 
 LOGIN_URL = "/login/"
 LOGIN_REDIRECT_URL = "/"

@@ -274,6 +274,7 @@ select.form-input {
   box-shadow: 0 2px 10px rgba(13,120,16,0.06);
 }
 .btn-social svg { flex-shrink: 0; }
+.social-row form { flex: 1; display: flex; }
 
 /* ── JOIN BANNER ── */
 .join-banner {
@@ -527,14 +528,18 @@ select.form-input {
   </div>
 
   <!-- DJANGO FORM -->
-  <form method="POST" action="{% url 'signup' %}">
-    
+  {# social: set by komute.social.SocialSignupView after a Google/Apple sign-in; no password then. #}
+  <form method="POST" action="{% if social %}{% url 'socialaccount_signup' %}{% else %}{% url 'signup' %}{% endif %}">
+
     <!-- DJANGO CSRF TOKEN -->
     {% csrf_token %}
     {% if next %}<input type="hidden" name="next" value="{{ next }}">{% endif %}
 
     {% if errors.rate_limit %}
       <div class="error-text">{{ errors.rate_limit }}</div>
+    {% endif %}
+    {% if errors.form %}
+      <div class="error-text">{{ errors.form }}</div>
     {% endif %}
 
     <!-- Full Name -->
@@ -571,7 +576,9 @@ select.form-input {
              class="form-input"
              placeholder="john@example.com"
              value="{{ form.email }}"
+             {% if social %}readonly{% endif %}
              required>
+      {% if social %}<div class="form-hint">From your {{ social }} account.</div>{% endif %}
       {% if errors.email %}
         <div class="error-text">{{ errors.email }}</div>
       {% endif %}
@@ -636,6 +643,7 @@ select.form-input {
       {% endif %}
     </div>
 
+    {% if not social %}
     <!-- Password -->
     <div class="form-group">
       <label for="password" class="form-label">
@@ -692,6 +700,7 @@ select.form-input {
         <div class="error-text">{{ errors.confirm_password }}</div>
       {% endif %}
     </div>
+    {% endif %}
 
     <!-- T&C Checkbox -->
     <div class="form-group tnc-row">
@@ -716,40 +725,19 @@ select.form-input {
         <polyline points="12 5 19 12 12 19"/>
       </svg>
     </button>
-
-    <!-- Divider -->
-    <!-- <div class="divider-row">
-      <span class="divider-line"></span>
-      <span class="divider-text">or sign up with</span>
-      <span class="divider-line"></span>
-    </div> -->
-
-    <!-- Social signup buttons -->
-    <!-- <div class="social-row"> -->
-
-      <!-- DJANGO URL  -->
-   
-        <!-- Google
-      </a> -->
-
-      <!-- DJANGO URL -->
-
-        <!-- Apple
-      </a>
-	  -->
-    </div>
-
-    <div class="join-banner">
-      <svg viewBox="0 0 24 24">
-        <path d="M11 20A7 7 0 0 1 9.8 6.1C15.5 5 17 4.48 19 2c1 2 2 4.18 2 8 0 5.5-4.78 10-10 10z"/>
-        <path d="M2 21c0-3 1.85-5.36 5.08-6C9.5 14.52 12 13 13 12"/>
-      </svg>
-
-      <!-- DJANGO VARIABLE -->
-      {{ join_text|default:"Join a community of eco-conscious commuters" }}
-    </div>
-
   </form>
+
+  {% if not social %}{% include 'social-buttons.html' %}{% endif %}
+
+  <div class="join-banner">
+    <svg viewBox="0 0 24 24">
+      <path d="M11 20A7 7 0 0 1 9.8 6.1C15.5 5 17 4.48 19 2c1 2 2 4.18 2 8 0 5.5-4.78 10-10 10z"/>
+      <path d="M2 21c0-3 1.85-5.36 5.08-6C9.5 14.52 12 13 13 12"/>
+    </svg>
+
+    <!-- DJANGO VARIABLE -->
+    {{ join_text|default:"Join a community of eco-conscious commuters" }}
+  </div>
 
 </div>
 
@@ -840,7 +828,7 @@ select.form-input {
               <li>You are responsible for all activity that occurs under your account.</li>
               <li>You must notify us immediately of any unauthorised access or security breach.</li>
               <li>One person may not maintain more than one account. One account may not be shared between people.</li>
-              <li>You sign in with your email address and password.</li>
+              <li>You sign in with your email address and password, or with your Google or Apple account. If you sign in with Google or Apple, keeping that account secure is part of keeping your Komüte account secure.</li>
             </ul>
           </div>
         </div>
@@ -1100,7 +1088,7 @@ select.form-input {
         </div>
 
         <div class="tnc-bottom-note">
-          <strong>© KOMUTE 2026</strong> &nbsp;·&nbsp; All rights reserved. &nbsp;·&nbsp; Last updated: October 28, 2026
+          <strong>© KOMUTE 2026</strong> &nbsp;·&nbsp; All rights reserved. &nbsp;·&nbsp; Last updated: November 4, 2026
         </div>
 
       </div>
