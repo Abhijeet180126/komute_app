@@ -5636,3 +5636,167 @@ class SocialSignInTests(TestCase):
             is_active=False, deactivated_at=timezone.now() - timedelta(days=settings.ACCOUNT_DELETION_GRACE_DAYS + 1))
         call_command('purge_deactivated_accounts')
         self.assertFalse(SocialAccount.objects.filter(uid='g-123').exists())
+
+
+class AppleContactEmailTests(TestCase):
+    """Apple "Hide My Email" accounts can give a real address for our emails,
+    confirmed through an emailed link (komute/contact_email.py)."""
+
+    RELAY = 'x7k2@privaterelay.appleid.com'
+    APPLE = {'sub': '001234.abcd', 'email': RELAY, 'email_verified': 'true',
+             'is_private_email': 'true', 'name': {'firstName': 'Ada', 'lastName': 'Lovelace'}}
+
+    _sign_in = SocialSignInTests._sign_in
+    _finish = SocialSignInTests._finish
+
+    def setUp(self):
+        cache.clear()
+
+    def _relay_user(self, contact=None, confirmed=False):
+        user = make_user(self.RELAY, contact_email=contact, contact_email_confirmed=confirmed)
+        self.client.force_login(user)
+        return user
+
+    def _confirm_url(self, user):
+        from komute.contact_email import make_token
+        return reverse('confirm-contact-email', args=[make_token(user)])
+
+    def test_finish_signup_asks_only_when_apple_hid_the_email(self):
+        self._sign_in('apple', self.APPLE)
+        page = self.client.get(reverse('socialaccount_signup'))
+        self.assertContains(page, 'name="contact_email"')
+        self.assertContains(page, 'This will be the main email we use to reach you')
+
+        self.client = Client()
+        self._sign_in('google', SocialSignInTests.GOOGLE)
+        self.assertNotContains(self.client.get(reverse('socialaccount_signup')), 'name="contact_email"')
+
+    def test_signup_saves_it_unconfirmed_and_emails_the_link(self):
+        self._sign_in('apple', self.APPLE)
+        resp = self._finish(full_name='Ada Lovelace', contact_email=' Ada@Example.com ')
+        self.assertRedirects(resp, reverse('role-select'), fetch_redirect_response=False)
+        user = CustomUser.objects.get(email=self.RELAY)
+        self.assertEqual(user.contact_email, 'ada@example.com')
+        self.assertFalse(user.contact_email_confirmed)
+        # Not used until confirmed: the welcome email still goes through Apple.
+        self.assertEqual(user.mail_to, self.RELAY)
+        self.assertEqual(sorted(m.to[0] for m in mail.outbox), ['ada@example.com', self.RELAY])
+        link = next(m for m in mail.outbox if m.to == ['ada@example.com'])
+        self.assertIn('/contact-email/confirm/', link.body)
+
+    def test_signup_without_it_is_fine(self):
+        self._sign_in('apple', self.APPLE)
+        self._finish(full_name='Ada Lovelace')
+        user = CustomUser.objects.get(email=self.RELAY)
+        self.assertIsNone(user.contact_email)
+        self.assertEqual([m.to for m in mail.outbox], [[self.RELAY]])
+
+    def test_signup_rejects_a_bad_or_relay_address(self):
+        self._sign_in('apple', self.APPLE)
+        resp = self._finish(full_name='Ada Lovelace', contact_email='not-an-email')
+        self.assertContains(resp, 'Enter a valid email address.')
+        resp = self._finish(full_name='Ada Lovelace', contact_email='abc@privaterelay.appleid.com')
+        self.assertContains(resp, 'not an Apple relay address')
+        self.assertFalse(CustomUser.objects.filter(email=self.RELAY).exists())
+
+    def test_link_confirms_only_on_post(self):
+        user = self._relay_user('ada@example.com')
+        url = self._confirm_url(user)
+        self.assertContains(Client().get(url), 'Confirm Your Communication Email')
+        user.refresh_from_db()
+        self.assertFalse(user.contact_email_confirmed)
+
+        self.assertContains(Client().post(url), 'Email Confirmed')
+        user.refresh_from_db()
+        self.assertTrue(user.contact_email_confirmed)
+        self.assertEqual(user.mail_to, 'ada@example.com')
+
+    def test_confirmed_address_gets_our_emails(self):
+        self._relay_user('ada@example.com', confirmed=True)
+        resp = self.client.post(reverse('request-delete-account'))
+        self.assertIn('ada@example.com', resp.json()['message'])
+        self.assertEqual(mail.outbox[-1].to, ['ada@example.com'])
+
+    def test_old_or_tampered_links_do_nothing(self):
+        user = self._relay_user('old@example.com')
+        old_url = self._confirm_url(user)
+        user.contact_email = 'new@example.com'
+        user.save()
+        self.assertContains(Client().post(old_url), 'Link Expired')
+        self.assertContains(Client().post(old_url[:-4] + 'abc/'), 'Link Expired')
+        user.refresh_from_db()
+        self.assertFalse(user.contact_email_confirmed)
+
+    def test_never_used_to_sign_in_or_reset_a_password(self):
+        self._relay_user('ada@example.com', confirmed=True)
+        self.assertFalse(Client().login(username='ada@example.com', password='TestPass123'))
+        mail.outbox.clear()
+        Client().post(reverse('forgot-password'), {'email': 'ada@example.com'})
+        self.assertEqual(mail.outbox, [])
+        # Two accounts may share one.
+        make_user('other@example.com', contact_email='ada@example.com')
+        self.assertEqual(CustomUser.objects.filter(contact_email='ada@example.com').count(), 2)
+
+    def test_profile_shows_the_communication_email(self):
+        self._relay_user('ada@example.com')
+        page = self.client.get(reverse('profile'))
+        self.assertContains(page, 'Communication Email')
+        self.assertContains(page, 'value="ada@example.com"')
+        self.assertContains(page, 'Resend link')
+        self.assertContains(page, f'You sign in with Apple ({self.RELAY})')
+        self.assertNotContains(page, 'id="emailInput"')
+
+        CustomUser.objects.filter(email=self.RELAY).update(contact_email_confirmed=True)
+        page = self.client.get(reverse('profile'))
+        self.assertContains(page, 'This is the main email we use to reach you.')
+        self.assertNotContains(page, 'Resend link')
+
+    def test_profile_unchanged_for_other_accounts(self):
+        self.client.force_login(make_user('plain@example.com'))
+        page = self.client.get(reverse('profile'))
+        self.assertContains(page, 'id="emailInput"')
+        self.assertNotContains(page, 'Communication Email')
+        resp = self.client.post(reverse('set-contact-email'), {'contact_email': 'x@example.com'})
+        self.assertEqual(resp.status_code, 400)
+
+    def test_profile_add_change_resend_and_remove(self):
+        user = self._relay_user()
+        url = reverse('set-contact-email')
+        resp = self.client.post(url, {'contact_email': 'Ada@Example.com'})
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(mail.outbox[-1].to, ['ada@example.com'])
+        user.refresh_from_db()
+        self.assertEqual((user.contact_email, user.contact_email_confirmed), ('ada@example.com', False))
+
+        # Resend: same address, another email.
+        self.assertEqual(self.client.post(url, {'contact_email': 'ada@example.com'}).status_code, 200)
+        self.assertEqual(len(mail.outbox), 2)
+
+        # A change goes back to unconfirmed, so mail returns to the relay.
+        CustomUser.objects.filter(pk=user.pk).update(contact_email_confirmed=True)
+        self.assertEqual(self.client.post(url, {'contact_email': 'ada@example.com'}).status_code, 400)
+        self.client.post(url, {'contact_email': 'new@example.com'})
+        user.refresh_from_db()
+        self.assertEqual((user.contact_email, user.mail_to), ('new@example.com', self.RELAY))
+
+        self.client.post(url, {'contact_email': ''})
+        user.refresh_from_db()
+        self.assertIsNone(user.contact_email)
+
+    def test_rate_limited(self):
+        self._relay_user()
+        limit, _ = settings.RATE_LIMITS['email-confirm-target']
+        for _ in range(limit):
+            self.client.post(reverse('set-contact-email'), {'contact_email': 'ada@example.com'})
+        resp = self.client.post(reverse('set-contact-email'), {'contact_email': 'ada@example.com'})
+        self.assertEqual(resp.status_code, 429)
+
+    def test_in_data_export_and_cleared_by_purge(self):
+        user = self._relay_user('ada@example.com', confirmed=True)
+        export = json.loads(self.client.get(reverse('download-my-data')).content)
+        self.assertEqual(export['account']['communication_email'], 'ada@example.com')
+        CustomUser.objects.filter(pk=user.pk).update(
+            is_active=False, deactivated_at=timezone.now() - timedelta(days=settings.ACCOUNT_DELETION_GRACE_DAYS + 1))
+        call_command('purge_deactivated_accounts')
+        user.refresh_from_db()
+        self.assertIsNone(user.contact_email)

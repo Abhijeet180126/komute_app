@@ -34,6 +34,14 @@ message="Phone number must be in E.164 format."
 )
 
 
+APPLE_RELAY_DOMAIN = 'privaterelay.appleid.com'
+
+
+def is_private_relay(email):
+    """An Apple "Hide My Email" relay address."""
+    return (email or '').lower().endswith('@' + APPLE_RELAY_DOMAIN)
+
+
 class CustomUserManager(BaseUserManager):
     # AbstractUser's default UserManager hard-codes `username` as the
     # identifying field (create_superuser(self, username, email=None, ...)).
@@ -89,6 +97,20 @@ class CustomUser(AbstractUser):
     pending_email = models.EmailField(
         null=True,
         blank=True
+    )
+
+    # Apple "Hide My Email" users sign in with a relay address
+    # (...@privaterelay.appleid.com) and may give a real address for mail.
+    # Only for sending mail, and only once confirmed through the emailed
+    # link (komute.contact_email). Never used to log in, reset a password
+    # or link accounts, so it isn't unique.
+    contact_email = models.EmailField(
+        null=True,
+        blank=True
+    )
+
+    contact_email_confirmed = models.BooleanField(
+        default=False
     )
 
     phone = models.CharField(
@@ -252,6 +274,20 @@ class CustomUser(AbstractUser):
             )
 
     def __str__(self):
+        return self.email
+
+    @property
+    def uses_private_relay(self):
+        """Signed in with Apple and chose "Hide My Email"."""
+        return is_private_relay(self.email)
+
+    @property
+    def mail_to(self):
+        """Where emails to this user go: the confirmed communication address
+        if there is one, else the sign-in address. Password resets and the
+        sign-in address's own verification still go to `email`."""
+        if self.contact_email and self.contact_email_confirmed:
+            return self.contact_email
         return self.email
 
     @property

@@ -1296,6 +1296,42 @@ body.role-rider .driver-only { display: none; }
           </div>
         </div>
         <!-- Email -->
+        {% if uses_private_relay %}
+        {# Apple "Hide My Email": show the communication email; the relay address is only for signing in (komute/contact_email.py). #}
+        <div class="form-group">
+          <label for="contactEmailShown" class="form-label">
+            Communication Email
+            <button type="button" class="inline-edit" onclick="openContactEmailModal()" title="{% if contact_email %}Change communication email{% else %}Add communication email{% endif %}">
+              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+              {% if contact_email %}Change{% else %}Add{% endif %}
+            </button>
+          </label>
+          <div class="input-wrap">
+            <span class="input-icon"><svg viewBox="0 0 24 24"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg></span>
+            <input type="email" class="form-input{% if contact_email %} email-has-status{% endif %}" id="contactEmailShown" value="{{ contact_email }}" placeholder="Add an email you read" readonly>
+            {% if contact_email and contact_email_confirmed %}
+            <span class="email-status-pill email-status-verified">
+              <svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+              Confirmed
+            </span>
+            {% elif contact_email %}
+            <button type="button" class="email-status-pill email-status-unverified" onclick="resendContactEmail()" title="Send the confirmation link again">
+              Resend link
+            </button>
+            {% endif %}
+          </div>
+          <div class="form-hint">
+            {% if contact_email and not contact_email_confirmed %}
+              Waiting for you to click the link we sent. Until then we email you through Apple.
+            {% elif contact_email %}
+              This is the main email we use to reach you.
+            {% else %}
+              We email you through Apple's relay. Add an email to get ride updates and account emails there.
+            {% endif %}
+            You sign in with Apple ({{ email }}).
+          </div>
+        </div>
+        {% else %}
         <div class="form-group">
           <label for="emailInput" class="form-label">
             Email Address <span class="required">*</span>
@@ -1321,6 +1357,7 @@ body.role-rider .driver-only { display: none; }
             {% endif %}
           </div>
         </div>
+        {% endif %}
         <!-- Mobile -->
         <div class="form-group">
           <label class="form-label" for="profilePhone">Mobile Number <span class="required">*</span></label>
@@ -2439,6 +2476,38 @@ body.role-rider .driver-only { display: none; }
     .catch(() => alert('Failed to send verification email. Please try again.'));
   }
 
+  /* ── COMMUNICATION EMAIL (Apple "Hide My Email" accounts) ── */
+  function openContactEmailModal() {
+    document.getElementById('contactEmailModal').classList.add('show');
+  }
+  function closeContactEmailModal() {
+    document.getElementById('contactEmailModal').classList.remove('show');
+  }
+  function postContactEmail(address) {
+    const csrf = document.querySelector('[name=csrfmiddlewaretoken]').value;
+    fetch("{% url 'set-contact-email' %}", {
+      method:  'POST',
+      headers: { 'X-CSRFToken': csrf },
+      body:    new URLSearchParams({ contact_email: address }),
+    })
+    .then(r => r.json())
+    .then(data => {
+      if (data.error) {
+        alert(data.error);
+      } else {
+        alert(data.message);
+        window.location.reload();
+      }
+    })
+    .catch(() => alert('Failed to save your communication email. Please try again.'));
+  }
+  function submitContactEmail() {
+    postContactEmail(document.getElementById('newContactEmailInput').value.trim());
+  }
+  function resendContactEmail() {
+    postContactEmail(document.getElementById('contactEmailShown').value.trim());
+  }
+
   /* ── PASSWORD CHANGE MODAL ── */
   function openPasswordModal() {
     document.getElementById('passwordModal').classList.add('show');
@@ -3123,6 +3192,31 @@ body.role-rider .driver-only { display: none; }
   </div>
 </div>
 
+{% if uses_private_relay %}
+<!-- ══════════════════════════════════
+     MODAL: Communication Email (Apple "Hide My Email" accounts)
+     ══════════════════════════════════ -->
+<div class="modal-backdrop" id="contactEmailModal" data-dialog role="dialog" aria-modal="true" aria-labelledby="contactEmailModalTitle" onclick="if(event.target===this) closeContactEmailModal()">
+  <div class="modal">
+    <h3 id="contactEmailModalTitle">Communication Email</h3>
+    <p class="modal-sub">This will be the main email we use to reach you: ride updates, receipts and account emails. We'll send a link to confirm it, and use it once you click the link. You'll still sign in with Apple. Leave it blank to get our emails through Apple.</p>
+
+    <div class="form-group mb-0">
+      <label for="newContactEmailInput" class="form-label">Email Address</label>
+      <div class="input-wrap">
+        <span class="input-icon"><svg viewBox="0 0 24 24"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg></span>
+        <input type="email" class="form-input" id="newContactEmailInput" value="{{ contact_email }}" placeholder="you@example.com" autocomplete="email">
+      </div>
+    </div>
+
+    <div class="modal-actions">
+      <button class="btn-modal btn-modal-secondary" data-dialog-close onclick="closeContactEmailModal()">Cancel</button>
+      <button class="btn-modal btn-modal-primary" onclick="submitContactEmail()">Save</button>
+    </div>
+  </div>
+</div>
+{% endif %}
+
 <!-- ══════════════════════════════════
      MODAL: Change Password
      ══════════════════════════════════ -->
@@ -3167,7 +3261,7 @@ body.role-rider .driver-only { display: none; }
 <div class="modal-backdrop" id="deleteAccountModal" data-dialog role="dialog" aria-modal="true" aria-labelledby="deleteAccountTitle" onclick="if(event.target===this) closeDeleteAccountModal()">
   <div class="modal">
     <h3 id="deleteAccountTitle">Delete Account</h3>
-    <p class="modal-sub">We'll send a confirmation link to <strong>{{ email }}</strong>. Nothing happens until you click it. Once you do, your account is closed and you're signed out. It is permanently deleted after {{ account_deletion_grace_days }} days. Contact support within that time if you change your mind. Some records (e.g. completed ride history) are kept for the periods in our <a href="{% url 'privacy-policy' %}" target="_blank" rel="noopener">Privacy Policy</a>.</p>
+    <p class="modal-sub">We'll send a confirmation link to <strong>{{ mail_to }}</strong>. Nothing happens until you click it. Once you do, your account is closed and you're signed out. It is permanently deleted after {{ account_deletion_grace_days }} days. Contact support within that time if you change your mind. Some records (e.g. completed ride history) are kept for the periods in our <a href="{% url 'privacy-policy' %}" target="_blank" rel="noopener">Privacy Policy</a>.</p>
 
     <div class="modal-actions">
       <button class="btn-modal btn-modal-secondary" data-dialog-close data-dialog-initial onclick="closeDeleteAccountModal()">Cancel</button>

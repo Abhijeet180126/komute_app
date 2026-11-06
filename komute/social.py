@@ -28,8 +28,8 @@ from django.contrib import messages
 from django.contrib.auth import get_user_model
 from django.shortcuts import redirect
 
-from .models import LegalAcceptance
-from . import views
+from .models import LegalAcceptance, is_private_relay
+from . import contact_email, views
 
 logger = logging.getLogger(__name__)
 
@@ -129,11 +129,17 @@ class SocialSignupForm(SignupForm):
     phone_number = forms.CharField(required=False)
     dob = forms.CharField(required=False)
     agreed_to_terms = forms.CharField(required=False)
+    # Only shown and read when Apple sent a relay address (contact_email.py).
+    contact_email = forms.CharField(required=False)
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.fields['email'].disabled = True
         self.initial.setdefault('full_name', self.sociallogin.user.full_name)
+
+    @property
+    def asks_contact_email(self):
+        return is_private_relay(self.sociallogin.user.email)
 
     def validate_unique_email(self, value):
         # Said plainly, as signup_view does (audit S-14, accepted). allauth's
@@ -151,11 +157,27 @@ class SocialSignupForm(SignupForm):
         for field, message in errors.items():
             self.add_error(field, message)
         cleaned.update(phone=phone, dob=dob)
+
+        contact = cleaned.get('contact_email', '').strip() if self.asks_contact_email else ''
+        if contact:
+            try:
+                contact = contact_email.clean_contact_email(contact)
+            except forms.ValidationError as e:
+                self.add_error('contact_email', e.messages[0])
+        cleaned['contact_email'] = contact
         return cleaned
 
     def custom_signup(self, request, user):
         views._record_legal_acceptance(request, user, LegalAcceptance.SOURCE_SIGNUP)
         views._send_welcome_email(request, user)
+        if self.cleaned_data['contact_email']:
+            user.contact_email = self.cleaned_data['contact_email']
+            user.save(update_fields=['contact_email'])
+            try:
+                contact_email.send_confirmation(request, user)
+            except Exception:
+                # The account is made; they can resend from the profile page.
+                logger.exception('Could not send the contact email confirmation for user %s', user.pk)
         # New accounts pick rider/driver first, as after email signup's first
         # login; allauth would otherwise go straight to `next`.
         self.sociallogin.state['next'] = views._with_next('role-select', self.sociallogin.state.get('next'))
@@ -178,9 +200,11 @@ class SocialSignupView(SignupView):
         provider = self.sociallogin.provider.name
         ctx.update(
             form={name: form[name].value() or '' for name in (
-                'full_name', 'email', 'country_code', 'phone_number', 'dob', 'agreed_to_terms')},
+                'full_name', 'email', 'country_code', 'phone_number', 'dob', 'agreed_to_terms',
+                'contact_email')},
             errors=errors,
             social=provider,
+            asks_contact_email=form.asks_contact_email,
             heading='Almost done',
             subtitle=f'Signed in with {provider}. A few details to finish your account.',
             dob_max=views._latest_adult_dob().isoformat(),
