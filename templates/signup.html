@@ -578,11 +578,37 @@ select.form-input {
              value="{{ form.email }}"
              {% if social %}readonly{% endif %}
              required>
-      {% if social %}<div class="form-hint">From your {{ social }} account.</div>{% endif %}
+      {% if asks_contact_email %}
+        <div class="form-hint">Apple's private relay address. You sign in with Apple, so you won't need it.</div>
+      {% elif social %}<div class="form-hint">From your {{ social }} account.</div>{% endif %}
       {% if errors.email %}
         <div class="error-text">{{ errors.email }}</div>
       {% endif %}
     </div>
+
+    {% if asks_contact_email %}
+    <!-- Communication email: Apple "Hide My Email" only (komute/contact_email.py) -->
+    <div class="form-group">
+      <label for="signupContactEmail" class="form-label">
+        <svg viewBox="0 0 24 24">
+          <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/>
+          <polyline points="22,6 12,13 2,6"/>
+        </svg>
+        Communication Email (optional)
+      </label>
+      <input id="signupContactEmail" type="email"
+             name="contact_email"
+             class="form-input"
+             placeholder="you@example.com"
+             value="{{ form.contact_email }}"
+             autocomplete="email"
+             aria-describedby="signupContactEmailHint">
+      <div class="form-hint" id="signupContactEmailHint">This will be the main email we use to reach you: ride updates, receipts and account emails. We'll send a link to confirm it. Leave it blank to get our emails through Apple.</div>
+      {% if errors.contact_email %}
+        <div class="error-text">{{ errors.contact_email }}</div>
+      {% endif %}
+    </div>
+    {% endif %}
 
     <!-- Phone -->
     <div class="form-group">

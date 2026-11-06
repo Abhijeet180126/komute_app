@@ -23,7 +23,8 @@ class CustomUserAdmin(admin.ModelAdmin):
     list_display = ('email', 'full_name', 'role', 'is_staff', 'is_active',
                      'email_verified', 'driver_verified', 'date_joined')
     list_filter = ('role', 'is_staff', 'is_active', 'email_verified', 'driver_verified')
-    search_fields = ('email', 'full_name', 'phone')
+    # contact_email: Apple "Hide My Email" users' real address, for support.
+    search_fields = ('email', 'contact_email', 'full_name', 'phone')
 
 
 @admin.register(Vehicle)
@@ -177,7 +178,7 @@ def _send_review_result_email(request, log, approved):
         body=body.format(name=user.full_name or 'there',
                          profile_url=request.build_absolute_uri(reverse('profile'))),
         from_email=settings.DEFAULT_FROM_EMAIL,
-        to=[user.email],
+        to=[user.mail_to],
         reply_to=[settings.REPLY_TO_EMAIL_SUPPORT_CONTACT],
     ), EmailLog.KIND_REVIEW_RESULT, user)
 
@@ -314,7 +315,7 @@ class UserReportAdmin(admin.ModelAdmin):
                         subject='[Komüte] A note about your account',
                         body=WARNING_EMAIL_BODY.format(name=user.full_name or 'there', guidelines_url=guidelines_url),
                         from_email=settings.DEFAULT_FROM_EMAIL,
-                        to=[user.email],
+                        to=[user.mail_to],
                         reply_to=[settings.REPLY_TO_EMAIL_SUPPORT_CONTACT],
                     ).send(fail_silently=False)
                 except Exception:

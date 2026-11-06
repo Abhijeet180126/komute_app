@@ -104,7 +104,7 @@ class LegalAcceptanceMiddleware:
     EXEMPT_URL_NAMES = {
         'accept-terms', 'logout', 'terms-condition', 'privacy-policy',
         'community-guidelines', 'accessibility', 'contact-us', 'request-delete-account',
-        'delete-account', 'confirm-delete-account', 'account_confirm_email',
+        'delete-account', 'confirm-delete-account', 'account_confirm_email', 'confirm-contact-email',
         'private-media', 'upload-too-large', 'csp-report', 'robots-txt', 'sitemap',
     }
 

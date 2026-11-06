@@ -96,6 +96,8 @@ class Command(BaseCommand):
                     user.email = anon_email
                     user.username = anon_email
                     user.pending_email = None
+                    user.contact_email = None
+                    user.contact_email_confirmed = False
                     user.email_verified = False
                     user.phone = None
                     user.phone_verified = False

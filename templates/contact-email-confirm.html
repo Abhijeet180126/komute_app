@@ -1,0 +1,58 @@
+{% extends "account/email_confirm.html" %}
+{# Confirm link for the communication email (komute/contact_email.py). Styles come from email_confirm.html. #}
+
+{% block head_title %}Komüte – Confirm Your Communication Email{% endblock %}
+
+{% block body %}
+
+{% include 'header.html' %}
+
+<div class="page-content">
+  <div class="confirm-card">
+
+    {% if state == 'ask' %}
+
+      <div class="confirm-icon success">
+        <svg viewBox="0 0 24 24"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
+      </div>
+      <h1 class="confirm-title">Confirm Your Communication Email</h1>
+      <p class="confirm-sub">Komüte will send ride updates and account emails to this address. You still sign in with Apple.</p>
+      <div class="email-chip">{{ contact_email }}</div>
+      <form method="post" action="{% url 'confirm-contact-email' token %}">
+        {% csrf_token %}
+        <button type="submit" class="btn-confirm">
+          <svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>
+          Confirm Email Address
+        </button>
+      </form>
+
+    {% elif state == 'done' %}
+
+      <div class="confirm-icon success">
+        <svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>
+      </div>
+      <h1 class="confirm-title">Email Confirmed</h1>
+      <p class="confirm-sub">From now on, Komüte will email you here.</p>
+      <div class="email-chip">{{ contact_email }}</div>
+      <a href="{% url 'profile' %}" class="btn-confirm">Go to My Profile</a>
+
+    {% else %}
+
+      <div class="confirm-icon error">
+        <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+      </div>
+      <h1 class="confirm-title">Link Expired</h1>
+      <p class="confirm-sub">This link has expired, is invalid, or is for an address that has since changed. Links last {{ max_age_days }} days. Go to your profile and send a new one from <strong>Communication Email</strong>.</p>
+      <a href="{% url 'profile' %}" class="btn-confirm">Go to My Profile</a>
+
+    {% endif %}
+
+    <div class="divider">or</div>
+    <a href="{% url 'home' %}" class="btn-secondary">Back to Home</a>
+
+  </div>
+</div>
+
+{% include 'footer.html' %}
+
+{% endblock %}

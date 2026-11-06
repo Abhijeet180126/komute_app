@@ -217,7 +217,7 @@ def _send_booking_confirmation_emails(booking):
             subject=f"Your ride to {ride.destination.split(',')[0].strip()} is confirmed! 🎉",
             body=f"Hi {rider_ctx['rider_name']}, your booking is confirmed. Ref: {booking_ref}",
             from_email=settings.DEFAULT_FROM_EMAIL,
-            to=[rider.email],
+            to=[rider.mail_to],
             reply_to=[settings.REPLY_TO_EMAIL_BOOKING_CONFIRMATION],
         )
         rider_msg.attach_alternative(rider_html, 'text/html')
@@ -227,7 +227,7 @@ def _send_booking_confirmation_emails(booking):
             subject=f"You accepted {rider_ctx['rider_name']}'s ride request 🚗",
             body=f"Hi {driver_ctx['driver_name']}, you accepted {rider_ctx['rider_name']}'s request for {booking.seats} seat(s). Ref: {booking_ref}",
             from_email=settings.DEFAULT_FROM_EMAIL,
-            to=[driver.email],
+            to=[driver.mail_to],
             reply_to=[settings.REPLY_TO_EMAIL_BOOKING_CONFIRMATION],
         )
         driver_msg.attach_alternative(driver_html, 'text/html')
@@ -260,7 +260,7 @@ def _send_booking_cancelled_emails(booking):
             subject=f"{ctx['rider_name']} cancelled their booking on your ride",
             body=f"Hi {ctx['driver_name']}, {ctx['rider_name']} has cancelled their {booking.seats} seat(s). Ref: {booking_ref}",
             from_email=settings.DEFAULT_FROM_EMAIL,
-            to=[driver.email],
+            to=[driver.mail_to],
             reply_to=[settings.REPLY_TO_EMAIL_BOOKING_CANCELLED],
         )
         msg.attach_alternative(html, 'text/html')
@@ -293,7 +293,7 @@ def _send_booking_request_email(booking):
             subject=f"New booking request from {ctx['rider_name']} 🔔",
             body=f"Hi {ctx['driver_name']}, {ctx['rider_name']} has requested {booking.seats} seat(s) on your ride. Ref: {booking_ref}",
             from_email=settings.DEFAULT_FROM_EMAIL,
-            to=[driver.email],
+            to=[driver.mail_to],
             reply_to=[settings.REPLY_TO_EMAIL_BOOKING_REQUEST],
         )
         msg.attach_alternative(html, 'text/html')
@@ -325,7 +325,7 @@ def _send_booking_rejected_email(booking):
             subject="Your booking request was not accepted",
             body=f"Hi {ctx['rider_name']}, unfortunately the driver could not accommodate your booking request. Ref: {booking_ref}",
             from_email=settings.DEFAULT_FROM_EMAIL,
-            to=[rider.email],
+            to=[rider.mail_to],
             reply_to=[settings.REPLY_TO_EMAIL_BOOKING_REJECTED],
         )
         msg.attach_alternative(html, 'text/html')
@@ -356,7 +356,7 @@ def _send_ride_cancelled_emails(ride, affected_bookings):
                     subject=f"Your ride to {ride.destination.split(',')[0].strip()} has been cancelled",
                     body=f"Hi {ctx['rider_name']}, your ride with {ctx['driver_name']} on {depart_display} has been cancelled.",
                     from_email=settings.DEFAULT_FROM_EMAIL,
-                    to=[rider.email],
+                    to=[rider.mail_to],
                     reply_to=[settings.REPLY_TO_EMAIL_RIDE_CANCELLED],
                 )
                 msg.attach_alternative(html, 'text/html')
@@ -379,7 +379,7 @@ def _send_welcome_email(request, user):
             subject="Welcome to Komüte! 🌿",
             body=f"Hi {ctx['first_name']}, welcome to Komüte! Your account is ready — log in at {login_url} to find or offer your first ride.",
             from_email=settings.DEFAULT_FROM_EMAIL,
-            to=[user.email],
+            to=[user.mail_to],
             reply_to=[settings.REPLY_TO_EMAIL_ACCOUNT_SIGNUP],
         )
         msg.attach_alternative(html, 'text/html')
@@ -1106,6 +1106,12 @@ def profile_view(request):
         "user": user,
         "full_name": full_name,
         "email": user.email,
+        # Apple "Hide My Email" accounts show their communication email in
+        # place of the relay address (komute/contact_email.py).
+        "uses_private_relay": user.uses_private_relay,
+        "contact_email": user.contact_email or "",
+        "contact_email_confirmed": user.contact_email_confirmed,
+        "mail_to": user.mail_to,
         "country_code": country_code,
         "phone_number": phone_number,
         "priority_countries": priority_countries,
@@ -3859,7 +3865,7 @@ def _send_delete_account_email(request, user):
         subject='[Komüte] Confirm account deletion',
         body=text_body,
         from_email=settings.DEFAULT_FROM_EMAIL,
-        to=[user.email],
+        to=[user.mail_to],
         cc=[settings.ADMIN_EMAIL],
         reply_to=[settings.REPLY_TO_EMAIL_ACCOUNT_DEACTIVATION],
     )
@@ -3880,7 +3886,7 @@ def request_delete_account_view(request):
         logger.exception("request_delete_account_view failed for user %s", user.id)
         return JsonResponse({'error': 'Could not send confirmation email. Please try again later.'}, status=400)
 
-    return JsonResponse({'message': f'A confirmation link has been sent to {user.email}. Click it to delete your account.'})
+    return JsonResponse({'message': f'A confirmation link has been sent to {user.mail_to}. Click it to delete your account.'})
 
 
 def _iso(value):
@@ -3910,7 +3916,10 @@ def _build_data_export(user):
         'exported_at': timezone.now().isoformat(),
         'account': {
             'full_name': user.full_name, 'email': user.email, 'email_verified': user.email_verified,
-            'pending_email': user.pending_email, 'phone': user.phone, 'role': user.role,
+            'pending_email': user.pending_email,
+            'communication_email': user.contact_email,
+            'communication_email_confirmed': user.contact_email_confirmed,
+            'phone': user.phone, 'role': user.role,
             'date_of_birth': _iso(user.dob), 'gender': user.gender, 'bio': user.bio,
             'has_profile_photo': bool(user.avatar_url),
             'driver_verified': user.driver_verified, 'driver_verified_at': _iso(user.driver_verified_at),
@@ -5099,7 +5108,7 @@ def _send_invite_email(request, invite):
                 f"Accept: {accept_url}  Decline: {decline_url}"
             ),
             from_email=settings.DEFAULT_FROM_EMAIL,
-            to=[rider.email],
+            to=[rider.mail_to],
             reply_to=[settings.REPLY_TO_EMAIL_RIDE_INVITE],
         )
         msg.attach_alternative(html, 'text/html')

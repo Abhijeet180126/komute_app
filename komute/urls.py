@@ -3,6 +3,7 @@ from django.contrib.sitemaps.views import sitemap
 from django.views.generic import RedirectView
 from .sitemaps import PublicPagesSitemap
 from .social import SocialSignupView
+from . import contact_email
 from .views import (
     home_view, signup_view, login_view, profile_view, about_view,
     role_select_view, post_ride_view, how_it_works_view,
@@ -73,6 +74,10 @@ urlpatterns = [
     path('negotiations/respond/<str:offer_id>/', respond_price_offer_view, name='respond-price-offer'),
     path('privacy-policy/', privacy_policy_view, name='privacy-policy'),
     path('profile/change-email/', change_email_view, name='change-email'),
+    # Communication email for Apple "Hide My Email" accounts (komute/contact_email.py).
+    path('profile/contact-email/', contact_email.set_contact_email_view, name='set-contact-email'),
+    path('contact-email/confirm/<str:token>/', contact_email.confirm_contact_email_view,
+         name='confirm-contact-email'),
     path('profile/delete-account/', request_delete_account_view, name='request-delete-account'),
     path('profile/my-data/', download_my_data_view, name='download-my-data'),
     # Public: Google Play's account deletion URL (ISSUES.md A2).

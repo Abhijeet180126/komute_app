@@ -94,7 +94,7 @@ class Command(BaseCommand):
                     f"\"Re-verify Identity\" to take a new selfie."
                 ),
                 from_email=settings.DEFAULT_FROM_EMAIL,
-                to=[user.email],
+                to=[user.mail_to],
                 reply_to=[settings.REPLY_TO_EMAIL_ACCOUNT_VERIFICATION],
             )
             msg.attach_alternative(html, 'text/html')

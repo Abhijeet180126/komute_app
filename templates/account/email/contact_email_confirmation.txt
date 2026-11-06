@@ -1,0 +1,17 @@
+Hello from Komüte!
+
+Hi {{ user.full_name }},
+
+You signed in to Komüte with Apple and chose to hide your email. You asked us to send your ride updates and account emails to {{ contact_email }} instead.
+
+To confirm this address, open the link below:
+
+{{ confirm_url }}
+
+The link expires in {{ max_age_days }} days. Until you confirm, we keep emailing you through Apple's relay address.
+
+If you didn't ask for this, you can ignore this email and we won't use this address.
+
+Thank you,
+The Komüte Team
+komute.net
