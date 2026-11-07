@@ -1,7 +1,19 @@
 """Small formatting helpers used across services and views."""
 import ipaddress
+import re
 
 from komute.hashid_utils import encode_id
+
+
+def norm_name(value):
+    """A name as DL-Verification compares it: case, hyphens and extra
+    spaces ignored."""
+    return " ".join((value or "").replace("-", " ").split()).casefold()
+
+
+def norm_code(value):
+    """A license or plate number with case, spaces and hyphens ignored."""
+    return re.sub(r"[\s\-]", "", value or "").upper()
 
 UNNAMED_USER = 'Komüte user'
 

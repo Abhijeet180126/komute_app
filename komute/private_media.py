@@ -108,3 +108,25 @@ def user_can_access(user, rel_path):
 
 def content_type_for(rel_path):
     return mimetypes.guess_type(rel_path)[0] or "application/octet-stream"
+
+
+def file_response(rel_path):
+    """The response that hands out a stored file the caller may see, or
+    None if it doesn't exist. Used by the website's private_media_view and
+    the API's media endpoint (same checks before either calls this)."""
+    from django.http import FileResponse, HttpResponse
+
+    storage = private_storage()
+    if not storage.exists(rel_path):
+        return None
+
+    content_type = content_type_for(rel_path)
+    if settings.PRIVATE_MEDIA_USE_ACCEL:
+        # Nginx streams the file from its `internal` location.
+        response = HttpResponse(content_type=content_type)
+        response["X-Accel-Redirect"] = f"{settings.PRIVATE_MEDIA_ACCEL_PREFIX}{rel_path}"
+    else:
+        response = FileResponse(storage.open(rel_path, "rb"), content_type=content_type)
+    response["Cache-Control"] = "private, no-store"
+    response["X-Content-Type-Options"] = "nosniff"
+    return response

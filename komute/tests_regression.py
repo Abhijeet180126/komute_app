@@ -5800,3 +5800,77 @@ class AppleContactEmailTests(TestCase):
         call_command('purge_deactivated_accounts')
         user.refresh_from_db()
         self.assertIsNone(user.contact_email)
+
+
+class ProfileInputLimitTests(TestCase):
+    """The profile page refuses a gender outside the dropdown's choices
+    (ride gender preferences match on those exact values) and vehicle values
+    that don't fit their database columns, which used to end in a server
+    error. The same rules apply in the API (komute.services)."""
+
+    def setUp(self):
+        self.driver = make_user('limits_driver@example.com', role='driver')
+        self.client.login(username='limits_driver@example.com', password='TestPass123')
+
+    def _post(self, **overrides):
+        payload = {'full_name': 'Limits Driver', 'dob': '1990-01-01', 'role': 'driver',
+                   'vehicle_make': ['Toyota'], 'vehicle_model': ['Corolla'], 'vehicle_year': ['2020'],
+                   'vehicle_color': ['Blue'], 'vehicle_plate': ['LIM001']}
+        payload.update(overrides)
+        return self.client.post(reverse('profile'), payload)
+
+    def test_gender_must_be_a_dropdown_choice(self):
+        resp = self._post(gender='robot')
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.context['errors']['gender'], 'Please select a valid gender.')
+        self.assertContains(resp, 'Please select a valid gender.')
+        self.driver.refresh_from_db()
+        self.assertIsNone(self.driver.gender)
+        for ok in ('female', 'male', 'other', ''):
+            self.assertRedirects(self._post(gender=ok), reverse('profile'))
+            self.driver.refresh_from_db()
+            self.assertEqual(self.driver.gender, ok or None)
+
+    def test_vehicle_text_must_fit(self):
+        cases = [
+            ({'vehicle_make': ['M' * 101]}, 'Vehicle 1: Make can be at most 100 characters.'),
+            ({'vehicle_model': ['M' * 101]}, 'Vehicle 1: Model can be at most 100 characters.'),
+            ({'vehicle_color': ['C' * 51]}, 'Vehicle 1: Color can be at most 50 characters.'),
+            ({'vehicle_plate': ['P' * 21]}, 'Vehicle 1: Plate can be at most 20 characters.'),
+        ]
+        for overrides, message in cases:
+            resp = self._post(**overrides)
+            self.assertEqual(resp.status_code, 200, overrides)
+            self.assertEqual(resp.context['errors']['vehicles'], message)
+        self.assertFalse(Vehicle.objects.filter(owner=self.driver).exists())
+
+    def test_vehicle_year_range(self):
+        next_year = timezone.localdate().year + 1
+        for bad in ('99999999999', '1899', str(next_year + 1)):
+            resp = self._post(vehicle_year=[bad])
+            self.assertEqual(resp.context['errors']['vehicles'],
+                             f'Vehicle 1: Year must be between 1900 and {next_year}.', bad)
+        self.assertFalse(Vehicle.objects.filter(owner=self.driver).exists())
+        self.assertRedirects(self._post(vehicle_year=[str(next_year)]), reverse('profile'))
+        self.assertEqual(Vehicle.objects.get(owner=self.driver).year, next_year)
+
+    def test_error_names_the_row(self):
+        resp = self._post(vehicle_make=['Toyota', 'Honda'], vehicle_model=['Corolla', 'Civic'],
+                          vehicle_year=['2020', '2019'], vehicle_color=['Blue', 'R' * 51],
+                          vehicle_plate=['LIM001', 'LIM002'])
+        self.assertEqual(resp.context['errors']['vehicles'], 'Vehicle 2: Color can be at most 50 characters.')
+
+    def test_unchanged_for_valid_rows(self):
+        self.assertRedirects(self._post(), reverse('profile'))
+        vehicle = Vehicle.objects.get(owner=self.driver)
+        self.assertEqual((vehicle.make, vehicle.plate, vehicle.year), ('Toyota', 'LIM001', 2020))
+
+    def test_bio_limit_matches_the_box(self):
+        resp = self._post(bio='b' * 281)
+        self.assertEqual(resp.context['errors']['bio'], 'Self description can be at most 280 characters.')
+        self.assertContains(resp, 'Self description can be at most 280 characters.')
+        # The box counts a line break as one character; the form sends two.
+        with_breaks = ('a' * 69 + '\r\n') * 4  # 280 as the box counts it, 284 as sent
+        self.assertRedirects(self._post(bio=with_breaks), reverse('profile'))
+        self.driver.refresh_from_db()
+        self.assertEqual(self.driver.bio, with_breaks.strip())

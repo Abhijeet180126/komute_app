@@ -13,9 +13,8 @@ from urllib.parse import quote, urlsplit
 
 from django.conf import settings
 from django.core.cache import cache
-from django.core.files.base import ContentFile
 from django.core.files.uploadhandler import MemoryFileUploadHandler
-from django.http import FileResponse, JsonResponse, HttpResponse
+from django.http import JsonResponse, HttpResponse
 from django.shortcuts import get_object_or_404, render, redirect
 from django.http import Http404
 from django.contrib import messages
@@ -52,8 +51,6 @@ from .service_area import in_quebec
 # used by komute.social and the tests.
 from .services import accounts
 from .services.accounts import (
-    PHONE_NUMBER_RE as _PHONE_NUMBER_RE,
-    PHONE_RE as _PHONE_RE,
     account_deletion_message as _account_deletion_message,
     build_data_export as _build_data_export,
     check_signup_details as _check_signup_details,
@@ -63,16 +60,18 @@ from .services.accounts import (
     load_country_codes as _load_country_codes,
     make_deactivate_token as _make_deactivate_token,  # noqa: F401
     make_password_reset_token as _make_password_reset_token,  # noqa: F401
-    parse_dob as _parse_dob,
     send_delete_account_email as _send_delete_account_email,
     send_welcome_email as _send_welcome_email,  # noqa: F401
-    valid_dial_codes as _valid_dial_codes,
 )
 from .services.common import (
     UNNAMED_USER as _UNNAMED_USER,
     consent_details,
     display_name as _display_name,
 )
+# Profile and vehicles (module 2).
+from .services import profiles, vehicles as vehicle_rules
+from .services.images import resize_image as _resize_image
+from .services.profiles import split_phone as _split_phone
 
 User = get_user_model()
 logger = logging.getLogger(__name__)
@@ -479,6 +478,35 @@ def _parse_duration_seconds(value):
     return seconds if 0 < seconds <= _MAX_DURATION_SECONDS else 0
 
 
+def _vehicle_rows_error(post):
+    """The first vehicle row that profile_view would save (make, plate and a
+    year) with a value too long for its column or a year out of range, as
+    the message to show; None if all fit. Values are read exactly as the
+    save loop reads them."""
+    makes       = post.getlist("vehicle_make")
+    models_list = post.getlist("vehicle_model")
+    years       = post.getlist("vehicle_year")
+    colors      = post.getlist("vehicle_color")
+    plates      = post.getlist("vehicle_plate")
+    for i, make in enumerate(makes):
+        make = make.strip()
+        plate = plates[i].strip() if i < len(plates) else ""
+        if not make or not plate:
+            continue
+        try:
+            yr = int(years[i]) if i < len(years) and years[i] else None
+        except ValueError:
+            yr = None
+        if not yr:
+            continue
+        model = models_list[i] if i < len(models_list) else ""
+        color = colors[i] if i < len(colors) else ""
+        message = vehicle_rules.fields_error(make, model, yr, color, plate)
+        if message:
+            return f"Vehicle {i + 1}: {message}"
+    return None
+
+
 def _has_valid_vehicle_row(post):
     """True if the submitted vehicle rows contain at least one complete
     (make + plate + year) entry. Used to stop a driver's vehicles from
@@ -508,16 +536,6 @@ def _dropdown_countries():
     return priority, others
 
 
-def _split_phone(phone):
-    """Split a stored E.164 phone string back into (country_code, phone_number)
-    for re-populating the separate form fields."""
-    if not phone:
-        return "", ""
-    for code in sorted(_valid_dial_codes(), key=len, reverse=True):
-        if phone.startswith(code):
-            return code, phone[len(code):]
-    return "", phone
-
 def _haversine_km(lat1, lng1, lat2, lng2):
     R = 6371.0
     dlat = math.radians(lat2 - lat1)
@@ -545,43 +563,6 @@ def _geo_box_q(lat, lng, radius_km, lat_field, lng_field):
 
 
 upload_logger = logging.getLogger("komute.uploads")
-
-
-def _resize_image(file_obj, max_dim=1200, quality=85, label="image"):
-    """Validate that file_obj is a decodable image under the size cap, and
-    return a ContentFile with it resized to max_dim on its longest side.
-    Raises django.core.exceptions.ValidationError if the upload is too large
-    or isn't a valid image (including Pillow's decompression-bomb guard
-    tripping) — callers must reject the upload, never fall back to storing
-    the unverified raw bytes. Every upload is logged under `label`
-    (ISSUES.md H2)."""
-    max_bytes = settings.IMAGE_UPLOAD_MAX_MB * 1024 * 1024
-    desc = (f"{label} name={getattr(file_obj, 'name', '')!r} size={file_obj.size} "
-            f"type={getattr(file_obj, 'content_type', '')!r}")
-    if file_obj.size > max_bytes:
-        upload_logger.warning("upload rejected (too large): %s", desc)
-        raise ValidationError(f"File is too large (max {settings.IMAGE_UPLOAD_MAX_MB} MB).")
-
-    from PIL import Image, ImageOps
-    try:
-        file_obj.seek(0)
-        img = Image.open(file_obj)
-        original_dims = img.size
-        # JPEGs decode at a reduced scale (no smaller than max_dim), which
-        # keeps memory down for high-resolution phone photos.
-        img.draft('RGB', (max_dim, max_dim))
-        img = ImageOps.exif_transpose(img)  # fix camera rotation
-        if img.mode not in ('RGB', 'L'):
-            img = img.convert('RGB')
-        img.thumbnail((max_dim, max_dim), Image.LANCZOS)
-        buf = io.BytesIO()
-        img.save(buf, format='JPEG', quality=quality, optimize=True)
-    except Exception as e:
-        upload_logger.warning("upload rejected (not a readable image: %s): %s", type(e).__name__, desc)
-        raise ValidationError("That file isn't a valid image.")
-    upload_logger.info("upload accepted: %s dims=%dx%d -> %dx%d, %d bytes",
-                       desc, *original_dims, *img.size, buf.tell())
-    return ContentFile(buf.getvalue(), name='image.jpg')
 
 
 def _safe_next(request):
@@ -736,111 +717,52 @@ def profile_view(request):
         license_province   = request.POST.get("license_province", "").strip()
         license_expiry_str = request.POST.get("license_expiry", "").strip()
 
-        if not full_name:
-            errors["full_name"] = "Full name is required."
-        if role not in ("rider", "driver"):
-            errors["role"] = "Invalid role selected."
-
-        phone = ""
-        if phone_number or country_code:
-            if not country_code or country_code not in _valid_dial_codes():
-                errors["country_code"] = "Please select a valid country code."
-            if not phone_number:
-                errors["phone_number"] = "Phone number is required."
-            elif not _PHONE_NUMBER_RE.match(phone_number):
-                errors["phone_number"] = "Enter a valid phone number (digits only)."
-            if not errors.get("country_code") and not errors.get("phone_number"):
-                phone = f"{country_code}{phone_number}"
-                if not _PHONE_RE.match(phone):
-                    errors["phone_number"] = "Phone must be in E.164 format (e.g. +14155552671)."
-
-        # Required for riders too: booking needs it (audit L-5).
-        dob, dob_error = _parse_dob(dob_str)
-        if dob_error:
-            errors["dob"] = dob_error
-
-        license_expiry = None
-        if license_expiry_str:
-            try:
-                license_expiry = date.fromisoformat(license_expiry_str)
-            except ValueError:
-                errors["license_expiry"] = "Invalid license expiry date."
-            else:
-                # The date picker already blocks past dates; this enforces it
-                # server-side. DL-Verification cross-checks this value against
-                # the license, so it must be a real, current expiry.
-                if role == "driver" and license_expiry < timezone.localdate():
-                    errors["license_expiry"] = "Your license has expired. Please enter the expiry date of a valid license."
+        errors, phone, dob, license_expiry = profiles.check_profile(
+            full_name, country_code, phone_number, dob_str, role, license_expiry_str, gender, bio)
 
         if role == "driver":
             submitted_plates = [p.strip() for p in request.POST.getlist("vehicle_plate") if p.strip()]
             if len(submitted_plates) != len({p.upper() for p in submitted_plates}):
-                errors["vehicles"] = "Duplicate plate numbers are not allowed."
+                errors["vehicles"] = vehicle_rules.DUPLICATE_PLATE_MSG
             else:
                 for plate in submitted_plates:
-                    if Vehicle.objects.filter(plate=plate).exclude(owner=user).exists():
-                        errors["vehicles"] = f"Plate \"{plate}\" is already registered to another vehicle."
+                    if vehicle_rules.plate_registered_elsewhere(user, plate):
+                        errors["vehicles"] = vehicle_rules.plate_taken_msg(plate)
                         break
 
+            if not errors.get("vehicles"):
+                rows_error = _vehicle_rows_error(request.POST)
+                if rows_error:
+                    errors["vehicles"] = rows_error
+
             if not errors.get("vehicles") and not _has_valid_vehicle_row(request.POST):
-                errors["vehicles"] = "You must add at least one vehicle to be a driver."
+                errors["vehicles"] = profiles.DRIVER_NEEDS_VEHICLE_MSG
 
         if not errors:
-            # Details DL-Verification compared against the license. Changing
-            # any of them means the driver is no longer verified as entered
-            # (C3). Comparison mirrors the service: case and hyphens ignored.
-            identity_changed = role == "driver" and user.driver_verified and (
-                _norm_name(full_name) != _norm_name(user.full_name)
-                or dob != user.dob
-                or _norm_code(license_number) != _norm_code(user.license_number)
-                or license_province.casefold() != (user.license_province or "").casefold()
-                or license_expiry != user.license_expiry
-            )
-
-            user.full_name = full_name
-            user.phone     = phone or None
-            user.dob       = dob
-            user.gender    = gender or None
-            user.role      = role
-            user.bio       = bio or None
-
-            update_fields = ["full_name", "phone", "dob", "gender", "role", "bio"]
+            # Name, DOB or licence changes end a driver's verification (C3).
+            update_fields, identity_reset = profiles.apply_profile(
+                user, full_name=full_name, phone=phone, dob=dob, gender=gender, role=role, bio=bio,
+                license_number=license_number, license_province=license_province,
+                license_expiry=license_expiry)
             # Replaced image files, deleted only once the new URLs are saved.
             stale_urls = []
             # A rejected photo must not end in "Profile saved successfully".
             image_rejected = False
 
-            if role == "driver":
-                user.license_number   = license_number or None
-                user.license_province = license_province or None
-                user.license_expiry   = license_expiry
-                update_fields += ["license_number", "license_province", "license_expiry"]
-
-                # The licence photo isn't saved with the profile: it is taken
-                # in the verification step and never stored (audit P-5/P-13).
-
-                if identity_changed and user.driver_verified:
-                    user.driver_verified  = False
-                    user.face_match_score = None
-                    update_fields += ["driver_verified", "face_match_score"]
-                    messages.warning(request, "Your name, date of birth or license details changed. Please verify your identity again before posting rides.")
+            if identity_reset:
+                messages.warning(request, profiles.IDENTITY_CHANGED_MSG)
 
             # selfie / profile picture upload — all roles
             selfie_file = request.FILES.get("selfie_file")
             if selfie_file and selfie_file.size > 0:
                 try:
-                    resized = _resize_image(selfie_file, label=f"user={user.id} profile-photo")
+                    photo_fields, photo_stale = profiles.set_profile_photo(user, selfie_file)
                 except ValidationError as e:
                     image_rejected = True
                     messages.error(request, f"Profile photo: {e.messages[0]}")
                 else:
-                    stale_urls += [user.selfie_url, user.avatar_url]
-                    url = save_private_image(private_media.KIND_SELFIE, user.id, resized)
-                    user.selfie_url = url
-                    user.avatar_url = url
-                    update_fields += ["selfie_url", "avatar_url"]
-                    # No re-verification needed: the profile photo (face or
-                    # vehicle) is never compared with the license.
+                    stale_urls += photo_stale
+                    update_fields += photo_fields
 
             user.save(update_fields=update_fields)
             for old_url in set(stale_urls):
@@ -892,13 +814,8 @@ def profile_view(request):
                     color = colors[i] if i < len(colors) else ""
                     # DL-Verification checked make, model, year, colour and
                     # plate against the photo; any real change voids that.
-                    details_changed = not is_new and (
-                        make.casefold() != (vehicle.make or "").casefold()
-                        or model.strip().casefold() != (vehicle.model or "").strip().casefold()
-                        or yr != vehicle.year
-                        or color.strip().casefold() != (vehicle.color or "").strip().casefold()
-                        or _norm_code(plate) != _norm_code(vehicle.plate)
-                    )
+                    details_changed = not is_new and vehicle_rules.details_changed(
+                        vehicle, make, model, yr, color, plate)
 
                     vehicle.make      = make
                     vehicle.model     = model
@@ -950,8 +867,7 @@ def profile_view(request):
             return redirect("profile")
 
     priority_countries, countries = _dropdown_countries()
-    reverify_due_at = user.driver_reverify_due_at
-    verification_current = user.driver_verification_current
+    status = profiles.driver_status(user, [v["vehicle_verified"] for v in vehicles])
     context = {
         "user": user,
         "full_name": full_name,
@@ -978,19 +894,10 @@ def profile_view(request):
         "avatar_url": user.avatar_url or "",
         "vehicles": vehicles,
         "errors": errors,
-        "driver_verified": verification_current,
+        # driver_verified, reverify_due_at, license_expired,
+        # has_unverified_vehicle, reverify_soon, reverify_expired.
+        **status,
         "face_match_score": user.face_match_score,
-        "reverify_due_at": reverify_due_at,
-        # Verified against a license that has since expired.
-        "license_expired": user.driver_verified and user.license_expired,
-        # Verified driver with a vehicle that still needs a verification run.
-        "has_unverified_vehicle": verification_current and any(
-            not v["vehicle_verified"] for v in vehicles
-        ),
-        # Verified, but inside the reminder window before it lapses.
-        "reverify_soon": verification_current and reverify_due_at is not None and (
-            reverify_due_at - timezone.now() <= timedelta(days=settings.DRIVER_REVERIFY_REMINDER_DAYS)
-        ),
         # Uploading a file as the verification selfie is a development
         # convenience only; in production the selfie must come from the
         # live camera.
@@ -1001,9 +908,6 @@ def profile_view(request):
         "verification_review": _verification_review_state(user),
         "image_upload_max_mb": settings.IMAGE_UPLOAD_MAX_MB,
         "upload_request_max_mb": settings.UPLOAD_REQUEST_MAX_MB,
-        # Was verified, and that verification has run out.
-        "reverify_expired": not verification_current and reverify_due_at is not None
-                            and timezone.now() >= reverify_due_at,
         "account_deletion_grace_days": settings.ACCOUNT_DELETION_GRACE_DAYS,
         # Users this user has blocked, each with an Unblock button (ISSUES.md A1).
         "blocked_users": [
@@ -3984,31 +3888,10 @@ def private_media_view(request, path):
     if rel_path is None or not private_media.user_can_access(request.user, rel_path):
         raise Http404
 
-    storage = private_media.private_storage()
-    if not storage.exists(rel_path):
+    response = private_media.file_response(rel_path)
+    if response is None:
         raise Http404
-
-    content_type = private_media.content_type_for(rel_path)
-    if settings.PRIVATE_MEDIA_USE_ACCEL:
-        # Nginx streams the file from its `internal` location.
-        response = HttpResponse(content_type=content_type)
-        response["X-Accel-Redirect"] = f"{settings.PRIVATE_MEDIA_ACCEL_PREFIX}{rel_path}"
-    else:
-        response = FileResponse(storage.open(rel_path, "rb"), content_type=content_type)
-    response["Cache-Control"] = "private, no-store"
-    response["X-Content-Type-Options"] = "nosniff"
     return response
-
-
-def _norm_name(value):
-    """A name as DL-Verification compares it: case, hyphens and extra
-    spaces ignored."""
-    return " ".join((value or "").replace("-", " ").split()).casefold()
-
-
-def _norm_code(value):
-    """A license or plate number with case, spaces and hyphens ignored."""
-    return re.sub(r"[\s\-]", "", value or "").upper()
 
 
 # Keyword -> category for DL-Verification's free-text rejection_reasons. The

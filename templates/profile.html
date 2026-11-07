@@ -1419,6 +1419,9 @@ body.role-rider .driver-only { display: none; }
               <option value="other" {% if gender == "other" %}selected{% endif %}>Other</option>
             </select>
           </div>
+          {% if errors.gender %}
+          <p class="verify-hint" style="color:#b91c1c;font-weight:600;">{{ errors.gender }}</p>
+          {% endif %}
         </div>
         <!-- Role -->
         <div class="form-group">
@@ -1462,6 +1465,9 @@ body.role-rider .driver-only { display: none; }
           <textarea class="form-input form-textarea" name="bio" id="bioInput" maxlength="280" placeholder="Tell other Komüte users a bit about yourself — your travel style, favourite music, anything that helps people get to know you. (Up to 280 characters.)" oninput="updateBioCount(); updateProgress()">{{ bio }}</textarea>
         </div>
         <div class="char-count"><span id="bioCount">0</span>/280</div>
+        {% if errors.bio %}
+        <p class="verify-hint" style="color:#b91c1c;font-weight:600;">{{ errors.bio }}</p>
+        {% endif %}
       </div>
 
     </div>
