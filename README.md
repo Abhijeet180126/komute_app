@@ -49,6 +49,10 @@ The app signs in through allauth.headless and sends its token as the `X-Session-
 | `API_DOCS_PUBLIC` | `False` | Lets anyone open `/api/v1/schema/` and `/api/v1/docs/` (Swagger UI); off, staff only |
 | `API_THROTTLE_ANON` | `60/min` | Per-address cap on API calls without a token |
 | `API_THROTTLE_USER` | `240/min` | Per-user cap on API calls with a token |
+| `APPLE_APP_BUNDLE_ID` | *(empty)* | The iOS app's bundle ID, for Sign in with Apple inside the app. Needs the other `APPLE_*` keys |
+
+Auth endpoints are under `/api/v1/auth/` (module 1). The account rules live in `komute/services/accounts.py`, shared
+by the website's views and the API.
 
 API tests: `manage.py test api --settings=config.settings_regression`. Export the schema for the app developer with
 `API_ENABLED=True manage.py spectacular --file schema.yml`.

@@ -451,11 +451,20 @@ _APPLE_KEY_ID    = config('APPLE_KEY_ID', default='')
 _APPLE_KEY_PATH  = config('APPLE_PRIVATE_KEY_PATH', default='')
 if _APPLE_CLIENT_ID and _APPLE_TEAM_ID and _APPLE_KEY_ID and _APPLE_KEY_PATH:
     INSTALLED_APPS.append('allauth.socialaccount.providers.apple')
+    _apple_key = Path(_APPLE_KEY_PATH).read_text()
     SOCIALACCOUNT_PROVIDERS['apple'] = {
         # allauth's names: "secret" is the Key ID, "key" the Team ID.
         'APPS': [{'client_id': _APPLE_CLIENT_ID, 'secret': _APPLE_KEY_ID, 'key': _APPLE_TEAM_ID,
-                  'settings': {'certificate_key': Path(_APPLE_KEY_PATH).read_text()}}],
+                  'settings': {'certificate_key': _apple_key}}],
     }
+    # Sign in with Apple inside the iOS app (API, /api/v1/auth/social/token/):
+    # Apple issues that token for the app's bundle ID, not the Services ID.
+    # "hidden" keeps the website's sign-in on the Services ID entry above.
+    _APPLE_APP_BUNDLE_ID = config('APPLE_APP_BUNDLE_ID', default='')
+    if _APPLE_APP_BUNDLE_ID:
+        SOCIALACCOUNT_PROVIDERS['apple']['APPS'].append(
+            {'client_id': _APPLE_APP_BUNDLE_ID, 'secret': _APPLE_KEY_ID, 'key': _APPLE_TEAM_ID,
+             'settings': {'certificate_key': _apple_key, 'hidden': True}})
 SOCIALACCOUNT_ADAPTER = 'komute.social.SocialAccountAdapter'
 SOCIALACCOUNT_FORMS = {'signup': 'komute.social.SocialSignupForm'}
 # Always show the finish-signup page: phone, date of birth and the Terms.

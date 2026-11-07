@@ -22,6 +22,15 @@ TOO_MANY_ATTEMPTS_MSG = "Too many attempts. Please try again later."
 SERVER_ERROR_MSG = "Something went wrong on our side. Please try again."
 
 
+class FieldError(exceptions.ValidationError):
+    """A 400 on one field (or "non_field_errors") with its own error code,
+    e.g. "incorrect_password", instead of the generic "invalid"."""
+
+    def __init__(self, field, message, code='invalid'):
+        super().__init__({field or 'non_field_errors': [message]})
+        self.error_code = code
+
+
 def error_body(code, message, fields=None, **extra):
     return {'error': {'code': code, 'message': message, 'fields': fields or {}, **extra}}
 
@@ -72,8 +81,8 @@ def api_exception_handler(exc, context):
 
     if isinstance(exc, exceptions.ValidationError):
         fields = _as_fields(exc.detail)
-        body = error_body('invalid', _first_message(exc.detail) or 'Please check the highlighted fields.',
-                          fields)
+        body = error_body(getattr(exc, 'error_code', 'invalid'),
+                          _first_message(exc.detail) or 'Please check the highlighted fields.', fields)
     elif isinstance(exc, exceptions.Throttled):
         body = error_body('throttled', TOO_MANY_ATTEMPTS_MSG, retry_after=exc.wait and int(exc.wait))
     else:

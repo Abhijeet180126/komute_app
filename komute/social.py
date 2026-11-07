@@ -26,6 +26,7 @@ from django import forms
 from django.conf import settings
 from django.contrib import messages
 from django.contrib.auth import get_user_model
+from django.http import JsonResponse
 from django.shortcuts import redirect
 
 from .models import LegalAcceptance, is_private_relay
@@ -38,6 +39,13 @@ PROVIDERS = ('google', 'apple')
 # Stored on each SocialAccount row: the account id, the address and whether
 # the provider verified it, and Apple's "Hide My Email" flag.
 KEPT_PROFILE_FIELDS = ('sub', 'email', 'email_verified', 'is_private_email')
+
+
+def _is_app_request(request):
+    """True for allauth.headless's "app" client, i.e. the mobile app API.
+    Never true for the website's own sign-in pages."""
+    headless = getattr(getattr(request, 'allauth', None), 'headless', None)
+    return getattr(headless, 'client', None) == 'app'
 
 
 def enabled_providers():
@@ -106,8 +114,14 @@ class SocialAccountAdapter(DefaultSocialAccountAdapter):
 
         user = sociallogin.user
         if user and user.pk and not user.is_active:
-            messages.error(request, 'This account is closed or deactivated. Contact support if '
-                                    'you think this is a mistake.')
+            message = 'This account is closed or deactivated. Contact support if you think this is a mistake.'
+            if _is_app_request(request):
+                # The mobile app API (api/v1/auth/social.py) answers JSON,
+                # in its error format, not a redirect to the login page.
+                raise ImmediateHttpResponse(JsonResponse(
+                    {'error': {'code': 'account_inactive', 'message': message, 'fields': {}}},
+                    status=403))
+            messages.error(request, message)
             raise ImmediateHttpResponse(redirect('login'))
 
     def on_authentication_error(self, request, provider, error=None, exception=None,
