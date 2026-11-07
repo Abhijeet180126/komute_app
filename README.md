@@ -38,6 +38,21 @@ Chat and rate limiting need a running Redis. In development, run one locally and
 
 Don't point `REDIS_URL` at a free hosted plan: Upstash deletes free databases after 14 days of inactivity. The test suite doesn't need Redis (`config.settings_regression` uses the in-memory channel layer).
 
+### Mobile App API
+
+The JSON API for the Flutter app lives in the `api` app under `/api/v1/` (plan: `docs/api-modular-breakup.md`).
+The app signs in through allauth.headless and sends its token as the `X-Session-Token` header.
+
+| Variable | Default | Description |
+|---|---|---|
+| `API_ENABLED` | `False` | Registers the `/api/` routes. Off, every `/api/` URL is a 404 and the website is unchanged |
+| `API_DOCS_PUBLIC` | `False` | Lets anyone open `/api/v1/schema/` and `/api/v1/docs/` (Swagger UI); off, staff only |
+| `API_THROTTLE_ANON` | `60/min` | Per-address cap on API calls without a token |
+| `API_THROTTLE_USER` | `240/min` | Per-user cap on API calls with a token |
+
+API tests: `manage.py test api --settings=config.settings_regression`. Export the schema for the app developer with
+`API_ENABLED=True manage.py spectacular --file schema.yml`.
+
 ### Application Tuning
 
 | Variable | Default | Description |
