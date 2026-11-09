@@ -19,8 +19,7 @@ from django.contrib.auth import get_user_model, login, logout, update_session_au
 from django.core.validators import validate_email
 from django.core.exceptions import ValidationError
 from django.db import transaction
-from django.db.models import Avg, Count, F, Q
-from django.db.models.functions import Least
+from django.db.models import Avg, Q
 from django.utils import timezone
 from django.core.paginator import Paginator
 from django.views.decorators.cache import never_cache
@@ -31,14 +30,13 @@ from allauth.account.views import ConfirmEmailView as AllauthConfirmEmailView
 from django.core.mail import EmailMultiAlternatives
 from django.core import signing
 from django.utils.http import url_has_allowed_host_and_scheme
-from django.template.loader import render_to_string
 from django.urls import Resolver404, resolve, reverse
 
 from .client_ip import client_ip as _client_ip
-from .models import Rides, RideStop, Vehicle, RideBooking, PriceOffer, Message, VerificationLog, Review, RideInvite, UserBlock, UserReport, BiometricConsent, LegalAcceptance, EmailLog
+from .models import Rides, Vehicle, RideBooking, PriceOffer, Message, VerificationLog, Review, RideInvite, UserBlock, UserReport, BiometricConsent, LegalAcceptance, EmailLog
 from .middleware import LegalAcceptanceMiddleware, legal_versions_key
 from .hashid_utils import encode_id, decode_id
-from .notifications import booking_fingerprint, notify_bookings_changed
+from .notifications import booking_fingerprint
 from .tasks import send_later
 from . import private_media
 from .private_media import delete_stored_file, open_stored_file, save_private_image
@@ -83,16 +81,21 @@ from .services.geo import (  # noqa: F401  (_haversine_km, _geo_box_q, _max_ride
 from .services import rides as ride_rules
 from .services.receipts import build_receipt_pdf
 from .services import invites, route_demand
+# Bookings and price offers (module 4).
+from .services import bookings as booking_rules
+from .services.bookings import (  # noqa: F401  (komute.consumers, tests)
+    send_booking_cancelled_emails as _send_booking_cancelled_emails,
+    send_booking_confirmation_emails as _send_booking_confirmation_emails,
+    send_booking_rejected_email as _send_booking_rejected_email,
+    send_booking_request_email as _send_booking_request_email,
+)
 from .services.invites import (  # noqa: F401  (_make_invite_token: tests)
     make_invite_token as _make_invite_token,
     resolve_invite_token as _resolve_invite_token,
 )
 from .services.rides import (  # noqa: F401  (RIDE_PREFERENCE_OPTIONS: tests)
-    GENDER_PREF_MSG as _GENDER_PREF_MSG,
     MAX_TZ_OFFSET_MINUTES as _MAX_TZ_OFFSET_MINUTES,
     RIDE_PREFERENCE_OPTIONS,
-    fmt_ride_local as _fmt_ride_local,
-    gender_pref_allows as _gender_pref_allows,
     parse_duration_seconds as _parse_duration_seconds,
 )
 
@@ -143,170 +146,6 @@ def _rate_limited(request, name, extra_key='', per_ip=True):
 _TOO_MANY_ATTEMPTS_MSG = "Too many attempts. Please try again later."
 
 
-def _send_booking_confirmation_emails(booking):
-    try:
-        ride    = booking.ride
-        rider   = booking.passenger
-        driver  = ride.driver
-        vehicle = ride.vehicle
-
-        depart_display = _fmt_ride_local(ride)
-        amount         = f"${booking.agreed_price_cents / 100:.2f}"
-        booking_ref    = f"KMT-{ride.depart_at.year}-{ride.id:04d}-B{booking.id}"
-        vehicle_display = f"{vehicle.year} {vehicle.make} {vehicle.model}" if vehicle else "N/A"
-        vehicle_plate   = vehicle.plate if vehicle else "N/A"
-        seats_remaining = ride.seats_available
-
-        rider_ctx = {
-            'rider_name':      _display_name(rider),
-            'driver_name':     _display_name(driver),
-            'origin':          ride.origin,
-            'destination':     ride.destination,
-            'depart_display':  depart_display,
-            'vehicle_display': vehicle_display,
-            'vehicle_plate':   vehicle_plate,
-            'seats':           booking.seats,
-            'amount':          amount,
-            'booking_ref':     booking_ref,
-        }
-        driver_ctx = {
-            'driver_name':     _display_name(driver),
-            'rider_name':      _display_name(rider),
-            'origin':          ride.origin,
-            'destination':     ride.destination,
-            'depart_display':  depart_display,
-            'seats':           booking.seats,
-            'seats_remaining': seats_remaining,
-            'seats_total':     ride.seats_total,
-            'amount':          amount,
-            'booking_ref':     booking_ref,
-        }
-
-        rider_html  = render_to_string('account/email/booking_confirmed_rider.html',  rider_ctx)
-        driver_html = render_to_string('account/email/booking_confirmed_driver.html', driver_ctx)
-
-        rider_msg = EmailMultiAlternatives(
-            subject=f"Your ride to {ride.destination.split(',')[0].strip()} is confirmed! 🎉",
-            body=f"Hi {rider_ctx['rider_name']}, your booking is confirmed. Ref: {booking_ref}",
-            from_email=settings.DEFAULT_FROM_EMAIL,
-            to=[rider.mail_to],
-            reply_to=[settings.REPLY_TO_EMAIL_BOOKING_CONFIRMATION],
-        )
-        rider_msg.attach_alternative(rider_html, 'text/html')
-        send_later(rider_msg, EmailLog.KIND_BOOKING_CONFIRMED, rider)
-
-        driver_msg = EmailMultiAlternatives(
-            subject=f"You accepted {rider_ctx['rider_name']}'s ride request 🚗",
-            body=f"Hi {driver_ctx['driver_name']}, you accepted {rider_ctx['rider_name']}'s request for {booking.seats} seat(s). Ref: {booking_ref}",
-            from_email=settings.DEFAULT_FROM_EMAIL,
-            to=[driver.mail_to],
-            reply_to=[settings.REPLY_TO_EMAIL_BOOKING_CONFIRMATION],
-        )
-        driver_msg.attach_alternative(driver_html, 'text/html')
-        send_later(driver_msg, EmailLog.KIND_BOOKING_CONFIRMED, driver)
-    except Exception:
-        logger.exception('_send_booking_confirmation_emails could not build or queue an email')
-
-
-def _send_booking_cancelled_emails(booking):
-    """Passenger cancelled their booking — notify the driver."""
-    try:
-        ride   = booking.ride
-        rider  = booking.passenger
-        driver = ride.driver
-
-        depart_display = _fmt_ride_local(ride)
-        booking_ref    = f"KMT-{ride.depart_at.year}-{ride.id:04d}-B{booking.id}"
-
-        ctx = {
-            'driver_name':    _display_name(driver),
-            'rider_name':     (rider.full_name  or rider.email).title(),
-            'origin':         ride.origin,
-            'destination':    ride.destination,
-            'depart_display': depart_display,
-            'seats':          booking.seats,
-            'booking_ref':    booking_ref,
-        }
-        html = render_to_string('account/email/booking_cancelled_driver.html', ctx)
-        msg  = EmailMultiAlternatives(
-            subject=f"{ctx['rider_name']} cancelled their booking on your ride",
-            body=f"Hi {ctx['driver_name']}, {ctx['rider_name']} has cancelled their {booking.seats} seat(s). Ref: {booking_ref}",
-            from_email=settings.DEFAULT_FROM_EMAIL,
-            to=[driver.mail_to],
-            reply_to=[settings.REPLY_TO_EMAIL_BOOKING_CANCELLED],
-        )
-        msg.attach_alternative(html, 'text/html')
-        send_later(msg, EmailLog.KIND_BOOKING_CANCELLED, driver)
-    except Exception:
-        logger.exception('_send_booking_cancelled_emails could not build or queue an email')
-
-
-def _send_booking_request_email(booking):
-    """Rider requested a booking — notify the driver."""
-    try:
-        ride   = booking.ride
-        rider  = booking.passenger
-        driver = ride.driver
-
-        depart_display = _fmt_ride_local(ride)
-        booking_ref    = f"KMT-{ride.depart_at.year}-{ride.id:04d}-B{booking.id}"
-
-        ctx = {
-            'driver_name':    _display_name(driver),
-            'rider_name':     (rider.full_name  or rider.email).title(),
-            'origin':         ride.origin,
-            'destination':    ride.destination,
-            'depart_display': depart_display,
-            'seats':          booking.seats,
-            'booking_ref':    booking_ref,
-        }
-        html = render_to_string('account/email/booking_requested_driver.html', ctx)
-        msg  = EmailMultiAlternatives(
-            subject=f"New booking request from {ctx['rider_name']} 🔔",
-            body=f"Hi {ctx['driver_name']}, {ctx['rider_name']} has requested {booking.seats} seat(s) on your ride. Ref: {booking_ref}",
-            from_email=settings.DEFAULT_FROM_EMAIL,
-            to=[driver.mail_to],
-            reply_to=[settings.REPLY_TO_EMAIL_BOOKING_REQUEST],
-        )
-        msg.attach_alternative(html, 'text/html')
-        send_later(msg, EmailLog.KIND_BOOKING_REQUEST, driver)
-    except Exception:
-        logger.exception('_send_booking_request_email could not build or queue an email')
-
-
-def _send_booking_rejected_email(booking):
-    """Driver rejected a booking request — notify the rider."""
-    try:
-        ride   = booking.ride
-        rider  = booking.passenger
-        driver = ride.driver
-
-        depart_display = _fmt_ride_local(ride)
-        booking_ref    = f"KMT-{ride.depart_at.year}-{ride.id:04d}-B{booking.id}"
-
-        ctx = {
-            'rider_name':     (rider.full_name  or rider.email).title(),
-            'driver_name':    _display_name(driver),
-            'origin':         ride.origin,
-            'destination':    ride.destination,
-            'depart_display': depart_display,
-            'booking_ref':    booking_ref,
-        }
-        html = render_to_string('account/email/booking_rejected_rider.html', ctx)
-        msg  = EmailMultiAlternatives(
-            subject="Your booking request was not accepted",
-            body=f"Hi {ctx['rider_name']}, unfortunately the driver could not accommodate your booking request. Ref: {booking_ref}",
-            from_email=settings.DEFAULT_FROM_EMAIL,
-            to=[rider.mail_to],
-            reply_to=[settings.REPLY_TO_EMAIL_BOOKING_REJECTED],
-        )
-        msg.attach_alternative(html, 'text/html')
-        send_later(msg, EmailLog.KIND_BOOKING_REJECTED, rider)
-    except Exception:
-        logger.exception('_send_booking_rejected_email could not build or queue an email')
-
-
-from .services.common import DOB_MISSING_MSG as _DOB_MISSING_MSG, EMAIL_UNVERIFIED_MSG as _EMAIL_UNVERIFIED_MSG
 
 
 def _clean_stops(post):
@@ -1062,89 +901,18 @@ def create_ride_booking(request, ride_id):
         raise Http404
 
     if request.method == "POST":
-        # Both checks cover "Chat with driver" too: a draft can later be
-        # confirmed in chat or used to leave a review. Booking emails go to
-        # the rider's address, so it must be verified (audit S-10).
-        if not request.user.email_verified:
-            return JsonResponse({'ok': False, 'error': _EMAIL_UNVERIFIED_MSG}, status=403)
-        # Accounts from before DOB was asked at signup (audit L-5).
-        if not request.user.dob:
-            return JsonResponse({'ok': False, 'error': _DOB_MISSING_MSG}, status=403)
-        if ride.status not in ('posted', 'full') or ride.depart_at <= timezone.now():
-            return JsonResponse({'ok': False, 'error': 'This ride is no longer available.'}, status=400)
-        if not _gender_pref_allows(ride, request.user):
-            return JsonResponse({'ok': False, 'error': _GENDER_PREF_MSG}, status=403)
-        intent = request.POST.get("intent", "book")
+        # Verified email and date of birth, an open ride, the gender
+        # preference, seats 1-8, one active booking (komute.services.bookings).
         try:
-            seats = int(request.POST.get("seats", 1))
-        except (TypeError, ValueError):
-            return JsonResponse({'ok': False, 'error': 'Invalid seat count.'}, status=400)
-        if seats < 1 or seats > 8:
-            return JsonResponse({'ok': False, 'error': 'Seats must be between 1 and 8.'}, status=400)
-        pickup_stop_id   = request.POST.get("pickup_stop_id")
-        dropoff_stop_id  = request.POST.get("dropoff_stop_id")
-
-        pickup_stop  = RideStop.objects.filter(id=pickup_stop_id,  ride=ride).first() if pickup_stop_id  else None
-        dropoff_stop = RideStop.objects.filter(id=dropoff_stop_id, ride=ride).first() if dropoff_stop_id else None
-
-        existing = RideBooking.objects.filter(
-            ride=ride,
-            passenger=request.user,
-            status__in=[RideBooking.STATUS_DRAFT, RideBooking.STATUS_REQUESTED, RideBooking.STATUS_CONFIRMED],
-        ).first()
-
-        if existing and existing.status in (RideBooking.STATUS_REQUESTED, RideBooking.STATUS_CONFIRMED):
-            return JsonResponse({'ok': False, 'error': 'You have already requested this ride.'}, status=400)
-
+            booking = booking_rules.book_ride(
+                ride, request.user, intent=request.POST.get("intent", "book"),
+                seats_raw=request.POST.get("seats", 1),
+                pickup_stop_id=request.POST.get("pickup_stop_id"),
+                dropoff_stop_id=request.POST.get("dropoff_stop_id"))
+        except booking_rules.BookingError as e:
+            return JsonResponse({'ok': False, 'error': e.message}, status=e.status)
         from .chat_tokens import make_chat_token
-
-        if intent == "chat":
-            # Pre-request negotiation: open a chat without reserving a seat or notifying the driver.
-            if existing and existing.status == RideBooking.STATUS_DRAFT:
-                return JsonResponse({'ok': True, 'chat_token': make_chat_token(existing.id)})
-            draft = RideBooking.objects.create(
-                ride=ride,
-                passenger=request.user,
-                pickup_stop=pickup_stop,
-                dropoff_stop=dropoff_stop,
-                seats=seats,
-                agreed_price_cents=ride.price_cents * seats + settings.SERVICE_FEE_CENTS,
-                status=RideBooking.STATUS_DRAFT,
-            )
-            return JsonResponse({'ok': True, 'chat_token': make_chat_token(draft.id)})
-
-        updated = Rides.objects.filter(
-            id=ride.id, seats_available__gte=seats
-        ).update(seats_available=F('seats_available') - seats)
-        if not updated:
-            return JsonResponse({'ok': False, 'error': 'Not enough seats available.'}, status=400)
-        Rides.objects.filter(id=ride.id, seats_available=0).update(status='full')
-
-        if existing and existing.status == RideBooking.STATUS_DRAFT:
-            # Promote the draft in place — carries over its PriceOffer/Message history
-            # and keeps the chat token (which encodes only the booking id) still valid.
-            booking = existing
-            booking.pickup_stop  = pickup_stop
-            booking.dropoff_stop = dropoff_stop
-            booking.seats        = seats
-            booking.status       = RideBooking.STATUS_REQUESTED
-            booking.save(update_fields=['pickup_stop', 'dropoff_stop', 'seats', 'status'])
-        else:
-            booking = RideBooking.objects.create(
-                ride=ride,
-                passenger=request.user,
-                pickup_stop=pickup_stop,
-                dropoff_stop=dropoff_stop,
-                seats=seats,
-                agreed_price_cents=ride.price_cents * seats + settings.SERVICE_FEE_CENTS,
-                status=RideBooking.STATUS_REQUESTED,
-                confirmed_at=None,
-            )
-
-        token = make_chat_token(booking.id)
-        notify_bookings_changed([ride.driver_id], 'You have a new booking request.')
-        _send_booking_request_email(booking)
-        return JsonResponse({'ok': True, 'chat_token': token})
+        return JsonResponse({'ok': True, 'chat_token': make_chat_token(booking.id)})
 
     # GET — build context
     driver = ride.driver
@@ -1230,34 +998,10 @@ def cancel_booking_view(request, booking_id):
     if booking.passenger != request.user:
         return JsonResponse({"error": "Not authorized"}, status=403)
 
-    if booking.status in (RideBooking.STATUS_CANCELLED, RideBooking.STATUS_REJECTED, RideBooking.STATUS_COMPLETED):
-        return JsonResponse({"error": f"Booking is already {booking.status}."}, status=400)
-
-    if booking.ride.status in ('completed', 'cancelled'):
-        return JsonResponse({"error": f"Cannot cancel — ride is already {booking.ride.status}."}, status=400)
-
-    if booking.ride.depart_at <= timezone.now():
-        return JsonResponse({"error": "Cannot cancel after the ride has departed."}, status=400)
-
-    ride = booking.ride
-    cancelled_at = timezone.now()
-
-    updated = RideBooking.objects.filter(id=booking.id).exclude(
-        status__in=(RideBooking.STATUS_CANCELLED, RideBooking.STATUS_REJECTED, RideBooking.STATUS_COMPLETED),
-    ).update(status=RideBooking.STATUS_CANCELLED, cancelled_at=cancelled_at)
-    if not updated:
-        return JsonResponse({"error": "Booking is already cancelled."}, status=400)
-    booking.status = RideBooking.STATUS_CANCELLED
-    booking.cancelled_at = cancelled_at
-
-    Rides.objects.filter(id=ride.id).update(
-        seats_available=Least(F('seats_available') + booking.seats, ride.seats_total)
-    )
-    Rides.objects.filter(id=ride.id, status='full').update(status='posted')
-    _notify_booking_status(booking)
-    notify_bookings_changed([ride.driver_id], 'A passenger cancelled their booking.')
-
-    _send_booking_cancelled_emails(booking)
+    try:
+        booking_rules.cancel_booking(booking)
+    except booking_rules.BookingError as e:
+        return JsonResponse({"error": e.message}, status=e.status)
 
     return JsonResponse({"success": True})
 
@@ -1276,32 +1020,10 @@ def accept_booking_view(request, booking_id):
     if booking.ride.driver != request.user:
         return JsonResponse({'error': 'Forbidden.'}, status=403)
 
-    if booking.status != RideBooking.STATUS_REQUESTED:
-        return JsonResponse({'error': f'Cannot accept a booking that is already {booking.status}.'}, status=400)
-
-    if not booking.ride.driver.driver_verification_current:
-        return JsonResponse({'error': 'Please verify your identity on your profile page before accepting bookings.'}, status=403)
-
-    # A request sent before a block stays pending; the driver can still
-    # reject it and the rider can cancel it, but it can't be confirmed.
-    if UserBlock.objects.between(booking.ride.driver_id, booking.passenger_id):
-        return JsonResponse({'error': "You can't accept this booking request."}, status=403)
-
-    # Conditional, like reject and cancel: a cancel that lands between the
-    # check above and this write must not be overwritten to confirmed after
-    # its seat was already released.
-    confirmed_at = timezone.now()
-    updated = RideBooking.objects.filter(
-        id=booking.id, status=RideBooking.STATUS_REQUESTED,
-    ).update(status=RideBooking.STATUS_CONFIRMED, confirmed_at=confirmed_at)
-    if not updated:
-        return JsonResponse({'error': 'This booking request is no longer pending.'}, status=400)
-    booking.status = RideBooking.STATUS_CONFIRMED
-    booking.confirmed_at = confirmed_at
-    _notify_booking_status(booking)
-    notify_bookings_changed([booking.passenger_id], 'Your booking request was accepted.')
-
-    _send_booking_confirmation_emails(booking)
+    try:
+        booking_rules.accept_booking(booking)
+    except booking_rules.BookingError as e:
+        return JsonResponse({'error': e.message}, status=e.status)
 
     return JsonResponse({'ok': True})
 
@@ -1320,25 +1042,10 @@ def reject_booking_view(request, booking_id):
     if booking.ride.driver != request.user:
         return JsonResponse({'error': 'Forbidden.'}, status=403)
 
-    if booking.status != RideBooking.STATUS_REQUESTED:
-        return JsonResponse({'error': f'Cannot reject a booking that is already {booking.status}.'}, status=400)
-
-    updated = RideBooking.objects.filter(
-        id=booking.id, status=RideBooking.STATUS_REQUESTED,
-    ).update(status=RideBooking.STATUS_REJECTED, rejected_at=timezone.now())
-    if not updated:
-        return JsonResponse({'error': f'Cannot reject a booking that is already {booking.status}.'}, status=400)
-    booking.status = RideBooking.STATUS_REJECTED
-
-    ride = booking.ride
-    Rides.objects.filter(id=ride.id).update(
-        seats_available=Least(F('seats_available') + booking.seats, ride.seats_total)
-    )
-    Rides.objects.filter(id=ride.id, status='full').update(status='posted')
-    _notify_booking_status(booking)
-    notify_bookings_changed([booking.passenger_id], 'Your booking request was declined.')
-
-    _send_booking_rejected_email(booking)
+    try:
+        booking_rules.reject_booking(booking)
+    except booking_rules.BookingError as e:
+        return JsonResponse({'error': e.message}, status=e.status)
 
     return JsonResponse({'ok': True})
 
@@ -2215,95 +1922,21 @@ def driver_inbox_view(request):
     # or price offer, the driver needs to see and respond to it, even though no
     # seat has been reserved yet. Untouched, empty drafts are filtered out below
     # so opening a draft chat alone still doesn't surface anything.
-    bookings_qs = (
-        RideBooking.objects
-        .filter(ride__driver=user)
-        .exclude(status__in=['cancelled', 'rejected'])
-        .select_related('ride', 'passenger')
-        .order_by('-booked_at')
-    )
-
-    # Deduplicate: one conversation per (ride, passenger) — keep the latest booking
-    seen = {}
-    for b in bookings_qs:
-        key = (b.ride_id, b.passenger_id)
-        if key not in seen:
-            seen[key] = b
-    unique_bookings = list(seen.values())
-    booking_ids = [b.id for b in unique_bookings]
-    ride_ids    = [b.ride_id for b in unique_bookings]
-
-    # 1 query: last message per (ride_id, other_user_id)
-    _msgs = (
-        Message.objects
-        .filter(ride_id__in=ride_ids)
-        .filter(Q(sender=user) | Q(receiver=user))
-        .order_by('-created_at')
-        .only('id', 'ride_id', 'sender_id', 'receiver_id', 'body', 'created_at')
-    )
-    last_msg_map = {}
-    for m in _msgs:
-        other_id = m.receiver_id if m.sender_id == user.id else m.sender_id
-        key = (m.ride_id, other_id)
-        if key not in last_msg_map:
-            last_msg_map[key] = m
-
-    # 1 query: unread count per (ride_id, passenger_id)
-    _unread = (
-        Message.objects
-        .filter(ride_id__in=ride_ids, receiver=user, read_at__isnull=True)
-        .values('ride_id', 'sender_id')
-        .annotate(cnt=Count('id'))
-    )
-    unread_map = {(r['ride_id'], r['sender_id']): r['cnt'] for r in _unread}
-
-    # 1 query: latest offer per booking_id
-    _offers = (
-        PriceOffer.objects
-        .filter(booking_id__in=booking_ids)
-        .order_by('-created_at')
-        .only('id', 'booking_id', 'status', 'price_cents', 'proposed_by_id', 'created_at')
-    )
-    latest_offer_map = {}
-    for o in _offers:
-        if o.booking_id not in latest_offer_map:
-            latest_offer_map[o.booking_id] = o
-
     AVATAR_CLASSES = ['c1', 'c2', 'c3', 'c4', 'c5']
     now = timezone.now()
-    my_blocks = set(UserBlock.objects.filter(blocker=user).values_list('blocked_id', flat=True))
 
     conversations = []
-    for i, booking in enumerate(unique_bookings):
-        ride = booking.ride
-        passenger = booking.passenger
-
-        last_msg     = last_msg_map.get((ride.id, passenger.id))
-        unread_count = unread_map.get((ride.id, passenger.id), 0)
-        latest_offer = latest_offer_map.get(booking.id)
-
-        if booking.status == RideBooking.STATUS_DRAFT and last_msg is None and latest_offer is None:
-            continue
-
-        if booking.status == RideBooking.STATUS_CONFIRMED and booking.agreed_price_cents:
-            nego_status = 'agreed'
-            nego_label = f"Agreed ${booking.agreed_price_cents / 100:.2f}"
-        elif latest_offer and latest_offer.status == PriceOffer.STATUS_PENDING:
-            nego_status = 'pending'
-            if latest_offer.proposed_by_id == passenger.id:
-                nego_label = f"Offer ${latest_offer.price_cents / 100:.2f}"
-            else:
-                nego_label = f"Counter ${latest_offer.price_cents / 100:.2f}"
+    for row in booking_rules.inbox(user, as_driver=True):
+        booking, ride, passenger = row['booking'], row['ride'], row['other']
+        last_msg, unread_count, latest_offer = row['last_msg'], row['unread_count'], row['latest_offer']
+        nego_status = row['nego_status']
+        if nego_status == 'agreed':
+            nego_label = f"Agreed ${row['nego_cents'] / 100:.2f}"
+        elif nego_status == 'pending':
+            nego_label = f"{'Offer' if row['nego_by_other'] else 'Counter'} ${row['nego_cents'] / 100:.2f}"
         else:
-            nego_status = 'none'
             nego_label = ''
-
-        if ride.status == 'completed' or booking.status == RideBooking.STATUS_COMPLETED:
-            ui_status = 'completed'
-        elif booking.status == RideBooking.STATUS_CONFIRMED:
-            ui_status = 'active'
-        else:
-            ui_status = 'upcoming'
+        ui_status = row['status']
 
         ref_dt = last_msg.created_at if last_msg else booking.booked_at
         delta = now - ref_dt
@@ -2352,9 +1985,9 @@ def driver_inbox_view(request):
             'booking_status':     booking.status,
             'chat_token':         make_chat_token(booking.id),
             'passenger_name':     name or _UNNAMED_USER,
-            'blocked_by_me':      passenger.id in my_blocks,
+            'blocked_by_me':      row['blocked_by_me'],
             'initials':           initials,
-            'avatar_class':       AVATAR_CLASSES[i % 5],
+            'avatar_class':       AVATAR_CLASSES[row['index'] % 5],
             'is_online':          is_online,
             'status':             ui_status,
             'is_unread':          unread_count > 0,
@@ -2402,92 +2035,21 @@ def rider_inbox_view(request):
 
     from .chat_tokens import make_chat_token
 
-    bookings_qs = (
-        RideBooking.objects
-        .filter(passenger=user)
-        .exclude(status__in=['cancelled', 'rejected', 'draft'])
-        .select_related('ride', 'ride__driver')
-        .order_by('-booked_at')
-    )
-
-    # Deduplicate: one conversation per (ride, driver) — keep the latest booking
-    seen = {}
-    for b in bookings_qs:
-        key = (b.ride_id, b.ride.driver_id)
-        if key not in seen:
-            seen[key] = b
-    unique_bookings = list(seen.values())
-    booking_ids = [b.id for b in unique_bookings]
-    ride_ids    = [b.ride_id for b in unique_bookings]
-
-    # 1 query: last message per (ride_id, other_user_id)
-    _msgs = (
-        Message.objects
-        .filter(ride_id__in=ride_ids)
-        .filter(Q(sender=user) | Q(receiver=user))
-        .order_by('-created_at')
-        .only('id', 'ride_id', 'sender_id', 'receiver_id', 'body', 'created_at')
-    )
-    last_msg_map = {}
-    for m in _msgs:
-        other_id = m.receiver_id if m.sender_id == user.id else m.sender_id
-        key = (m.ride_id, other_id)
-        if key not in last_msg_map:
-            last_msg_map[key] = m
-
-    # 1 query: unread count per (ride_id, driver_id)
-    _unread = (
-        Message.objects
-        .filter(ride_id__in=ride_ids, receiver=user, read_at__isnull=True)
-        .values('ride_id', 'sender_id')
-        .annotate(cnt=Count('id'))
-    )
-    unread_map = {(r['ride_id'], r['sender_id']): r['cnt'] for r in _unread}
-
-    # 1 query: latest offer per booking_id
-    _offers = (
-        PriceOffer.objects
-        .filter(booking_id__in=booking_ids)
-        .order_by('-created_at')
-        .only('id', 'booking_id', 'status', 'price_cents', 'proposed_by_id', 'created_at')
-    )
-    latest_offer_map = {}
-    for o in _offers:
-        if o.booking_id not in latest_offer_map:
-            latest_offer_map[o.booking_id] = o
-
     AVATAR_CLASSES = ['c1', 'c2', 'c3', 'c4', 'c5']
     now = timezone.now()
-    my_blocks = set(UserBlock.objects.filter(blocker=user).values_list('blocked_id', flat=True))
 
     conversations = []
-    for i, booking in enumerate(unique_bookings):
-        ride = booking.ride
-        driver = ride.driver
-
-        last_msg     = last_msg_map.get((ride.id, driver.id))
-        unread_count = unread_map.get((ride.id, driver.id), 0)
-        latest_offer = latest_offer_map.get(booking.id)
-
-        if booking.status == RideBooking.STATUS_CONFIRMED and booking.agreed_price_cents:
-            nego_status = 'agreed'
-            nego_label = f"Agreed ${booking.agreed_price_cents / 100:.2f}"
-        elif latest_offer and latest_offer.status == PriceOffer.STATUS_PENDING:
-            nego_status = 'pending'
-            if latest_offer.proposed_by_id == driver.id:
-                nego_label = f"Offer ${latest_offer.price_cents / 100:.2f}"
-            else:
-                nego_label = f"Counter ${latest_offer.price_cents / 100:.2f}"
+    for row in booking_rules.inbox(user, as_driver=False):
+        booking, ride, driver = row['booking'], row['ride'], row['other']
+        last_msg, unread_count, latest_offer = row['last_msg'], row['unread_count'], row['latest_offer']
+        nego_status = row['nego_status']
+        if nego_status == 'agreed':
+            nego_label = f"Agreed ${row['nego_cents'] / 100:.2f}"
+        elif nego_status == 'pending':
+            nego_label = f"{'Offer' if row['nego_by_other'] else 'Counter'} ${row['nego_cents'] / 100:.2f}"
         else:
-            nego_status = 'none'
             nego_label = ''
-
-        if ride.status == 'completed' or booking.status == RideBooking.STATUS_COMPLETED:
-            ui_status = 'completed'
-        elif booking.status == RideBooking.STATUS_CONFIRMED:
-            ui_status = 'active'
-        else:
-            ui_status = 'upcoming'
+        ui_status = row['status']
 
         ref_dt = last_msg.created_at if last_msg else booking.booked_at
         delta = now - ref_dt
@@ -2534,9 +2096,9 @@ def rider_inbox_view(request):
             'chat_token':         make_chat_token(booking.id),
             'driver_name':        name or _UNNAMED_USER,
             'driver_verified':    driver.driver_verified,
-            'blocked_by_me':      driver.id in my_blocks,
+            'blocked_by_me':      row['blocked_by_me'],
             'initials':           initials,
-            'avatar_class':       AVATAR_CLASSES[i % 5],
+            'avatar_class':       AVATAR_CLASSES[row['index'] % 5],
             'is_online':          is_online,
             'status':             ui_status,
             'is_unread':          unread_count > 0,
@@ -2685,38 +2247,10 @@ def create_price_offer_view(request, booking_id):
         id=real_booking_id,
     )
 
-    if request.user not in (booking.ride.driver, booking.passenger):
-        return JsonResponse({'error': 'Forbidden.'}, status=403)
-
-    if booking.status not in (RideBooking.STATUS_REQUESTED, RideBooking.STATUS_CONFIRMED):
-        return JsonResponse({'error': 'Negotiation is closed for this booking.'}, status=400)
-
-    if UserBlock.objects.between(booking.ride.driver_id, booking.passenger_id):
-        return JsonResponse({'error': BLOCKED_CHAT_MESSAGE}, status=403)
-
     try:
-        price_cents = int(round(float(request.POST.get('price_cents', 0))))
-    except (ValueError, TypeError, OverflowError):
-        return JsonResponse({'error': 'Invalid price.'}, status=400)
-
-    if price_cents <= 0:
-        return JsonResponse({'error': 'Price must be greater than 0.'}, status=400)
-
-    if price_cents > 100_000:
-        return JsonResponse({'error': 'Offer cannot exceed $1,000.'}, status=400)
-
-    # Expire any pending offers from the same user
-    PriceOffer.objects.filter(
-        booking=booking,
-        proposed_by=request.user,
-        status=PriceOffer.STATUS_PENDING,
-    ).update(status=PriceOffer.STATUS_DECLINED, responded_at=timezone.now())
-
-    offer = PriceOffer.objects.create(
-        booking=booking,
-        proposed_by=request.user,
-        price_cents=price_cents,
-    )
+        offer = booking_rules.create_offer(booking, request.user, request.POST.get('price_cents', 0))
+    except booking_rules.BookingError as e:
+        return JsonResponse({'error': e.message}, status=e.status)
 
     return JsonResponse({
         'id': offer.id,
@@ -2738,72 +2272,22 @@ def respond_price_offer_view(request, offer_id):
         PriceOffer.objects.select_related('booking__ride__driver', 'booking__passenger'),
         id=real_offer_id,
     )
-    booking = offer.booking
-
-    if request.user == offer.proposed_by:
-        return JsonResponse({'error': 'You cannot respond to your own offer.'}, status=403)
-
-    if request.user not in (booking.ride.driver, booking.passenger):
-        return JsonResponse({'error': 'Forbidden.'}, status=403)
-
-    if booking.status not in (RideBooking.STATUS_REQUESTED, RideBooking.STATUS_CONFIRMED):
-        return JsonResponse({'error': f'This booking is no longer active ({booking.status}).'}, status=400)
-
-    if UserBlock.objects.between(booking.ride.driver_id, booking.passenger_id):
-        return JsonResponse({'error': BLOCKED_CHAT_MESSAGE}, status=403)
-
-    if offer.status != PriceOffer.STATUS_PENDING:
-        return JsonResponse({'error': 'This offer is no longer pending.'}, status=400)
-
     action = request.POST.get('action', '').strip()
+    try:
+        result = booking_rules.respond_offer(offer, request.user, action, request.POST.get('price_cents', 0))
+    except booking_rules.BookingError as e:
+        return JsonResponse({'error': e.message}, status=e.status)
 
     if action == 'accept':
-        offer.status = PriceOffer.STATUS_ACCEPTED
-        offer.responded_at = timezone.now()
-        offer.save(update_fields=['status', 'responded_at'])
-
-        booking.agreed_price_cents = offer.price_cents * booking.seats + settings.SERVICE_FEE_CENTS
-        booking.save(update_fields=['agreed_price_cents'])
-
-        return JsonResponse({'ok': True, 'status': offer.status, 'price_cents': offer.price_cents})
-
-    elif action == 'decline':
-        offer.status = PriceOffer.STATUS_DECLINED
-        offer.responded_at = timezone.now()
-        offer.save(update_fields=['status', 'responded_at'])
-
-        return JsonResponse({'ok': True, 'status': offer.status})
-
-    elif action == 'counter':
-        try:
-            counter_cents = int(round(float(request.POST.get('price_cents', 0))))
-        except (ValueError, TypeError, OverflowError):
-            return JsonResponse({'error': 'Invalid counter price.'}, status=400)
-
-        if counter_cents <= 0:
-            return JsonResponse({'error': 'Counter price must be greater than 0.'}, status=400)
-
-        if counter_cents > 100_000:
-            return JsonResponse({'error': 'Counter offer cannot exceed $1,000.'}, status=400)
-
-        offer.status = PriceOffer.STATUS_COUNTERED
-        offer.responded_at = timezone.now()
-        offer.save(update_fields=['status', 'responded_at'])
-
-        new_offer = PriceOffer.objects.create(
-            booking=booking,
-            proposed_by=request.user,
-            price_cents=counter_cents,
-        )
-
-        return JsonResponse({
-            'ok': True,
-            'offer_id': new_offer.id,
-            'price_cents': new_offer.price_cents,
-            'status': new_offer.status,
-        }, status=201)
-
-    return JsonResponse({'error': 'Invalid action. Use accept, decline, or counter.'}, status=400)
+        return JsonResponse({'ok': True, 'status': result.status, 'price_cents': result.price_cents})
+    if action == 'decline':
+        return JsonResponse({'ok': True, 'status': result.status})
+    return JsonResponse({
+        'ok': True,
+        'offer_id': result.id,
+        'price_cents': result.price_cents,
+        'status': result.status,
+    }, status=201)
 
 
 @login_required

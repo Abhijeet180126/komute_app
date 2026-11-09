@@ -2,6 +2,7 @@
 from django.urls import include, path
 
 from api.common.views import ApiDocsView, ApiSchemaView, health
+from api.v1.bookings import urls as booking_urls
 from api.v1.users.views import media_file
 
 urlpatterns = [
@@ -18,4 +19,7 @@ urlpatterns = [
     # Module 3: rides, search, route demand, invites
     path('rides/', include(('api.v1.rides.urls', 'rides'), namespace='rides')),
     path('invites/', include(('api.v1.invites.urls', 'invites'), namespace='invites')),
+    # Module 4: bookings, price offers, inbox
+    path('bookings/', include((booking_urls.booking_patterns, 'bookings'), namespace='bookings')),
+    path('offers/', include((booking_urls.offer_patterns, 'offers'), namespace='offers')),
 ]

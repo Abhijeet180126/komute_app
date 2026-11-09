@@ -21,6 +21,7 @@ from django.utils import timezone
 from komute.models import EmailLog, RideBooking, RideInvite, Rides, RideSearch, UserBlock
 from komute.notifications import notify_bookings_changed
 from komute.services.booking_status import notify_booking_status
+from komute.services.bookings import send_booking_confirmation_emails
 from komute.services.common import DOB_MISSING_MSG, EMAIL_UNVERIFIED_MSG, display_name
 from komute.services.geo import haversine_km
 from komute.services.rides import GENDER_PREF_MSG, fmt_ride_local, gender_pref_allows
@@ -224,9 +225,6 @@ def accept_invite(invite, user):
     """Accepting confirms a booking on the ride (one seat, or the seats of
     the rider's draft booking, whose chat it keeps). Returns the booking, or
     raises InviteError / InviteExpired."""
-    # Booking emails still live with the booking views (API module 4).
-    from komute.views import _send_booking_confirmation_emails
-
     if invite.status not in (RideInvite.STATUS_SENT, RideInvite.STATUS_VIEWED):
         raise InviteError(ALREADY_RESPONDED_MSG, code='already_responded')
 
@@ -316,7 +314,7 @@ def accept_invite(invite, user):
         )
     notify_bookings_changed([ride.driver_id], 'A passenger accepted your ride invite.')
 
-    _send_booking_confirmation_emails(booking)
+    send_booking_confirmation_emails(booking)
     invite.status = RideInvite.STATUS_ACCEPTED
     return booking
 
