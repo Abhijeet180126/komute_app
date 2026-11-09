@@ -81,6 +81,8 @@ from .services.geo import (  # noqa: F401  (_haversine_km, _geo_box_q, _max_ride
 from .services import rides as ride_rules
 from .services.receipts import build_receipt_pdf
 from .services import invites, route_demand
+# Chat history (module 5).
+from .services import chat as chat_rules
 # Bookings and price offers (module 4).
 from .services import bookings as booking_rules
 from .services.bookings import (  # noqa: F401  (komute.consumers, tests)
@@ -1276,21 +1278,13 @@ def chat_view(request, token):
     if request.user not in (booking.ride.driver, booking.passenger):
         raise Http404
 
-    other_user = booking.ride.driver if request.user == booking.passenger else booking.passenger
+    other_user = chat_rules.other_party(booking, request.user)
     initials = lambda u: ''.join(p[0].upper() for p in u.full_name.split()[:2])
 
-    history = (
-        Message.objects
-        .filter(ride=booking.ride)
-        .filter(
-            Q(sender=request.user, receiver=other_user) |
-            Q(sender=other_user, receiver=request.user)
-        )
-        .select_related('sender')
-    )
+    history = chat_rules.history(booking, request.user)
 
     # Mark unread messages (received by current user) as read
-    history.filter(receiver=request.user, read_at__isnull=True).update(read_at=timezone.now())
+    chat_rules.mark_read(history, request.user)
 
     history_json = [
         {
@@ -1311,21 +1305,11 @@ def chat_view(request, token):
     # Latest pending offer from the CURRENT user (outgoing — waiting for response)
     pending_outgoing_price = None
     if agreed_price is None:
-        pending_incoming = (
-            PriceOffer.objects
-            .filter(booking=booking, proposed_by=other_user, status=PriceOffer.STATUS_PENDING)
-            .order_by('-created_at')
-            .first()
-        )
+        pending_incoming = chat_rules.latest_pending_offer(booking, other_user)
         pending_incoming_price = pending_incoming.price_cents // 100 if pending_incoming else None
         pending_incoming_offer_id = pending_incoming.id if pending_incoming else None
 
-        pending_outgoing = (
-            PriceOffer.objects
-            .filter(booking=booking, proposed_by=request.user, status=PriceOffer.STATUS_PENDING)
-            .order_by('-created_at')
-            .first()
-        )
+        pending_outgoing = chat_rules.latest_pending_offer(booking, request.user)
         pending_outgoing_price = pending_outgoing.price_cents // 100 if pending_outgoing else None
 
     return render(request, 'chat.html', {

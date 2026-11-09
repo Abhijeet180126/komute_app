@@ -3,6 +3,10 @@
 Rules from komute.services.bookings, shared with the booking page, My Rides,
 the inboxes and the price negotiation in chat. A booking is visible to its
 rider and to the ride's driver only; anyone else gets a 404."""
+import logging
+
+from asgiref.sync import async_to_sync
+from channels.layers import get_channel_layer
 from django.shortcuts import get_object_or_404
 from drf_spectacular.utils import OpenApiParameter, extend_schema
 from rest_framework import exceptions, status
@@ -15,10 +19,15 @@ from api.common.pagination import StandardPagination
 from api.common.permissions import HasAcceptedTerms
 from api.v1.bookings import serializers as s
 from komute.chat_tokens import make_chat_token
+from komute.consumers import ChatConsumer, chat_group_name
 from komute.models import PriceOffer, RideBooking, Rides, UserBlock
+from komute.notifications import user_group_name
 from komute.services import bookings as booking_rules
 
+logger = logging.getLogger('komute.api')
+
 TAG = ['bookings']
+OFFER_FORBIDDEN = ('blocked', 'own_offer', 'driver_unverified')
 SIGNED_IN = [IsAuthenticated, HasAcceptedTerms]
 
 
@@ -166,13 +175,33 @@ def reject(request, booking_id):
     return _act(request, booking_id, as_driver=True, action=booking_rules.reject_booking)
 
 
-@extend_schema(tags=TAG, methods=['GET'], summary='Price offers on a booking', responses={200: s.OfferSerializer(many=True)},
-               description='Newest first.')
+def _push(group, event):
+    """Tell open chats, as the socket does. Best effort: the change stands."""
+    try:
+        async_to_sync(get_channel_layer().group_send)(group, event)
+    except Exception:
+        logger.warning('Could not push %s to %s', event['type'], group, exc_info=True)
+
+
+def _refuse_offer(code):
+    error = booking_rules.BookingError(ChatConsumer.ERROR_MESSAGES.get(code, 'Something went wrong.'),
+                                       status=403 if code in OFFER_FORBIDDEN else 400, code=code)
+    raise BookingRefused(error)
+
+
+def _check_not_blocked(booking):
+    if UserBlock.objects.between(booking.ride.driver_id, booking.passenger_id):
+        _refuse_offer('blocked')
+
+
+@extend_schema(tags=TAG, methods=['GET'], summary='Price offers on a booking',
+               responses={200: s.OfferSerializer(many=True)}, description='Newest first.')
 @extend_schema(tags=TAG, methods=['POST'], summary='Make a price offer', request=s.OfferRequestSerializer,
                responses={201: s.OfferSerializer},
-               description='Per seat, by the rider or the driver, on a requested or confirmed booking. Your own '
-                           'earlier pending offer is withdrawn. Error codes: negotiation_closed, invalid_price '
-                           '(400), blocked (403).')
+               description="Exactly the chat page's Send Offer / Send Counter: per seat, by either person, in a "
+                           'pre-request chat or on a confirmed booking (locked while a request waits for the '
+                           'driver). A counter is a new offer. Your own earlier pending offer is withdrawn. '
+                           'Error codes: nego_locked, booking_inactive, bad_price (400), blocked (403).')
 @api_view(['GET', 'POST'])
 @permission_classes(SIGNED_IN)
 def offers(request, booking_id):
@@ -182,35 +211,36 @@ def offers(request, booking_id):
         return Response(s.OfferSerializer(qs, many=True, context={'request': request}).data)
     body = s.OfferRequestSerializer(data=request.data)
     body.is_valid(raise_exception=True)
-    try:
-        offer = booking_rules.create_offer(booking, request.user, body.validated_data['price_cents'])
-    except booking_rules.BookingError as e:
-        raise BookingRefused(e)
+    _check_not_blocked(booking)
+    offer, error = booking_rules.chat_offer(request.user, booking.pk, body.validated_data['price_cents'] / 100)
+    if error:
+        _refuse_offer(error)
+    _push(chat_group_name(booking.pk), {'type': 'price_offer', 'price': offer.price_cents / 100,
+                                        'offer_id': offer.id, 'sender_id': request.user.id})
     return Response(s.OfferSerializer(offer, context={'request': request}).data, status=status.HTTP_201_CREATED)
 
 
-@extend_schema(tags=['bookings'], summary='Answer a price offer', request=s.RespondOfferSerializer,
-               responses={200: s.OfferSerializer, 201: s.OfferSerializer},
-               description='accept (sets the booking\'s agreed price: offer × seats + service fee), decline, or '
-                           'counter with a new price (201, the new offer). Only the other person may answer. '
-                           'Error codes: not_pending, negotiation_closed, invalid_price (400), own_offer, blocked (403).')
+@extend_schema(tags=TAG, summary='Accept a price offer', request=None, responses={200: s.BookingSerializer},
+               description="Exactly the chat page's Accept: only the other person's pending offer. Sets the agreed "
+                           'price (offer × seats + service fee). In a pre-request chat this reserves the seats and '
+                           'confirms the booking. Error codes: nego_locked, booking_inactive, offer_stale, no_seats '
+                           '(400), own_offer, driver_unverified, blocked (403).')
 @api_view(['POST'])
 @permission_classes(SIGNED_IN)
-def respond(request, offer_id):
-    offer = get_object_or_404(PriceOffer.objects.select_related('booking__ride__driver', 'booking__passenger'),
+def accept_offer(request, offer_id):
+    offer = get_object_or_404(PriceOffer.objects.select_related('booking__ride', 'booking__passenger'),
                               pk=_pk(offer_id))
     booking = offer.booking
     if request.user.id not in (booking.passenger_id, booking.ride.driver_id):
         raise exceptions.NotFound()
-    body = s.RespondOfferSerializer(data=request.data)
-    body.is_valid(raise_exception=True)
-    action = body.validated_data['action']
-    try:
-        result = booking_rules.respond_offer(offer, request.user, action, body.validated_data.get('price_cents'))
-    except booking_rules.BookingError as e:
-        raise BookingRefused(e)
-    return Response(s.OfferSerializer(result, context={'request': request}).data,
-                    status=status.HTTP_201_CREATED if action == 'counter' else status.HTTP_200_OK)
+    _check_not_blocked(booking)
+    result, agreed_price = booking_rules.chat_accept(request.user, booking.pk, offer.pk, None)
+    if result != 'ok':
+        _refuse_offer(result)
+    _push(chat_group_name(booking.pk), {'type': 'price_accepted', 'price': agreed_price})
+    other_id = booking.passenger_id if request.user.id == booking.ride.driver_id else booking.ride.driver_id
+    _push(user_group_name(other_id), {'type': 'bookings_changed', 'message': 'A price was agreed in chat.'})
+    return Response(_data(request, booking))
 
 
 @extend_schema(tags=TAG, summary='Inbox', responses={200: s.InboxRowSerializer(many=True)},

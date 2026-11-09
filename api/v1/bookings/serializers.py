@@ -64,7 +64,7 @@ class BookRequestSerializer(serializers.Serializer):
 class OfferSerializer(serializers.Serializer):
     id = HashidField(source='pk', read_only=True)
     price_cents = serializers.IntegerField(help_text='Per seat.')
-    status = serializers.CharField(help_text='pending, accepted, declined or countered.')
+    status = serializers.CharField(help_text='pending, accepted or declined (withdrawn by a newer offer).')
     proposed_by_me = serializers.SerializerMethodField()
     created_at = serializers.DateTimeField()
     responded_at = serializers.DateTimeField(allow_null=True)
@@ -75,11 +75,6 @@ class OfferSerializer(serializers.Serializer):
 
 class OfferRequestSerializer(serializers.Serializer):
     price_cents = serializers.IntegerField(help_text='Per seat, 1 to 100000.')
-
-
-class RespondOfferSerializer(serializers.Serializer):
-    action = serializers.ChoiceField(choices=['accept', 'decline', 'counter'])
-    price_cents = serializers.IntegerField(required=False, help_text='For "counter": the new price per seat.')
 
 
 class InboxRideSerializer(serializers.Serializer):

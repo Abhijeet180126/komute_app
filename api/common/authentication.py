@@ -27,6 +27,15 @@ def _session_hash_valid(session, user):
                for fallback in user.get_session_auth_fallback_hash())
 
 
+def user_for_token(token):
+    """(user, session) for a valid login token, else None. Used for API
+    calls and for the app's chat socket."""
+    result = authenticate_by_x_session_token(token)
+    if result is None or not _session_hash_valid(result[1], result[0]):
+        return None
+    return result
+
+
 class SessionTokenAuthentication(XSessionTokenAuthentication):
     """allauth's X-Session-Token authentication, stricter in two ways:
 
@@ -40,8 +49,8 @@ class SessionTokenAuthentication(XSessionTokenAuthentication):
         token = self.get_session_token(request)
         if not token:
             return None
-        result = authenticate_by_x_session_token(token)
-        if result is None or not _session_hash_valid(result[1], result[0]):
+        result = user_for_token(token)
+        if result is None:
             raise AuthenticationFailed('Your session has expired. Please sign in again.',
                                        code='invalid_token')
         return result

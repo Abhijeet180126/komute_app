@@ -11,6 +11,7 @@ from django.core import mail
 from django.test import Client
 from django.utils import timezone
 
+from api.common.fields import decode_hashid
 from api.tests.base import ApiTestCase, auth_client, make_user
 from api.tests.test_rides import KINGSTON, make_driver, make_ride
 from komute.chat_tokens import resolve_chat_token
@@ -183,10 +184,16 @@ class BookingActionTests(BookingTestCase):
 
 
 class OfferTests(BookingTestCase):
+    """The chat page's rules: offer or counter (a new offer), and accept."""
+
     def setUp(self):
         super().setUp()
         self.booking = self.booked(seats=2)
+        RideBooking.objects.update(status=RideBooking.STATUS_CONFIRMED)
         self.offers_url = f"{B}{self.booking['id']}/offers/"
+
+    def accept(self, client, offer):
+        return client.post(f"{O}{offer['id']}/accept/")
 
     def test_negotiate(self):
         response = self.rider_client.post(self.offers_url, {'price_cents': 2000}, format='json')
@@ -196,45 +203,66 @@ class OfferTests(BookingTestCase):
         listed = self.driver_client.get(self.offers_url).json()
         self.assertEqual((listed[0]['id'], listed[0]['proposed_by_me']), (offer['id'], False))
 
-        countered = self.driver_client.post(f"{O}{offer['id']}/respond/",
-                                            {'action': 'counter', 'price_cents': 2200}, format='json')
-        self.assertEqual(countered.status_code, 201)
-        counter = countered.json()
-        self.assertEqual(PriceOffer.objects.get(pk=PriceOffer.objects.order_by('id').first().pk).status, 'countered')
-
-        accepted = self.rider_client.post(f"{O}{counter['id']}/respond/", {'action': 'accept'}, format='json')
-        self.assertEqual(accepted.json()['status'], 'accepted')
+        # A counter is a new offer from the other person.
+        counter = self.driver_client.post(self.offers_url, {'price_cents': 2200}, format='json').json()
+        accepted = self.accept(self.rider_client, counter)
+        self.assertEqual(accepted.status_code, 200, accepted.content)
+        self.assertEqual(accepted.json()['status'], 'confirmed')
         booking = RideBooking.objects.get()
         self.assertEqual(booking.agreed_price_cents, 2200 * 2 + settings.SERVICE_FEE_CENTS)
 
+    def test_a_newer_offer_withdraws_my_old_one(self):
+        old = self.rider_client.post(self.offers_url, {'price_cents': 2000}, format='json').json()
+        self.rider_client.post(self.offers_url, {'price_cents': 1900}, format='json')
+        self.assertEqual(PriceOffer.objects.get(pk=decode_hashid(old['id'])).status, 'declined')
+        self.assertEqual(error(self.accept(self.driver_client, old))['code'], 'offer_stale')
+
     def test_offer_rules(self):
         offer = self.rider_client.post(self.offers_url, {'price_cents': 2000}, format='json').json()
-        response = self.rider_client.post(f"{O}{offer['id']}/respond/", {'action': 'accept'}, format='json')
+        response = self.accept(self.rider_client, offer)
         self.assertEqual((response.status_code, error(response)['code']), (403, 'own_offer'))
-        for price, message in ((0, 'Price must be greater than 0.'), (100001, 'Offer cannot exceed $1,000.')):
+        for price in (0, 100001):
             response = self.rider_client.post(self.offers_url, {'price_cents': price}, format='json')
-            self.assertEqual(error(response)['message'], message)
-        self.driver_client.post(f"{O}{offer['id']}/respond/", {'action': 'decline'}, format='json')
-        self.assertEqual(error(self.driver_client.post(f"{O}{offer['id']}/respond/", {'action': 'accept'},
-                                                       format='json'))['code'], 'not_pending')
+            self.assertEqual(error(response), {'code': 'bad_price', 'fields': {},
+                                               'message': 'Offers must be between $0.01 and $1,000 a seat.'})
         stranger = auth_client(make_user('x@example.com'))
         self.assertEqual(stranger.get(self.offers_url).status_code, 404)
-        self.assertEqual(stranger.post(f"{O}{offer['id']}/respond/", {'action': 'accept'},
-                                       format='json').status_code, 404)
+        self.assertEqual(self.accept(stranger, offer).status_code, 404)
 
-    def test_no_negotiation_on_a_draft(self):
-        draft = self.booked(client=auth_client(make_user('chat@example.com')), intent='chat')
-        response = auth_client(make_user('chat2@example.com'))  # not part of it
-        self.assertEqual(response.get(f"{B}{draft['id']}/offers/").status_code, 404)
-        client = auth_client(type(self.rider).objects.get(email='chat@example.com'))
-        self.assertEqual(error(client.post(f"{B}{draft['id']}/offers/", {'price_cents': 1000},
-                                           format='json'))['code'], 'negotiation_closed')
+    def test_locked_while_a_request_waits_for_the_driver(self):
+        RideBooking.objects.update(status=RideBooking.STATUS_REQUESTED)
+        response = self.rider_client.post(self.offers_url, {'price_cents': 2000}, format='json')
+        self.assertEqual(error(response), {
+            'code': 'nego_locked', 'fields': {},
+            'message': 'Price negotiation opens once the driver accepts the booking request.'})
+        offer = PriceOffer.objects.create(booking=RideBooking.objects.get(), proposed_by=self.driver,
+                                          price_cents=2000)
+        response = self.rider_client.post(f'{O}{encode_id(offer.pk)}/accept/')
+        self.assertEqual(error(response)['code'], 'nego_locked')
+
+    def test_blocked(self):
+        UserBlock.objects.create(blocker=self.driver, blocked=self.rider)
+        response = self.rider_client.post(self.offers_url, {'price_cents': 2000}, format='json')
+        self.assertEqual((response.status_code, error(response)['code']), (403, 'blocked'))
+
+    def test_agreeing_in_a_pre_request_chat_confirms_the_booking(self):
+        chatter = make_user('chat@example.com')
+        client = auth_client(chatter)
+        draft = self.booked(client=client, intent='chat', seats=1)
+        self.ride.refresh_from_db()
+        seats_before = self.ride.seats_available
+        offer = self.driver_client.post(f"{B}{draft['id']}/offers/", {'price_cents': 1800}, format='json').json()
+        mail.outbox.clear()
+        self.assertEqual(self.accept(client, offer).json()['status'], 'confirmed')
+        self.ride.refresh_from_db()
+        self.assertEqual(self.ride.seats_available, seats_before - 1)
+        self.assertEqual(sorted(m.to[0] for m in mail.outbox), ['chat@example.com', 'driver@example.com'])
 
 
 class InboxTests(BookingTestCase):
     def test_inboxes(self):
         booking = self.booked()
-        self.rider_client.post(f"{B}{booking['id']}/offers/", {'price_cents': 2000}, format='json')
+        PriceOffer.objects.create(booking=RideBooking.objects.get(), proposed_by=self.rider, price_cents=2000)
         Message.objects.create(ride=self.ride, sender=self.rider, receiver=self.driver, body='Hi!')
         # A pre-request chat with nothing in it stays out of the driver's inbox.
         self.booked(client=auth_client(make_user('quiet@example.com')), intent='chat')
