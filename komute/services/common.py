@@ -17,6 +17,16 @@ def norm_code(value):
 
 UNNAMED_USER = 'Komüte user'
 
+# Shown when booking, posting or accepting an invite needs these first.
+EMAIL_UNVERIFIED_MSG = (
+    "Please verify your email address first: click \"Verify Now\" next to "
+    "your email on your profile page."
+)
+DOB_MISSING_MSG = (
+    "Please add your date of birth on your profile page first. "
+    "KOMUTE is for adults aged 18 and over."
+)
+
 
 def display_name(user):
     """How another person is named on pages and in emails: their name, never

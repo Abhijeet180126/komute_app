@@ -1,9 +1,6 @@
 import base64
-import calendar
-import io
 import json
 import logging
-import math
 import re
 import uuid
 from datetime import date, datetime, timedelta
@@ -22,8 +19,8 @@ from django.contrib.auth import get_user_model, login, logout, update_session_au
 from django.core.validators import validate_email
 from django.core.exceptions import ValidationError
 from django.db import transaction
-from django.db.models import Avg, Count, F, Q, Sum
-from django.db.models.functions import ExtractHour, Least
+from django.db.models import Avg, Count, F, Q
+from django.db.models.functions import Least
 from django.utils import timezone
 from django.core.paginator import Paginator
 from django.views.decorators.cache import never_cache
@@ -38,14 +35,13 @@ from django.template.loader import render_to_string
 from django.urls import Resolver404, resolve, reverse
 
 from .client_ip import client_ip as _client_ip
-from .models import Rides, RideStop, Vehicle, RideBooking, PriceOffer, Message, RideSearch, VerificationLog, Review, RideInvite, UserBlock, UserReport, BiometricConsent, LegalAcceptance, EmailLog
+from .models import Rides, RideStop, Vehicle, RideBooking, PriceOffer, Message, VerificationLog, Review, RideInvite, UserBlock, UserReport, BiometricConsent, LegalAcceptance, EmailLog
 from .middleware import LegalAcceptanceMiddleware, legal_versions_key
 from .hashid_utils import encode_id, decode_id
 from .notifications import booking_fingerprint, notify_bookings_changed
 from .tasks import send_later
 from . import private_media
 from .private_media import delete_stored_file, open_stored_file, save_private_image
-from .service_area import in_quebec
 # Account logic shared with the mobile app API (docs/api-modular-breakup.md,
 # module 1). The old private names below are kept as aliases; some are only
 # used by komute.social and the tests.
@@ -72,6 +68,33 @@ from .services.common import (
 from .services import profiles, vehicles as vehicle_rules
 from .services.images import resize_image as _resize_image
 from .services.profiles import split_phone as _split_phone
+# Rides (module 3).
+from .services.booking_status import (  # noqa: F401  (BLOCKED_CHAT_MESSAGE: tests)
+    BLOCKED_CHAT_MESSAGE,
+    chat_status as _chat_status,
+    notify_booking_status as _notify_booking_status,
+)
+from .services.geo import (  # noqa: F401  (_haversine_km, _geo_box_q, _max_ride_date: tests)
+    geo_box_q as _geo_box_q,
+    haversine_km as _haversine_km,
+    max_ride_date as _max_ride_date,
+    zone_or_utc as _zone_or_utc,
+)
+from .services import rides as ride_rules
+from .services.receipts import build_receipt_pdf
+from .services import invites, route_demand
+from .services.invites import (  # noqa: F401  (_make_invite_token: tests)
+    make_invite_token as _make_invite_token,
+    resolve_invite_token as _resolve_invite_token,
+)
+from .services.rides import (  # noqa: F401  (RIDE_PREFERENCE_OPTIONS: tests)
+    GENDER_PREF_MSG as _GENDER_PREF_MSG,
+    MAX_TZ_OFFSET_MINUTES as _MAX_TZ_OFFSET_MINUTES,
+    RIDE_PREFERENCE_OPTIONS,
+    fmt_ride_local as _fmt_ride_local,
+    gender_pref_allows as _gender_pref_allows,
+    parse_duration_seconds as _parse_duration_seconds,
+)
 
 User = get_user_model()
 logger = logging.getLogger(__name__)
@@ -118,53 +141,6 @@ def _rate_limited(request, name, extra_key='', per_ip=True):
 
 
 _TOO_MANY_ATTEMPTS_MSG = "Too many attempts. Please try again later."
-
-
-def _fmt_ride_local(ride):
-    """Return depart_at formatted in the timezone the driver used when posting.
-    Falls back to UTC if no tz is stored on the ride."""
-    if ride.tz:
-        try:
-            from zoneinfo import ZoneInfo
-            local = ride.depart_at.astimezone(ZoneInfo(ride.tz))
-            tzname = local.tzname() or ''
-            fmt = local.strftime('%A, %B %d, %Y at %I:%M %p') + (f' {tzname}' if tzname else '')
-            return fmt.replace(' 0', ' ')
-        except Exception:
-            pass
-    return ride.depart_at.strftime('%A, %B %d, %Y at %I:%M %p UTC')
-
-
-def _local_dt(ride, dt):
-    """Convert a UTC datetime to the ride's stored timezone. Returns naive UTC on failure."""
-    if ride.tz and dt:
-        try:
-            from zoneinfo import ZoneInfo
-            return dt.astimezone(ZoneInfo(ride.tz))
-        except Exception:
-            pass
-    return dt
-
-
-def _zone_or_utc(name):
-    """ZoneInfo for an IANA timezone name sent by the browser (the `tz` form
-    field); UTC when it's missing or not a known zone."""
-    from zoneinfo import ZoneInfo
-    if name:
-        try:
-            return ZoneInfo(name)
-        except (ValueError, KeyError):   # ZoneInfoNotFoundError is a KeyError
-            pass
-    return ZoneInfo('UTC')
-
-
-def _local_day_bounds(day, tz):
-    """[start, end) of calendar day `day` in `tz`, as aware datetimes, for
-    filtering a DateTimeField. `depart_at__date` would use the UTC date, which
-    puts a Toronto ride at 8 pm on the next day (ISSUES.md H5)."""
-    start = datetime.combine(day, datetime.min.time(), tzinfo=tz)
-    end = datetime.combine(day + timedelta(days=1), datetime.min.time(), tzinfo=tz)
-    return start, end
 
 
 def _send_booking_confirmation_emails(booking):
@@ -330,152 +306,12 @@ def _send_booking_rejected_email(booking):
         logger.exception('_send_booking_rejected_email could not build or queue an email')
 
 
-def _send_ride_cancelled_emails(ride, affected_bookings):
-    """Driver cancelled the whole ride — notify every affected passenger."""
-    try:
-        driver         = ride.driver
-        depart_display = _fmt_ride_local(ride)
-
-        for booking in affected_bookings:
-            try:
-                rider = booking.passenger
-                ctx   = {
-                    'rider_name':     (rider.full_name  or rider.email).title(),
-                    'driver_name':    _display_name(driver),
-                    'origin':         ride.origin,
-                    'destination':    ride.destination,
-                    'depart_display': depart_display,
-                    'seats':          booking.seats,
-                }
-                html = render_to_string('account/email/ride_cancelled_rider.html', ctx)
-                msg  = EmailMultiAlternatives(
-                    subject=f"Your ride to {ride.destination.split(',')[0].strip()} has been cancelled",
-                    body=f"Hi {ctx['rider_name']}, your ride with {ctx['driver_name']} on {depart_display} has been cancelled.",
-                    from_email=settings.DEFAULT_FROM_EMAIL,
-                    to=[rider.mail_to],
-                    reply_to=[settings.REPLY_TO_EMAIL_RIDE_CANCELLED],
-                )
-                msg.attach_alternative(html, 'text/html')
-                send_later(msg, EmailLog.KIND_RIDE_CANCELLED, rider)
-            except Exception:
-                logger.exception('_send_ride_cancelled_emails could not build or queue an email')
-    except Exception:
-        logger.exception('_send_ride_cancelled_emails could not build or queue an email')
-
-
-_EMAIL_UNVERIFIED_MSG = (
-    "Please verify your email address first: click \"Verify Now\" next to "
-    "your email on your profile page."
-)
-
-_DOB_MISSING_MSG = (
-    "Please add your date of birth on your profile page first. "
-    "KOMUTE is for adults aged 18 and over."
-)
-
-
-# Service area gate: rides can only be posted/searched with an origin and
-# destination inside the US or Canada. Two boxes because Hawaii sits well
-# outside the CONUS+Canada+Alaska box and would otherwise be excluded.
-_US_CANADA_BBOX = (-168.0, 24.0, -52.0, 72.0)   # (min_lon, min_lat, max_lon, max_lat)
-_HAWAII_BBOX    = (-161.0, 18.0, -154.0, 23.0)
-
-
-def _in_us_canada(lat, lng):
-    for min_lon, min_lat, max_lon, max_lat in (_US_CANADA_BBOX, _HAWAII_BBOX):
-        if min_lat <= lat <= max_lat and min_lon <= lng <= max_lon:
-            return True
-    return False
-
-
-def _service_area_error(lat, lng, kind):
-    """Why a picked point can't be used, or None. `kind` names it in the
-    message: "pickup", "drop-off" or "stop". Quebec is left out at launch
-    (audit P-11, see service_area.py)."""
-    if not _in_us_canada(lat, lng):
-        return f"We currently only support {kind} locations in the US and Canada."
-    if in_quebec(lat, lng):
-        return f"Komüte isn't available in Quebec yet. Please choose a {kind} location outside Quebec."
-    return None
+from .services.common import DOB_MISSING_MSG as _DOB_MISSING_MSG, EMAIL_UNVERIFIED_MSG as _EMAIL_UNVERIFIED_MSG
 
 
 def _clean_stops(post):
-    """The ride form's named stops, each with the coordinates of the
-    suggestion the driver picked. Returns (stops, error): stops is a list of
-    dicts with the stop's form index, location, lat and lng; error is a
-    message for the first stop that wasn't picked or is out of area. A typed
-    but unpicked stop used to be saved at 0,0 and never matched a search
-    (ISSUES.md M2)."""
-    lats = post.getlist('stop_lat')
-    lngs = post.getlist('stop_lng')
-    stops = []
-    for idx, loc in enumerate(post.getlist('stop_location')):
-        loc = loc.strip()
-        if not loc:
-            continue
-        try:
-            lat, lng = float(lats[idx]), float(lngs[idx])
-        except (IndexError, ValueError, TypeError):
-            lat = lng = 0.0
-        if lat == 0 and lng == 0:
-            return stops, f'Pick "{loc}" from the suggestions list, or remove that stop.'
-        if not _in_us_canada(lat, lng):
-            return stops, f'"{loc}" is outside the US and Canada. We currently only support stops there.'
-        if in_quebec(lat, lng):
-            return stops, f'"{loc}" is in Quebec. Komüte isn\'t available in Quebec yet, so please choose a stop outside Quebec.'
-        stops.append({'idx': idx, 'location': loc, 'lat': lat, 'lng': lng})
-    return stops, None
-
-
-_MAX_RIDE_LEAD_MONTHS = 4
-
-
-def _max_ride_date(today=None):
-    """Today + 4 calendar months (day clamped to the target month's length),
-    the furthest-out a ride can be posted or searched for. Pass `today` to
-    count from a user's local date instead of the server's."""
-    today = today or date.today()
-    m = today.month - 1 + _MAX_RIDE_LEAD_MONTHS
-    y = today.year + m // 12
-    m = m % 12 + 1
-    day = min(today.day, calendar.monthrange(y, m)[1])
-    return today.replace(year=y, month=m, day=day)
-
-
-# Bounds on numbers posted by forms and scripts (audit L-10): without them
-# "inf" or a huge value raised OverflowError (a 500) in float/timedelta maths
-# or overflowed the database's integer columns.
-_MAX_PRICE_CENTS = 100_000                 # $1,000 a seat, the price-offer cap too
-_MAX_DURATION_SECONDS = 7 * 24 * 3600      # longer than any US/Canada drive
-_MAX_TZ_OFFSET_MINUTES = 14 * 60           # real UTC offsets run -12:00..+14:00
-
-# Ride preference tags, in the order post-ride.html shows them. Edit Ride
-# uses this list and search filters match these exact names, so keep all
-# three in step (RidePreferenceOptionsTests checks post-ride.html).
-RIDE_PREFERENCE_OPTIONS = [
-    'Music OK', 'Chatty Driver', 'Quiet Ride', 'Pet Friendly', 'No Smoking',
-    'Luggage OK', 'Verified Only', 'On-Time Driver', 'Winter Tires',
-    'Flexible with Time',
-]
-
-
-def _parse_dollars_to_cents(value):
-    """Dollar string → whole cents. Raises ValueError for text, NaN or
-    infinity; the caller checks the range."""
-    amount = float(value)
-    if not math.isfinite(amount):
-        raise ValueError('price must be a finite number')
-    return int(round(amount * 100))
-
-
-def _parse_duration_seconds(value):
-    """The route duration a page script posts, or 0 (unknown) when it's
-    missing, malformed or out of range."""
-    try:
-        seconds = int(value or 0)
-    except (ValueError, TypeError):
-        return 0
-    return seconds if 0 < seconds <= _MAX_DURATION_SECONDS else 0
+    """The form's stops, checked by komute.services.rides.clean_stops."""
+    return ride_rules.clean_stops(post.getlist('stop_location'), post.getlist('stop_lat'), post.getlist('stop_lng'))
 
 
 def _vehicle_rows_error(post):
@@ -534,32 +370,6 @@ def _dropdown_countries():
     priority = [{"name": "United States / Canada", "dial_code": "+1", "iso2": "US"}]
     others = [c for c in codes if c["name"] not in _PRIORITY_COUNTRY_NAMES]
     return priority, others
-
-
-def _haversine_km(lat1, lng1, lat2, lng2):
-    R = 6371.0
-    dlat = math.radians(lat2 - lat1)
-    dlng = math.radians(lng2 - lng1)
-    a = (math.sin(dlat / 2) ** 2
-         + math.cos(math.radians(lat1)) * math.cos(math.radians(lat2))
-         * math.sin(dlng / 2) ** 2)
-    return R * 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
-
-
-def _geo_box_q(lat, lng, radius_km, lat_field, lng_field):
-    """Q for the lat/lng box around a circle of radius_km, so SQL can drop
-    far-away rows before _haversine_km checks the rest (audit F-2). The box
-    holds the whole circle, so it never drops a row the haversine test would
-    keep. The longitude half-width is the exact one, asin(sin(r/R)/cos(lat)),
-    not the smaller r/(R*cos(lat))."""
-    ang = radius_km / 6371.0
-    dlat = math.degrees(ang)
-    q = Q(**{f"{lat_field}__gte": lat - dlat, f"{lat_field}__lte": lat + dlat})
-    ratio = math.sin(ang) / max(math.cos(math.radians(lat)), 1e-12)
-    if ratio < 1:  # otherwise the circle reaches a pole: any longitude
-        dlng = math.degrees(math.asin(ratio))
-        q &= Q(**{f"{lng_field}__gte": lng - dlng, f"{lng_field}__lte": lng + dlng})
-    return q
 
 
 upload_logger = logging.getLogger("komute.uploads")
@@ -930,28 +740,11 @@ def post_ride_view(request):
     if not user:
         return redirect("login")
 
-    if user.role != "driver":
-        messages.error(request, "Only drivers can post rides.")
-        return redirect("profile")
-
-    # Ride emails go to this address (audit S-10).
-    if not user.email_verified:
-        messages.error(request, _EMAIL_UNVERIFIED_MSG)
-        return redirect("profile")
-
-    if not user.dob:
-        messages.error(request, "Please add your date of birth in your profile before posting a ride.")
-        return redirect("profile")
-
-    if not user.driver_verification_current:
-        if user.driver_verified:
-            messages.error(request, "Your identity verification has expired. Please re-verify to post a ride.")
-        else:
-            messages.error(request, "You must be verified to post a ride.")
-        return redirect("profile")
-
-    if not user.vehicles.filter(vehicle_verified=True).exists():
-        messages.error(request, "You need at least one verified vehicle to post a ride.")
+    # Driver, verified email, date of birth, current verification, a
+    # verified vehicle (in that order).
+    reason = ride_rules.post_ride_block_reason(user)
+    if reason:
+        messages.error(request, reason)
         return redirect("profile")
 
     vehicles = user.vehicles.all()
@@ -1026,18 +819,11 @@ def post_ride_view(request):
         # 0,0 means the hidden lat/lng were never filled, i.e. the driver typed
         # a place but didn't pick one of the suggestions -- telling them it's
         # outside the US/Canada would send them looking for the wrong problem.
-        if not origin:
-            errors["origin"] = "Starting point is required."
-        elif origin_lat == 0 and origin_lng == 0:
-            errors["origin"] = "Please pick a location from the suggestions."
-        elif area_error := _service_area_error(origin_lat, origin_lng, "pickup"):
-            errors["origin"] = area_error
-        if not destination:
-            errors["destination"] = "Final destination is required."
-        elif dest_lat == 0 and dest_lng == 0:
-            errors["destination"] = "Please pick a location from the suggestions."
-        elif area_error := _service_area_error(dest_lat, dest_lng, "drop-off"):
-            errors["destination"] = area_error
+        if error := ride_rules.endpoint_error(origin, origin_lat, origin_lng, "pickup", "Starting point is required."):
+            errors["origin"] = error
+        if error := ride_rules.endpoint_error(destination, dest_lat, dest_lng, "drop-off",
+                                         "Final destination is required."):
+            errors["destination"] = error
         clean_stops, stops_error = _clean_stops(request.POST)
         if stops_error:
             errors["stops"] = stops_error
@@ -1048,29 +834,13 @@ def post_ride_view(request):
         if not vehicle_id:
             errors["vehicle"] = "Please select a vehicle."
 
-        seats = None
-        if seats_str:
-            try:
-                seats = int(seats_str)
-                if seats < 1 or seats > 8:
-                    errors["seats"] = "Seats must be between 1 and 8."
-            except ValueError:
-                errors["seats"] = "Invalid seat count."
-        else:
-            errors["seats"] = "Seat count is required."
+        seats, error = ride_rules.seats_error(seats_str)
+        if error:
+            errors["seats"] = error
 
-        price_cents = 0
-        if not price_str:
-            errors["price"] = "Price per seat is required."
-        else:
-            try:
-                price_cents = _parse_dollars_to_cents(price_str)
-                if price_cents <= 0:
-                    errors["price"] = "Price per seat must be greater than 0."
-                elif price_cents > _MAX_PRICE_CENTS:
-                    errors["price"] = "Price per seat cannot exceed $1,000."
-            except ValueError:
-                errors["price"] = "Invalid price."
+        price_cents, error = ride_rules.price_error(price_str, ride_rules.POST_PRICE_ZERO_MSG)
+        if error:
+            errors["price"] = error
 
         depart_at = None
         depart_utc_str = request.POST.get('depart_utc', '').strip()
@@ -1080,10 +850,8 @@ def post_ride_view(request):
                 if timezone.is_naive(depart_at):
                     from datetime import timezone as _utc
                     depart_at = depart_at.replace(tzinfo=_utc.utc)
-                if depart_at < timezone.now() + timedelta(minutes=30):
-                    errors["depart_time"] = "Departure must be at least 30 minutes from now."
-                elif depart_at.date() > _max_ride_date():
-                    errors["date"] = "Rides can only be posted up to 4 months in advance."
+                if bad := ride_rules.departure_error(depart_at, ride_rules.POST_TOO_FAR_MSG):
+                    errors[bad[0]] = bad[1]
             except ValueError:
                 errors["depart_time"] = "Invalid departure date or time."
         elif date_str and time_str and "date" not in errors and "depart_time" not in errors:
@@ -1091,10 +859,8 @@ def post_ride_view(request):
                 # No depart_utc (script didn't run): the form's date and time
                 # are the driver's local ones.
                 depart_at = timezone.make_aware(datetime.fromisoformat(f"{date_str}T{time_str}"), driver_tz)
-                if depart_at < timezone.now() + timedelta(minutes=30):
-                    errors["depart_time"] = "Departure must be at least 30 minutes from now."
-                elif depart_at.date() > _max_ride_date():
-                    errors["date"] = "Rides can only be posted up to 4 months in advance."
+                if bad := ride_rules.departure_error(depart_at, ride_rules.POST_TOO_FAR_MSG):
+                    errors[bad[0]] = bad[1]
             except ValueError:
                 errors["depart_time"] = "Invalid departure date or time."
 
@@ -1110,80 +876,20 @@ def post_ride_view(request):
         recurring_end = None
         recurring_days = []
         if is_recurring:
-            if not recurring_end_str:
-                errors["recurring_end_date"] = "End date is required for recurring rides."
-            else:
-                try:
-                    recurring_end = date.fromisoformat(recurring_end_str)
-                    if depart_at and recurring_end <= depart_at.astimezone(driver_tz).date():
-                        errors["recurring_end_date"] = "End date must be after the departure date."
-                    # Same 4-month limit as a single ride (audit D-8). One ride
-                    # row per matching day is created below, so this also
-                    # stops a one-request database flood.
-                    elif recurring_end > _max_ride_date():
-                        errors["recurring_end_date"] = "Recurring rides can repeat up to 4 months in advance."
-                except ValueError:
-                    errors["recurring_end_date"] = "Invalid end date."
-
-            if recurring_days_str:
-                try:
-                    recurring_days = [int(d) for d in recurring_days_str.split(",") if d.strip()]
-                except ValueError:
-                    pass
-            if not recurring_days:
-                errors["recurring_days"] = "Select at least one day of the week."
+            recurring_errs, recurring_end, recurring_days = ride_rules.recurring_errors(
+                recurring_end_str, recurring_days_str, depart_at, driver_tz)
+            errors.update(recurring_errs)
 
         if not errors:
             duration_seconds = _parse_duration_seconds(request.POST.get("duration_seconds"))
 
-            def _create_ride(depart_dt, group_id=None):
-                arrive_dt = depart_dt + timedelta(seconds=duration_seconds) if duration_seconds > 0 else None
-                ride = Rides.objects.create(
-                    driver=user,
-                    vehicle=vehicle,
-                    origin=origin,
-                    origin_lat=origin_lat,
-                    origin_lng=origin_lng,
-                    destination=destination,
-                    dest_lat=dest_lat,
-                    dest_lng=dest_lng,
-                    depart_at=depart_dt,
-                    arrive_at=arrive_dt,
-                    seats_total=seats,
-                    seats_available=seats,
-                    price_cents=price_cents,
-                    passenger_gender_pref=passenger_gender_pref,
-                    notes=notes or None,
-                    preferences_json=preferences_json or None,
-                    recurring_group_id=group_id,
-                    tz=tz_name,
-                    expected_duration_seconds=duration_seconds if duration_seconds > 0 else None,
-                )
-                for stop in clean_stops:
-                    RideStop.objects.create(
-                        ride=ride, stop_order=stop['idx'] + 1,
-                        location=stop['location'], lat=stop['lat'], lng=stop['lng'],
-                    )
-                return ride
-
-            if is_recurring:
-                # Weekdays and the clock time are the driver's local ones
-                # (ISSUES.md H5): in UTC an 8 pm Toronto ride lands on the
-                # next weekday, and DST would shift it by an hour.
-                group_id = str(uuid.uuid4())
-                local_depart = depart_at.astimezone(driver_tz)
-                current = local_depart.date()
-                ride_time = local_depart.time().replace(tzinfo=None)
-                first_ride = None
-                while current <= recurring_end:
-                    if current.weekday() in recurring_days:
-                        dt = datetime.combine(current, ride_time, tzinfo=driver_tz)
-                        r = _create_ride(dt, group_id)
-                        if first_ride is None:
-                            first_ride = r
-                    current += timedelta(days=1)
-            else:
-                first_ride = _create_ride(depart_at)
+            first_ride = ride_rules.create_rides(
+                user, vehicle=vehicle, origin=origin, origin_lat=origin_lat, origin_lng=origin_lng,
+                destination=destination, dest_lat=dest_lat, dest_lng=dest_lng, depart_at=depart_at,
+                seats=seats, price_cents=price_cents, passenger_gender_pref=passenger_gender_pref,
+                notes=notes, preferences_json=preferences_json, tz_name=tz_name, driver_tz=driver_tz,
+                duration_seconds=duration_seconds, stops=clean_stops,
+                recurring_end=recurring_end if is_recurring else None, recurring_days=recurring_days)
 
             return redirect("ride-success", ride_id=encode_id(first_ride.id))
 
@@ -1236,17 +942,8 @@ def search_rides_view(request):
     errors = {}
 
     if parsed_search_date:
-        if parsed_search_date < rider_today:
-            errors['date'] = 'Search date cannot be in the past.'
-        elif parsed_search_date > _max_ride_date(rider_today):
-            errors['date'] = 'You can only search up to 4 months ahead.'
-
-    _TIME_SLOT_HOURS = {
-        'early_morning': (5, 8),
-        'morning':       (8, 12),
-        'afternoon':     (12, 17),
-        'evening':       (17, 21),
-    }
+        if date_error := ride_rules.search_date_error(parsed_search_date, rider_today):
+            errors['date'] = date_error
 
     if search_performed:
         try:
@@ -1257,112 +954,15 @@ def search_rides_view(request):
         except (ValueError, TypeError):
             s_origin_lat = s_origin_lng = s_dest_lat = s_dest_lng = 0.0
 
-        if search_from and (s_origin_lat or s_origin_lng):
-            if area_error := _service_area_error(s_origin_lat, s_origin_lng, 'pickup'):
-                errors['from'] = area_error
-        if search_to and (s_dest_lat or s_dest_lng):
-            if area_error := _service_area_error(s_dest_lat, s_dest_lng, 'drop-off'):
-                errors['to'] = area_error
+        errors.update(ride_rules.search_area_errors(
+            search_from, search_to, s_origin_lat, s_origin_lng, s_dest_lat, s_dest_lng))
 
     if search_performed and not errors:
-        if parsed_search_date:
-            try:
-                RideSearch.objects.create(
-                    user=request.user if request.user.is_authenticated else None,
-                    origin=search_from,
-                    origin_lat=s_origin_lat,
-                    origin_lng=s_origin_lng,
-                    destination=search_to,
-                    dest_lat=s_dest_lat,
-                    dest_lng=s_dest_lng,
-                    search_date=parsed_search_date,
-                    passenger_count=seats_needed or 1,
-                )
-            except (ValueError, TypeError):
-                pass
-
-        qs = (
-            Rides.objects
-            .filter(status__in=['posted', 'full'], depart_at__gte=timezone.now())
-            # Blocked either way: neither sees the other's rides (ISSUES.md A1).
-            .exclude(driver_id__in=UserBlock.objects.hidden_ids(request.user.id))
-            .select_related('driver', 'vehicle')
-            .prefetch_related('stops')
-            .order_by('depart_at')
-        )
-
-        # Filter out gender-restricted rides that don't match the rider's gender
-        user_gender = request.user.gender or ''
-        if user_gender == 'female':
-            qs = qs.exclude(passenger_gender_pref='men_only')
-        elif user_gender == 'male':
-            qs = qs.exclude(passenger_gender_pref='women_only')
-        else:
-            qs = qs.filter(passenger_gender_pref='any')
-
-        # Coordinate-based proximity search (falls back to text if no coords)
-        use_origin_coords = bool(s_origin_lat and s_origin_lng)
-        use_dest_coords   = bool(s_dest_lat and s_dest_lng)
-
-        if search_from and not use_origin_coords:
-            qs = qs.filter(
-                Q(origin__icontains=search_from) | Q(stops__location__icontains=search_from)
-            ).distinct()
-        if search_to and not use_dest_coords:
-            qs = qs.filter(
-                Q(destination__icontains=search_to) | Q(stops__location__icontains=search_to)
-            ).distinct()
-
-        if parsed_search_date:
-            day_start, day_end = _local_day_bounds(parsed_search_date, rider_tz)
-            qs = qs.filter(depart_at__gte=day_start, depart_at__lt=day_end)
-
-        if seats_needed:
-            qs = qs.filter(seats_available__gte=seats_needed)
-        # Clamped like seats_needed: no ride costs over $1,000 a seat.
-        if filter_max_price:
-            try:
-                max_cents = _parse_dollars_to_cents(filter_max_price)
-                qs = qs.filter(price_cents__lte=min(max(max_cents, 0), _MAX_PRICE_CENTS))
-            except ValueError:
-                pass
-        if filter_time_slot in _TIME_SLOT_HOURS:
-            start_h, end_h = _TIME_SLOT_HOURS[filter_time_slot]
-            qs = (qs.annotate(local_hour=ExtractHour('depart_at', tzinfo=rider_tz))
-                    .filter(local_hour__gte=start_h, local_hour__lt=end_h))
-        if filter_preference:
-            qs = qs.filter(preferences_json__icontains=filter_preference)
-
-        # Proximity: the SQL box drops far-away rides (audit F-2), then the
-        # haversine test below keeps those within the radius of the ride's
-        # endpoint or one of its stops.
-        radius = settings.SEARCH_RADIUS_KM
-        if use_origin_coords:
-            qs = qs.filter(
-                _geo_box_q(s_origin_lat, s_origin_lng, radius, 'origin_lat', 'origin_lng')
-                | _geo_box_q(s_origin_lat, s_origin_lng, radius, 'stops__lat', 'stops__lng')
-            ).distinct()
-        if use_dest_coords:
-            qs = qs.filter(
-                _geo_box_q(s_dest_lat, s_dest_lng, radius, 'dest_lat', 'dest_lng')
-                | _geo_box_q(s_dest_lat, s_dest_lng, radius, 'stops__lat', 'stops__lng')
-            ).distinct()
-
-        def _near(lat, lng, ride_lat, ride_lng, stops):
-            return (_haversine_km(lat, lng, ride_lat, ride_lng) <= radius
-                    or any(_haversine_km(lat, lng, st.lat, st.lng) <= radius for st in stops))
-
-        if use_origin_coords or use_dest_coords:
-            rides = [
-                ride for ride in qs
-                if (not use_origin_coords or _near(s_origin_lat, s_origin_lng,
-                                                   ride.origin_lat, ride.origin_lng, ride.stops.all()))
-                and (not use_dest_coords or _near(s_dest_lat, s_dest_lng,
-                                                  ride.dest_lat, ride.dest_lng, ride.stops.all()))
-            ]
-        else:
-            rides = qs
-
+        rides = ride_rules.search_rides(
+            request.user, search_from=search_from, search_to=search_to, parsed_date=parsed_search_date,
+            rider_tz=rider_tz, seats_needed=seats_needed, max_price_str=filter_max_price,
+            time_slot=filter_time_slot, preference=filter_preference,
+            origin_lat=s_origin_lat, origin_lng=s_origin_lng, dest_lat=s_dest_lat, dest_lng=s_dest_lng)
     else:
         rides = []
 
@@ -1387,7 +987,7 @@ def search_rides_view(request):
         if ride.preferences_json:
             prefs = ride.preferences_json if isinstance(ride.preferences_json, list) else []
 
-        v = ride.vehicle
+        vehicle = ride_rules.vehicle_card(ride.vehicle)
         rides_data.append({
             'id':                  encode_id(ride.id),
             'origin':              ride.origin,
@@ -1404,9 +1004,9 @@ def search_rides_view(request):
             'driver_rating':       round(rating, 1),
             'driver_rating_count': rating_count,
             'driver_rating_stars': rating_stars,
-            'vehicle_color':       v.color or 'silver',
-            'vehicle_display':     f"{v.year} {v.make} {v.model}",
-            'vehicle_plate':       v.plate,
+            'vehicle_color':       vehicle['color'],
+            'vehicle_display':     vehicle['display'],
+            'vehicle_plate':       vehicle['plate'],
         })
 
     page_obj.object_list = rides_data
@@ -1433,20 +1033,6 @@ def about_view(request):
 
 def how_it_works_view(request):
     return render(request, "how-it-works.html")
-
-
-def _gender_pref_allows(ride, user):
-    """Whether `user` may join `ride` under its passenger gender preference.
-    Same rule as the search filter in search_rides_view, which only hides
-    the ride; booking and invites check it here (audit L-8)."""
-    if ride.passenger_gender_pref == 'women_only':
-        return user.gender == 'female'
-    if ride.passenger_gender_pref == 'men_only':
-        return user.gender == 'male'
-    return True
-
-
-_GENDER_PREF_MSG = "This ride is limited to passengers of a different gender."
 
 
 @login_required
@@ -1605,8 +1191,8 @@ def create_ride_booking(request, ride_id):
         'driver_phone':        '',
         'driver_gender':       driver.get_gender_display() if driver.gender else '',
         'vehicle':             v,
-        'vehicle_color':       v.color or 'silver',
-        'vehicle_plate':       v.plate,
+        'vehicle_color':       ride_rules.vehicle_card(v)['color'],
+        'vehicle_plate':       ride_rules.vehicle_card(v)['plate'],
     }
 
     from .chat_tokens import make_chat_token
@@ -1629,69 +1215,6 @@ def create_ride_booking(request, ride_id):
         'existing_chat_token':     existing_chat_token,
         'existing_booking_status': existing_booking_status,
     })
-
-
-BLOCKED_CHAT_MESSAGE = "You can't message this user."
-
-
-def _chat_status(booking):
-    """Header badge and lock state of a booking's chat page. Shared by
-    chat_view and the live booking_status event (ISSUES.md H3), so a page
-    updated over the socket matches a freshly loaded one."""
-    ride_status = booking.ride.status
-    closed_message = ''
-    if booking.status == RideBooking.STATUS_CANCELLED:
-        label, status_class = 'Cancelled', 'cancelled'
-        closed_message = 'Booking was cancelled — messaging is closed.'
-    elif booking.status == RideBooking.STATUS_REJECTED:
-        label, status_class = 'Declined', 'cancelled'
-        closed_message = 'Booking request was declined — messaging is closed.'
-    elif booking.status == RideBooking.STATUS_COMPLETED or ride_status == 'completed':
-        label, status_class = 'Completed', 'completed'
-        closed_message = 'Ride completed — messaging is closed.'
-    elif ride_status == 'cancelled':
-        label, status_class = 'Ride Cancelled', 'cancelled'
-        closed_message = 'Ride was cancelled — messaging is closed.'
-    elif booking.status == RideBooking.STATUS_CONFIRMED:
-        label, status_class = 'Confirmed', 'active'
-    elif booking.status == RideBooking.STATUS_DRAFT:
-        label, status_class = 'Negotiating', 'active'
-    else:
-        label, status_class = 'Pending', 'pending'
-    # A block in either direction closes the chat (ISSUES.md A1). The badge
-    # keeps the booking's own status: the booking itself is left alone.
-    blocked = UserBlock.objects.between(booking.ride.driver_id, booking.passenger_id)
-    if blocked and not closed_message:
-        closed_message = BLOCKED_CHAT_MESSAGE
-    agreed_price = None
-    if booking.status in (RideBooking.STATUS_CONFIRMED, RideBooking.STATUS_COMPLETED) and booking.agreed_price_cents:
-        agreed_price = booking.agreed_price_cents // 100
-    return {
-        'agreed_price':   agreed_price,
-        'label':          label,
-        'status_class':   status_class,
-        'chat_locked':    status_class in ('cancelled', 'completed') or blocked,
-        # Negotiation requires a confirmed booking — blocked while approval is pending
-        'nego_locked':    booking.status == RideBooking.STATUS_REQUESTED,
-        'closed_message': closed_message,
-    }
-
-
-def _notify_booking_status(booking):
-    """Push a booking's new status to its open chat pages (ISSUES.md H3), so
-    they lock or unlock without a refresh. Best effort: a channel-layer
-    failure is logged, never raised, so the status change itself stands."""
-    from asgiref.sync import async_to_sync
-    from channels.layers import get_channel_layer
-    from .consumers import chat_group_name
-    try:
-        async_to_sync(get_channel_layer().group_send)(chat_group_name(booking.id), {
-            'type':   'booking_status',
-            'status': booking.status,
-            **_chat_status(booking),
-        })
-    except Exception:
-        logger.warning('Could not push status of booking %s to its chat', booking.id, exc_info=True)
 
 
 @login_required
@@ -1830,40 +1353,11 @@ def cancel_ride_view(request, ride_id):
         raise Http404
     ride = get_object_or_404(Rides, id=real_ride_id, driver=request.user)
 
-    if ride.status in ('completed', 'cancelled'):
-        return JsonResponse({"error": f"Cannot cancel — ride is already {ride.status}."}, status=400)
+    error = ride_rules.cancel_error(ride)
+    if error:
+        return JsonResponse({"error": error}, status=400)
 
-    if ride.depart_at <= timezone.now():
-        return JsonResponse({"error": "Cannot cancel after the ride has departed."}, status=400)
-
-    affected_bookings = list(
-        ride.bookings
-        .filter(status__in=(RideBooking.STATUS_REQUESTED, RideBooking.STATUS_CONFIRMED))
-        .select_related('passenger')
-    )
-
-    ride.bookings.filter(
-        status__in=(RideBooking.STATUS_REQUESTED, RideBooking.STATUS_CONFIRMED)
-    ).update(status=RideBooking.STATUS_CANCELLED, cancelled_at=timezone.now())
-
-    ride.status = 'cancelled'
-    ride.cancelled_at = timezone.now()
-    ride.save(update_fields=['status', 'cancelled_at'])
-    for booking in affected_bookings:
-        booking.status = RideBooking.STATUS_CANCELLED
-        booking.ride = ride
-        _notify_booking_status(booking)
-    # Pre-request chats stay drafts, but their chat closes with the ride.
-    drafts = list(ride.bookings.filter(status=RideBooking.STATUS_DRAFT))
-    for booking in drafts:
-        booking.ride = ride
-        _notify_booking_status(booking)
-    notify_bookings_changed(
-        [b.passenger_id for b in affected_bookings + drafts],
-        'The driver cancelled a ride you booked or asked about.',
-    )
-
-    _send_ride_cancelled_emails(ride, affected_bookings)
+    ride_rules.cancel_ride(ride)
 
     return JsonResponse({"success": True})
 
@@ -2293,15 +1787,9 @@ def edit_ride_view(request, ride_id):
         driver=request.user,
     )
 
-    if ride.status != 'posted':
-        messages.error(request, "Cannot edit a ride that is cancelled or completed.")
-        return redirect('my-rides')
-
-    active_bookings = ride.bookings.filter(
-        status__in=[RideBooking.STATUS_REQUESTED, RideBooking.STATUS_CONFIRMED],
-    ).count()
-    if active_bookings > 0:
-        messages.error(request, "Cannot edit a ride that has active bookings.")
+    reason = ride_rules.edit_block_reason(ride)
+    if reason:
+        messages.error(request, reason)
         return redirect('my-rides')
 
     errors = {}
@@ -2334,45 +1822,24 @@ def edit_ride_view(request, ride_id):
             origin_lat = origin_lng = dest_lat = dest_lng = 0.0
 
         # 0,0: typed but not picked from the suggestions (same as post_ride_view).
-        if not origin:      errors['origin']      = 'Starting point is required.'
-        elif origin_lat == 0 and origin_lng == 0:
-            errors['origin'] = 'Please pick a location from the suggestions.'
-        elif area_error := _service_area_error(origin_lat, origin_lng, 'pickup'):
-            errors['origin'] = area_error
-        if not destination: errors['destination'] = 'Final destination is required.'
-        elif dest_lat == 0 and dest_lng == 0:
-            errors['destination'] = 'Please pick a location from the suggestions.'
-        elif area_error := _service_area_error(dest_lat, dest_lng, 'drop-off'):
-            errors['destination'] = area_error
+        if error := ride_rules.endpoint_error(origin, origin_lat, origin_lng, 'pickup', 'Starting point is required.'):
+            errors['origin'] = error
+        if error := ride_rules.endpoint_error(destination, dest_lat, dest_lng, 'drop-off',
+                                         'Final destination is required.'):
+            errors['destination'] = error
         clean_stops, stops_error = _clean_stops(request.POST)
         if stops_error:
             errors['stops'] = stops_error
         if not date_str:    errors['date']        = 'Date is required.'
         if not time_str:    errors['depart_time'] = 'Departure time is required.'
 
-        seats = None
-        if seats_str:
-            try:
-                seats = int(seats_str)
-                if seats < 1 or seats > 8:
-                    errors['seats'] = 'Seats must be between 1 and 8.'
-            except ValueError:
-                errors['seats'] = 'Invalid seat count.'
-        else:
-            errors['seats'] = 'Seat count is required.'
+        seats, error = ride_rules.seats_error(seats_str)
+        if error:
+            errors['seats'] = error
 
-        price_cents = 0
-        if not price_str:
-            errors['price'] = 'Price per seat is required.'
-        else:
-            try:
-                price_cents = _parse_dollars_to_cents(price_str)
-                if price_cents <= 0:
-                    errors['price'] = 'Price must be greater than 0.'
-                elif price_cents > _MAX_PRICE_CENTS:
-                    errors['price'] = 'Price per seat cannot exceed $1,000.'
-            except ValueError:
-                errors['price'] = 'Invalid price.'
+        price_cents, error = ride_rules.price_error(price_str, ride_rules.EDIT_PRICE_ZERO_MSG)
+        if error:
+            errors['price'] = error
 
         depart_at = None
         depart_utc_str = request.POST.get('depart_utc', '').strip()
@@ -2384,10 +1851,8 @@ def edit_ride_view(request, ride_id):
                 if timezone.is_naive(depart_at):
                     from datetime import timezone as _utc
                     depart_at = depart_at.replace(tzinfo=_utc.utc)
-                if depart_at < timezone.now() + timedelta(minutes=30):
-                    errors['depart_time'] = 'Departure must be at least 30 minutes from now.'
-                elif depart_at.date() > _max_ride_date():
-                    errors['date'] = 'Rides can only be scheduled up to 4 months in advance.'
+                if bad := ride_rules.departure_error(depart_at, ride_rules.EDIT_TOO_FAR_MSG):
+                    errors[bad[0]] = bad[1]
             except ValueError:
                 errors['depart_time'] = 'Invalid departure date or time.'
         elif date_str and time_str and 'date' not in errors and 'depart_time' not in errors:
@@ -2396,51 +1861,20 @@ def edit_ride_view(request, ride_id):
                 if abs(tz_offset) > _MAX_TZ_OFFSET_MINUTES:
                     raise ValueError('timezone offset out of range')
                 depart_at = timezone.make_aware(datetime.fromisoformat(f'{date_str}T{time_str}')) + timedelta(minutes=tz_offset)
-                if depart_at < timezone.now() + timedelta(minutes=30):
-                    errors['depart_time'] = 'Departure must be at least 30 minutes from now.'
-                elif depart_at.date() > _max_ride_date():
-                    errors['date'] = 'Rides can only be scheduled up to 4 months in advance.'
+                if bad := ride_rules.departure_error(depart_at, ride_rules.EDIT_TOO_FAR_MSG):
+                    errors[bad[0]] = bad[1]
             except (ValueError, OverflowError):  # OverflowError: a date near year 9999
                 errors['depart_time'] = 'Invalid departure date or time.'
 
         if not errors:
             duration_seconds = _parse_duration_seconds(request.POST.get('duration_seconds'))
 
-            if duration_seconds > 0:
-                arrive_at = depart_at + timedelta(seconds=duration_seconds)
-            elif ride.arrive_at and ride.depart_at:
-                arrive_at = depart_at + (ride.arrive_at - ride.depart_at)
-            else:
-                arrive_at = None
-
-            ride.origin      = origin
-            ride.origin_lat  = origin_lat
-            ride.origin_lng  = origin_lng
-            ride.destination = destination
-            ride.dest_lat    = dest_lat
-            ride.dest_lng    = dest_lng
-            ride.depart_at   = depart_at
-            ride.arrive_at   = arrive_at
-            if tz_name:
-                ride.tz = tz_name
-            if duration_seconds > 0:
-                ride.expected_duration_seconds = duration_seconds
-            booked_seats = RideBooking.objects.filter(
-                ride=ride,
-                status__in=[RideBooking.STATUS_REQUESTED, RideBooking.STATUS_CONFIRMED],
-            ).aggregate(total=Sum('seats'))['total'] or 0
-            ride.seats_total     = seats
-            ride.seats_available = max(0, seats - booked_seats)
-            ride.price_cents = price_cents
-            ride.notes       = notes or None
-            ride.preferences_json = preferences_json or None
-            ride.passenger_gender_pref = passenger_gender_pref
-            ride.save()
-
-            ride.stops.all().delete()
-            for stop in clean_stops:
-                RideStop.objects.create(ride=ride, stop_order=stop['idx'] + 1,
-                                        location=stop['location'], lat=stop['lat'], lng=stop['lng'])
+            ride_rules.update_ride(
+                ride, origin=origin, origin_lat=origin_lat, origin_lng=origin_lng, destination=destination,
+                dest_lat=dest_lat, dest_lng=dest_lng, depart_at=depart_at, tz_name=tz_name,
+                duration_seconds=duration_seconds, seats=seats, price_cents=price_cents, notes=notes,
+                preferences_json=preferences_json, passenger_gender_pref=passenger_gender_pref,
+                stops=clean_stops)
 
             messages.success(request, 'Ride updated successfully.')
             return redirect('my-rides')
@@ -2508,11 +1942,7 @@ def ride_summary_view(request, ride_id):
         id=real_ride_id,
     )
 
-    is_driver    = ride.driver == request.user
-    is_passenger = ride.bookings.filter(
-        passenger=request.user,
-        status__in=('confirmed', 'completed'),
-    ).exists()
+    is_driver, is_passenger = ride_rules.summary_viewer(ride, request.user)
 
     if not is_driver and not is_passenger:
         messages.error(request, "You don't have access to this ride summary.")
@@ -2522,31 +1952,11 @@ def ride_summary_view(request, ride_id):
         messages.error(request, "Ride summary is only available for completed rides.")
         return redirect('my-rides')
 
-    origin_city = ride.origin.split(',')[0].strip()
-    dest_city   = ride.destination.split(',')[0].strip()
-
-    distance_km = round(_haversine_km(
-        ride.origin_lat, ride.origin_lng,
-        ride.dest_lat,   ride.dest_lng,
-    ))
-
-    duration = ''
-    if ride.arrive_at and ride.depart_at:
-        delta   = ride.arrive_at - ride.depart_at
-        hours   = int(delta.total_seconds() // 3600)
-        minutes = int((delta.total_seconds() % 3600) // 60)
-        duration = f"{hours}h {minutes}m" if hours else f"{minutes}m"
-
-    active_bookings = [
-        b for b in ride.bookings.all()
-        if b.status not in ('cancelled', 'rejected')
-    ]
-    passenger_count = sum(b.seats for b in active_bookings)
-
-    CO2_PER_KM_KG = 0.12
-    co2_saved_kg  = round(passenger_count * distance_km * CO2_PER_KM_KG, 1)
-    trees_equiv   = round(co2_saved_kg / 21, 1)
-    km_avoided    = passenger_count * distance_km
+    stats = ride_rules.summary_stats(ride)
+    origin_city, dest_city = stats['origin_city'], stats['dest_city']
+    distance_km, duration = stats['distance_km'], stats['duration']
+    active_bookings, passenger_count = stats['active_bookings'], stats['passenger_count']
+    co2_saved_kg, trees_equiv, km_avoided = stats['co2_saved_kg'], stats['trees_equiv'], stats['km_avoided']
 
     # Sorted here so the prefetched stops are reused, not queried again.
     stops = sorted(ride.stops.all(), key=lambda s: s.stop_order)
@@ -2559,15 +1969,7 @@ def ride_summary_view(request, ride_id):
 
     stops_json = json.dumps([{'lng': s.lng, 'lat': s.lat} for s in stops])
 
-    arrival_note = 'arrived on time'
-    if ride.arrive_at and ride.depart_at and ride.expected_duration_seconds:
-        actual_seconds   = (ride.arrive_at - ride.depart_at).total_seconds()
-        expected_seconds = ride.expected_duration_seconds
-        diff = int((expected_seconds - actual_seconds) / 60)
-        if diff > 2:
-            arrival_note = f'arrived {diff} min early'
-        elif diff < -2:
-            arrival_note = f'arrived {abs(diff)} min late'
+    arrival_note = stats['arrival_note']
 
     # One query for the viewer's reviews, not one per booking (audit F-5).
     reviewed_ids = set(
@@ -3663,218 +3065,12 @@ def ride_receipt_pdf_view(request, ride_id):
     real_ride_id = decode_id(ride_id)
     if not real_ride_id:
         raise Http404
-    from reportlab.lib.pagesizes import A4
-    from reportlab.lib import colors
-    from reportlab.lib.units import mm
-    from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, HRFlowable
-    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-    from reportlab.lib.enums import TA_CENTER, TA_RIGHT
-    # Paragraph parses its text as markup (and fetches <img> sources), so
-    # user-typed names and places must be escaped before they go in.
-    from xml.sax.saxutils import escape as _pdf_escape
-
     ride = get_object_or_404(
-        Rides.objects.prefetch_related('stops', 'bookings__passenger', 'bookings__pickup_stop').filter(
-            Q(driver=request.user) |
-            Q(bookings__passenger=request.user, bookings__status__in=('confirmed', 'completed'))
-        ).distinct(),
+        ride_rules.receipt_rides(request.user).prefetch_related('stops', 'bookings__passenger', 'bookings__pickup_stop'),
         id=real_ride_id,
     )
-
-    # ── build context (same logic as ride_summary_view) ──────────
-    origin_city = ride.origin.split(',')[0].strip()
-    distance_km = round(_haversine_km(ride.origin_lat, ride.origin_lng, ride.dest_lat, ride.dest_lng))
-
-    duration = ''
-    if ride.arrive_at and ride.depart_at:
-        delta   = ride.arrive_at - ride.depart_at
-        hours   = int(delta.total_seconds() // 3600)
-        minutes = int((delta.total_seconds() % 3600) // 60)
-        duration = f"{hours}h {minutes}m" if hours else f"{minutes}m"
-
-    active_bookings = [b for b in ride.bookings.all() if b.status not in ('cancelled', 'rejected')]
-    passenger_count = sum(b.seats for b in active_bookings)
-
-    CO2_PER_KM_KG = 0.12
-    co2_saved_kg  = round(passenger_count * distance_km * CO2_PER_KM_KG, 1)
-
-    total_cents = 0
-    enriched_bookings = []
-    for b in active_bookings:
-        name  = _display_name(b.passenger)
-        pickup_name = b.pickup_stop.location.split(',')[0].strip() if b.pickup_stop else origin_city
-        total_cents += b.agreed_price_cents
-        enriched_bookings.append({
-            'name':         name,
-            'seats':        b.seats,
-            'pickup':       pickup_name,
-            'contribution': f"${b.agreed_price_cents / 100:.2f}",
-        })
-
-    ride_ref = f"KMT-{ride.depart_at.year}-{ride.id:04d}"
-    driver_name = _display_name(ride.driver)
-
-    # Convert to ride's local timezone for display in the PDF
-    _depart_local = _local_dt(ride, ride.depart_at)
-    _arrive_local = _local_dt(ride, ride.arrive_at) if ride.arrive_at else None
-    _tz_suffix    = (' ' + _depart_local.tzname()) if ride.tz and _depart_local.tzname() else ' UTC'
-
-    # ── PDF generation ────────────────────────────────────────────
-    buffer = io.BytesIO()
-    doc = SimpleDocTemplate(
-        buffer, pagesize=A4,
-        leftMargin=20*mm, rightMargin=20*mm,
-        topMargin=18*mm, bottomMargin=18*mm,
-        title='Komute Ride Receipt',
-        author='Komute',
-    )
-
-    GREEN  = colors.HexColor('#0D7810')
-    DARK   = colors.HexColor('#121212')
-    MUTED  = colors.HexColor('#5a7060')
-    LIGHT  = colors.HexColor('#E9F7EE')
-    WHITE  = colors.white
-
-    styles = getSampleStyleSheet()
-    def _s(name, **kw):
-        base = styles[name] if name in styles else styles['Normal']
-        return ParagraphStyle(name + '_custom', parent=base, **kw)
-
-    title_style   = _s('Normal', fontName='Helvetica-Bold', fontSize=22, textColor=GREEN, spaceAfter=2)
-    sub_style     = _s('Normal', fontName='Helvetica',      fontSize=10, textColor=MUTED, spaceAfter=6)
-    head_style    = _s('Normal', fontName='Helvetica-Bold', fontSize=11, textColor=DARK,  spaceAfter=4)
-    body_style    = _s('Normal', fontName='Helvetica',      fontSize=10, textColor=DARK)
-    muted_style   = _s('Normal', fontName='Helvetica',      fontSize=9,  textColor=MUTED)
-    right_style   = _s('Normal', fontName='Helvetica',      fontSize=10, textColor=DARK, alignment=TA_RIGHT)
-    total_style   = _s('Normal', fontName='Helvetica-Bold', fontSize=11, textColor=GREEN, alignment=TA_RIGHT)
-    center_style  = _s('Normal', fontName='Helvetica',      fontSize=9,  textColor=MUTED, alignment=TA_CENTER)
-    green_bold    = _s('Normal', fontName='Helvetica-Bold', fontSize=10, textColor=GREEN)
-
-    W = A4[0] - 40*mm  # usable width
-
-    story = []
-
-    # ── Header ──
-    header_data = [[
-        Paragraph('KOMÜTE', title_style),
-        Paragraph(f'Ride Receipt<br/><font size="9" color="#5a7060">{ride_ref}</font>', _s('Normal', fontName='Helvetica-Bold', fontSize=14, textColor=DARK, alignment=TA_RIGHT)),
-    ]]
-    header_tbl = Table(header_data, colWidths=[W * 0.5, W * 0.5])
-    header_tbl.setStyle(TableStyle([
-        ('VALIGN',      (0,0), (-1,-1), 'MIDDLE'),
-        ('BACKGROUND',  (0,0), (-1,-1), LIGHT),
-        ('TOPPADDING',  (0,0), (-1,-1), 10),
-        ('BOTTOMPADDING',(0,0),(-1,-1), 10),
-        ('LEFTPADDING', (0,0), (-1,-1), 14),
-        ('RIGHTPADDING',(0,0), (-1,-1), 14),
-        ('ROUNDEDCORNERS', (0,0), (-1,-1), [8, 8, 8, 8]),
-    ]))
-    story.append(header_tbl)
-    story.append(Spacer(1, 5*mm))
-    story.append(Paragraph(f'Issued on {timezone.now().strftime("%B %d, %Y")}  ·  Driver: {_pdf_escape(driver_name)}', sub_style))
-    story.append(HRFlowable(width=W, color=colors.HexColor('#c2dfc8'), thickness=1, spaceAfter=5*mm))
-
-    # ── Trip Overview ──
-    story.append(Paragraph('Trip Overview', head_style))
-    trip_data = [
-        ['Route',      f'{ride.origin}  →  {ride.destination}'],
-        ['Date',       _depart_local.strftime('%A, %B %d, %Y').replace(' 0', ' ')],
-        ['Departed',   _depart_local.strftime('%I:%M %p').lstrip('0') + _tz_suffix],
-        ['Arrived',    _arrive_local.strftime('%I:%M %p').lstrip('0') + _tz_suffix if _arrive_local else '—'],
-        ['Duration',   duration or '—'],
-        ['Distance',   f'{distance_km} km'],
-        ['Driver',     driver_name],
-        ['Status',     ride.get_status_display()],
-        ['Passengers', f'{passenger_count} passenger{"s" if passenger_count != 1 else ""}'],
-    ]
-    trip_tbl = Table(trip_data, colWidths=[W * 0.28, W * 0.72])
-    trip_tbl.setStyle(TableStyle([
-        ('FONTNAME',    (0,0), (0,-1), 'Helvetica-Bold'),
-        ('FONTNAME',    (1,0), (1,-1), 'Helvetica'),
-        ('FONTSIZE',    (0,0), (-1,-1), 10),
-        ('TEXTCOLOR',   (0,0), (0,-1), MUTED),
-        ('TEXTCOLOR',   (1,0), (1,-1), DARK),
-        ('ROWBACKGROUNDS', (0,0), (-1,-1), [WHITE, LIGHT]),
-        ('TOPPADDING',  (0,0), (-1,-1), 6),
-        ('BOTTOMPADDING',(0,0),(-1,-1), 6),
-        ('LEFTPADDING', (0,0), (-1,-1), 10),
-        ('RIGHTPADDING',(0,0),(-1,-1), 10),
-        ('GRID',        (0,0), (-1,-1), 0.5, colors.HexColor('#e0ede3')),
-        ('ROUNDEDCORNERS', (0,0), (-1,-1), [6, 6, 6, 6]),
-    ]))
-    story.append(trip_tbl)
-    story.append(Spacer(1, 5*mm))
-
-    # ── Passenger & Cost Breakdown ──
-    story.append(Paragraph('Cost-Share Breakdown', head_style))
-    cost_header = [
-        Paragraph('Passenger', _s('Normal', fontName='Helvetica-Bold', fontSize=10, textColor=WHITE)),
-        Paragraph('Seats',     _s('Normal', fontName='Helvetica-Bold', fontSize=10, textColor=WHITE, alignment=TA_CENTER)),
-        Paragraph('Pickup',    _s('Normal', fontName='Helvetica-Bold', fontSize=10, textColor=WHITE)),
-        Paragraph('Amount',    _s('Normal', fontName='Helvetica-Bold', fontSize=10, textColor=WHITE, alignment=TA_RIGHT)),
-    ]
-    cost_rows = [cost_header]
-    for b in enriched_bookings:
-        cost_rows.append([
-            Paragraph(_pdf_escape(b['name']), body_style),
-            Paragraph(str(b['seats']),   _s('Normal', fontName='Helvetica', fontSize=10, textColor=DARK, alignment=TA_CENTER)),
-            Paragraph(_pdf_escape(b['pickup']), muted_style),
-            Paragraph(b['contribution'], right_style),
-        ])
-    cost_rows.append([
-        Paragraph('Total received', green_bold),
-        '', '',
-        Paragraph(f"${total_cents / 100:.2f}", total_style),
-    ])
-
-    cost_tbl = Table(cost_rows, colWidths=[W*0.38, W*0.12, W*0.32, W*0.18])
-    cost_style_cmds = [
-        ('BACKGROUND',   (0,0), (-1,0),  GREEN),
-        ('ROWBACKGROUNDS',(0,1), (-1,-2), [WHITE, LIGHT]),
-        ('BACKGROUND',   (0,-1),(-1,-1), colors.HexColor('#E9F7EE')),
-        ('TOPPADDING',   (0,0), (-1,-1), 7),
-        ('BOTTOMPADDING',(0,0), (-1,-1), 7),
-        ('LEFTPADDING',  (0,0), (-1,-1), 10),
-        ('RIGHTPADDING', (0,0), (-1,-1), 10),
-        ('GRID',         (0,0), (-1,-1), 0.5, colors.HexColor('#e0ede3')),
-        ('SPAN',         (1,-1),(2,-1)),
-        ('LINEABOVE',    (0,-1),(-1,-1), 1.5, GREEN),
-    ]
-    cost_tbl.setStyle(TableStyle(cost_style_cmds))
-    story.append(cost_tbl)
-    story.append(Spacer(1, 5*mm))
-
-    # ── Eco Impact ──
-    story.append(Paragraph('Eco Impact', head_style))
-    eco_data = [[
-        Paragraph(f'<b>{co2_saved_kg} kg</b><br/><font size="8" color="#5a7060">CO₂ Saved</font>', _s('Normal', fontName='Helvetica', fontSize=11, textColor=GREEN, alignment=TA_CENTER)),
-        Paragraph(f'<b>{passenger_count}</b><br/><font size="8" color="#5a7060">Passengers</font>', _s('Normal', fontName='Helvetica', fontSize=11, textColor=DARK, alignment=TA_CENTER)),
-        Paragraph(f'<b>{distance_km} km</b><br/><font size="8" color="#5a7060">Distance</font>', _s('Normal', fontName='Helvetica', fontSize=11, textColor=DARK, alignment=TA_CENTER)),
-    ]]
-    eco_tbl = Table(eco_data, colWidths=[W/3, W/3, W/3])
-    eco_tbl.setStyle(TableStyle([
-        ('BACKGROUND',    (0,0), (-1,-1), LIGHT),
-        ('TOPPADDING',    (0,0), (-1,-1), 10),
-        ('BOTTOMPADDING', (0,0), (-1,-1), 10),
-        ('INNERGRID',     (0,0), (-1,-1), 0.5, colors.HexColor('#c2dfc8')),
-        ('BOX',           (0,0), (-1,-1), 0.5, colors.HexColor('#c2dfc8')),
-    ]))
-    story.append(eco_tbl)
-    story.append(Spacer(1, 6*mm))
-
-    # ── Footer note ──
-    story.append(HRFlowable(width=W, color=colors.HexColor('#c2dfc8'), thickness=1, spaceAfter=4*mm))
-    story.append(Paragraph(
-        'Komüte is free to use. Amounts above were paid directly between driver and passengers. '
-        'Komüte did not process or hold any funds — it simply connected the parties.',
-        _s('Normal', fontName='Helvetica-Oblique', fontSize=8, textColor=MUTED),
-    ))
-    story.append(Spacer(1, 2*mm))
-    story.append(Paragraph(f'© {timezone.now().year} Komüte by Indus Network LLC  ·  {ride_ref}', center_style))
-
-    doc.build(story)
-    buffer.seek(0)
-    response = HttpResponse(buffer, content_type='application/pdf')
+    pdf, ride_ref = build_receipt_pdf(ride)
+    response = HttpResponse(pdf, content_type='application/pdf')
     response['Content-Disposition'] = f'attachment; filename="Komute-Receipt-{ride_ref}.pdf"'
     return response
 
@@ -4222,294 +3418,12 @@ def route_demand_view(request):
     if request.user.role != 'driver':
         return redirect('profile')
 
-    from collections import Counter
-    from django.utils.timesince import timesince as _timesince
-
-    driver   = request.user
-    now      = timezone.now()
-    today    = now.date()
-    week_ago = now - timedelta(days=7)
-
-    # Start from the driver's posted rides — always the anchor
-    driver_rides = list(
-        Rides.objects
-        .filter(driver=driver, status__in=['posted', 'full'])
-        .prefetch_related('bookings')
-        .order_by('depart_at')
-    )
-
-    # Searches by logged-in users in the past 7 days, narrowed in SQL to the
-    # boxes around the driver's routes (audit F-3). Recurring rides share a
-    # route, so each distinct route adds one box pair.
-    radius = settings.SEARCH_RADIUS_KM
-    routes = {(r.origin_lat, r.origin_lng, r.dest_lat, r.dest_lng) for r in driver_rides}
-    near_routes = Q(pk__in=[])
-    for o_lat, o_lng, d_lat, d_lng in routes:
-        near_routes |= (_geo_box_q(o_lat, o_lng, radius, 'origin_lat', 'origin_lng')
-                        & _geo_box_q(d_lat, d_lng, radius, 'dest_lat', 'dest_lng'))
-    recent_searches = list(
-        RideSearch.objects
-        .filter(near_routes, created_at__gte=week_ago, user__isnull=False, user__is_active=True)
-        .exclude(user=driver)
-        # Blocked riders can't be invited, so don't list them (ISSUES.md A1).
-        .exclude(user_id__in=UserBlock.objects.hidden_ids(driver.id))
-        .select_related('user')
-        .order_by('-created_at')
-    ) if routes else []
-
-    # Riders who searched within the radius of a route's origin AND
-    # destination, computed once per route (newest first).
-    route_matches = {
-        key: [
-            s for s in recent_searches
-            if _haversine_km(key[0], key[1], s.origin_lat, s.origin_lng) <= radius
-            and _haversine_km(key[2], key[3], s.dest_lat, s.dest_lng) <= radius
-        ]
-        for key in routes
-    }
-
-    AVATAR_COLORS = [
-        'linear-gradient(135deg,#7c3aed,#a78bfa)',
-        'linear-gradient(135deg,#0C63B4,#38bdf8)',
-        'linear-gradient(135deg,#dc2626,#f87171)',
-        'linear-gradient(135deg,#047857,#34d399)',
-        'linear-gradient(135deg,#d97706,#fbbf24)',
-        'linear-gradient(135deg,#be185d,#f472b6)',
-        'linear-gradient(135deg,#0C63B4,#0CB439)',
-        'linear-gradient(135deg,#0e7490,#22d3ee)',
-    ]
-
-    route_demands = []
-    for ride in driver_rides:
-        matching_searches = route_matches[
-            (ride.origin_lat, ride.origin_lng, ride.dest_lat, ride.dest_lng)]
-
-        count  = len(matching_searches)
-        is_new = any(s.created_at.date() == today for s in matching_searches)
-
-        if count >= 6:
-            heat, demand_label = 'hot',  'High demand 🔥'
-            demand_percent = min(100, count * 8)
-        elif count >= 4:
-            heat, demand_label = 'warm', 'Moderate demand'
-            demand_percent = min(100, count * 10)
-        elif count > 0:
-            heat, demand_label = 'cool', 'Low demand'
-            demand_percent = min(100, count * 12)
-        else:
-            heat, demand_label = 'cool', 'No searches yet'
-            demand_percent = 0
-
-        if matching_searches:
-            weekdays = Counter(s.search_date.strftime('%a') for s in matching_searches)
-            top_days = [d for d, _ in weekdays.most_common(2)]
-            most_searched_days = '–'.join(top_days) if top_days else None
-            avg_raw    = sum(s.passenger_count for s in matching_searches) / count
-            avg_seats_n = round(avg_raw)
-            avg_seats  = (
-                f'{avg_raw:.0f}–{avg_seats_n + 1} seats'
-                if avg_raw != avg_seats_n
-                else f'{avg_seats_n} seat{"s" if avg_seats_n != 1 else ""}'
-            )
-            latest_search = matching_searches[0]
-        else:
-            most_searched_days = None
-            avg_seats          = None
-            latest_search      = None
-
-        # Build per-rider rows (one per unique user). Searches are newest
-        # first, so a user's first one here is their latest.
-        seen_users = set()
-        riders = []
-        for s in matching_searches:
-            uid = s.user_id
-            if uid in seen_users:
-                continue
-            seen_users.add(uid)
-            u    = s.user
-            # Not invitable under the ride's gender preference (audit L-8).
-            if not _gender_pref_allows(ride, u):
-                continue
-            name = _display_name(u)
-            initials = ''.join(w[0].upper() for w in name.split()[:2])
-            avatar_color = AVATAR_COLORS[uid % len(AVATAR_COLORS)]
-            # avg_rating is 0 iff the rider has never received a review --
-            # real ratings are 1-5 (Review.rating's MinValueValidator), so a
-            # real average can never land on 0.
-            rating_label = f'⭐ {round(u.avg_rating, 1)} rider rating' if u.avg_rating else 'Not yet rated'
-            riders.append({
-                'id':              uid,
-                'initials':        initials,
-                'avatar_color':    avatar_color,
-                'name':            name,
-                'searching_since': _timesince(s.created_at),
-                'rating_label':    rating_label,
-                'seats_needed':    s.passenger_count,
-            })
-
-        booked_seats = ride.seats_total - ride.seats_available
-        open_seats   = ride.seats_available
-        ride_date    = None
-        if ride.depart_at.date() != today:
-            _d = ride.depart_at
-            ride_date = f"{_d.strftime('%b')} {_d.day}"
-
-        route_demands.append({
-            'heat':              heat,
-            'is_my_route':       True,
-            'is_new':            is_new,
-            'has_my_ride':       True,
-            'ride_id':           encode_id(ride.id),
-            'from_location':     ride.origin,
-            'to_location':       ride.destination,
-            'search_count':      count,
-            'demand_label':      demand_label,
-            'demand_percent':    demand_percent,
-            'match_label':       'Your posted ride',
-            'most_searched_days': most_searched_days,
-            'specific_date':     None,
-            'peak_time':         None,
-            'departure_range':   None,
-            'avg_seats':         avg_seats,
-            'last_updated':      _timesince(latest_search.created_at) if latest_search else None,
-            'available_seats':   open_seats,
-            'ride_date':         ride_date,
-            'booked_seats':      booked_seats,
-            'open_seats':        open_seats,
-            'riders':            riders,
-        })
-
-    # Most-demand rides first
-    route_demands.sort(key=lambda d: d['search_count'], reverse=True)
-
-    hot_count       = sum(1 for d in route_demands if d['heat'] == 'hot')
-    new_today_count = sum(1 for d in route_demands if d['is_new'])
-
-    stats = {
-        'riders_searching':   RideSearch.objects.filter(
-                                created_at__gte=week_ago, user__isnull=False
-                              ).values('user').distinct().count(),
-        'hot_routes':         hot_count,
-        'invites_sent_today': RideInvite.objects.filter(
-                                driver=driver, sent_at__date=today
-                              ).count(),
-        'invites_accepted':   RideInvite.objects.filter(
-                                driver=driver, status=RideInvite.STATUS_ACCEPTED
-                              ).count(),
-        'total_count':        len(route_demands),
-        'hot_count':          hot_count,
-        'my_routes_count':    len(route_demands),
-        'new_today_count':    new_today_count,
-    }
-
-    has_active_rides = len(driver_rides) > 0
-
-    return render(request, 'route-demand-ride_available.html', {
-        'route_demands':   route_demands,
-        'stats':           stats,
-        'has_active_rides': has_active_rides,
-    })
+    return render(request, 'route-demand-ride_available.html', route_demand.build(request.user))
 
 
 # ──────────────────────────────────────────────────────────────────
 # INVITE HELPERS
 # ──────────────────────────────────────────────────────────────────
-
-_INVITE_SALT = 'komute-invite-v1'
-
-
-def _make_invite_token(invite_id):
-    """Return a signed, URL-safe token encoding the invite ID.
-    The token is verified and decoded by _decode_invite_token.
-    Signing uses Django's SECRET_KEY + a salt so changing either
-    the ID or the salt (e.g. after a key rotation) invalidates it."""
-    return signing.dumps(invite_id, salt=_INVITE_SALT)
-
-
-def _decode_invite_token(token):
-    """Decode and verify a token produced by _make_invite_token.
-    Returns the invite_id integer.
-    Raises signing.SignatureExpired if older than settings.INVITE_EXPIRY_HOURS.
-    Raises signing.BadSignature if tampered or invalid."""
-    return signing.loads(
-        token,
-        salt=_INVITE_SALT,
-        max_age=settings.INVITE_EXPIRY_HOURS * 3600,
-    )
-
-
-def _invite_is_expired(invite):
-    return (timezone.now() - invite.sent_at).total_seconds() > settings.INVITE_EXPIRY_HOURS * 3600
-
-
-def _send_invite_email(request, invite):
-    try:
-        ride   = invite.ride
-        driver = invite.driver
-        rider  = invite.passenger
-
-        token = _make_invite_token(invite.id)
-        invite_url  = request.build_absolute_uri(
-            reverse('invite-detail', args=[token])
-        )
-        accept_url  = invite_url
-        decline_url = invite_url
-
-        ctx = {
-            'rider_name':    (rider.full_name  or rider.email).title(),
-            'driver_name':   _display_name(driver),
-            'origin':        ride.origin,
-            'destination':   ride.destination,
-            'depart_display': _fmt_ride_local(ride),
-            'price':         f"${ride.price_cents / 100:.2f}",
-            'seats_total':   ride.seats_total,
-            'accept_url':    accept_url,
-            'decline_url':   decline_url,
-        }
-
-        html = render_to_string('account/email/ride_invite.html', ctx)
-        dest = ride.destination.split(',')[0].strip()
-
-        msg = EmailMultiAlternatives(
-            subject=f"{ctx['driver_name']} invited you to their ride to {dest} 🚗",
-            body=(
-                f"Hi {ctx['rider_name']}, you've been invited to a ride "
-                f"from {ride.origin} to {ride.destination}. "
-                f"Accept: {accept_url}  Decline: {decline_url}"
-            ),
-            from_email=settings.DEFAULT_FROM_EMAIL,
-            to=[rider.mail_to],
-            reply_to=[settings.REPLY_TO_EMAIL_RIDE_INVITE],
-        )
-        msg.attach_alternative(html, 'text/html')
-        send_later(msg, EmailLog.KIND_INVITE, rider)
-    except Exception:
-        logger.exception('_send_invite_email could not build or queue an email')
-
-
-# ──────────────────────────────────────────────────────────────────
-# INVITE VIEWS
-# ──────────────────────────────────────────────────────────────────
-
-_INVITE_DISCOVERY_WINDOW_DAYS = 7  # matches route_demand_view's own window
-
-
-def _rider_is_inviteable(driver, ride, rider):
-    """A driver may only invite a rider they could legitimately have found
-    through the app: someone who recently searched for a route matching this
-    ride (same geo-matching used by route_demand_view), or someone who has
-    booked with this driver before. Blocks inviting via an arbitrary/
-    enumerated user ID that the driver has no real connection to."""
-    since = timezone.now() - timedelta(days=_INVITE_DISCOVERY_WINDOW_DAYS)
-    matched_search = any(
-        _haversine_km(ride.origin_lat, ride.origin_lng, s.origin_lat, s.origin_lng) <= settings.SEARCH_RADIUS_KM
-        and _haversine_km(ride.dest_lat, ride.dest_lng, s.dest_lat, s.dest_lng) <= settings.SEARCH_RADIUS_KM
-        for s in RideSearch.objects.filter(user=rider, created_at__gte=since)
-    )
-    if matched_search:
-        return True
-    return RideBooking.objects.filter(passenger=rider, ride__driver=driver).exists()
-
 
 @login_required
 @require_POST
@@ -4532,51 +3446,12 @@ def send_invite_view(request):
     driver = request.user
     ride   = get_object_or_404(Rides, id=ride_id, driver=driver, status__in=['posted', 'full'])
 
-    if not driver.driver_verification_current:
-        return JsonResponse({'error': 'Please verify your identity on your profile page before inviting riders.'}, status=403)
-
-    # Closed accounts can't be invited (audit P-14): they stay in the
-    # database until the 45-day purge, and a prior booking would still
-    # make them inviteable below.
-    rider  = User.objects.filter(id=rider_id, is_active=True).first()
-
-    if rider and rider == driver:
-        return JsonResponse({'error': 'Cannot invite yourself.'}, status=400)
-
-    # Identical response whether rider_id doesn't exist at all or exists but
-    # isn't a legitimate invite target for this ride — otherwise the status
-    # code/message becomes an oracle for enumerating real user IDs. The same
-    # goes for a block either way (ISSUES.md A1): the driver isn't told.
-    if (rider is None or UserBlock.objects.between(driver.id, rider.id)
-            or not _gender_pref_allows(ride, rider)
-            or not _rider_is_inviteable(driver, ride, rider)):
-        return JsonResponse({'error': 'This rider is not eligible to be invited to this ride.'}, status=400)
-
-    if ride.seats_available <= 0:
-        return JsonResponse({'error': 'Ride is full.'}, status=400)
-
-    already = RideInvite.objects.filter(
-        ride=ride, passenger=rider,
-        status__in=[RideInvite.STATUS_SENT, RideInvite.STATUS_VIEWED],
-    ).exists()
-    if already:
-        return JsonResponse({'error': 'Invite already sent to this rider.'}, status=400)
-
-    invite = RideInvite.objects.create(driver=driver, passenger=rider, ride=ride)
-    _send_invite_email(request, invite)
+    try:
+        invite = invites.send_invite(request, driver, ride, rider_id)
+    except invites.InviteError as e:
+        return JsonResponse({'error': e.message}, status=e.status)
 
     return JsonResponse({'ok': True, 'invite_id': invite.id})
-
-
-def _resolve_invite_token(token):
-    """Decode token → invite_id, or return (None, error_string)."""
-    try:
-        invite_id = _decode_invite_token(token)
-        return invite_id, None
-    except signing.SignatureExpired:
-        return None, 'expired_token'
-    except signing.BadSignature:
-        return None, 'invalid_token'
 
 
 @login_required
@@ -4595,19 +3470,7 @@ def invite_detail_view(request, token):
             'error':  'This invite was not sent to your account.',
         })
 
-    expired = _invite_is_expired(invite)
-
-    if invite.status == RideInvite.STATUS_SENT and not expired:
-        invite.status = RideInvite.STATUS_VIEWED
-        invite.save(update_fields=['status'])
-
-    if expired and invite.status not in [
-        RideInvite.STATUS_ACCEPTED,
-        RideInvite.STATUS_DECLINED,
-        RideInvite.STATUS_EXPIRED,
-    ]:
-        invite.status = RideInvite.STATUS_EXPIRED
-        invite.save(update_fields=['status'])
+    expired = invites.open_invite(invite)
 
     return render(request, 'invite-detail.html', {
         'invite':  invite,
@@ -4634,123 +3497,14 @@ def accept_invite_view(request, token):
             'error':  'This invite was not sent to your account.',
         })
 
-    if invite.status not in (RideInvite.STATUS_SENT, RideInvite.STATUS_VIEWED):
-        return render(request, 'invite-detail.html', {
-            'invite': invite, 'token': token,
-            'error':  'This invite has already been responded to.',
-        })
-
-    if _invite_is_expired(invite):
-        invite.status = RideInvite.STATUS_EXPIRED
-        invite.save(update_fields=['status'])
+    try:
+        invites.accept_invite(invite, request.user)
+    except invites.InviteExpired:
         return render(request, 'invite-detail.html', {'invite': invite, 'token': token, 'expired': True})
+    except invites.InviteError as e:
+        return render(request, 'invite-detail.html', {'invite': invite, 'token': token, 'error': e.message})
 
-    ride = invite.ride
-
-    if (ride.status in ['cancelled', 'completed'] or ride.depart_at <= timezone.now()
-            or UserBlock.objects.between(ride.driver_id, request.user.id)):
-        return render(request, 'invite-detail.html', {
-            'invite': invite, 'token': token,
-            'error':  'This ride is no longer available.',
-        })
-
-    if not request.user.email_verified:
-        return render(request, 'invite-detail.html', {
-            'invite': invite, 'token': token, 'error': _EMAIL_UNVERIFIED_MSG,
-        })
-
-    if not request.user.dob:
-        return render(request, 'invite-detail.html', {
-            'invite': invite, 'token': token, 'error': _DOB_MISSING_MSG,
-        })
-
-    # The rules a normal booking follows (audit L-7/L-8): the gender
-    # preference, and one active booking per rider per ride.
-    if not _gender_pref_allows(ride, request.user):
-        return render(request, 'invite-detail.html', {
-            'invite': invite, 'token': token, 'error': _GENDER_PREF_MSG,
-        })
-    existing = RideBooking.objects.filter(
-        ride=ride,
-        passenger=request.user,
-        status__in=[RideBooking.STATUS_DRAFT, RideBooking.STATUS_REQUESTED, RideBooking.STATUS_CONFIRMED],
-    ).first()
-    if existing and existing.status != RideBooking.STATUS_DRAFT:
-        return render(request, 'invite-detail.html', {
-            'invite': invite, 'token': token,
-            'error':  'You already have a booking on this ride.',
-        })
-    seats = existing.seats if existing else 1
-
-    # Accepting an invite confirms a booking, so the driver's verification
-    # must be current (same rule as accept_booking_view).
-    if not ride.driver.driver_verification_current:
-        return render(request, 'invite-detail.html', {
-            'invite': invite, 'token': token,
-            'error':  "This invite can't be accepted right now because the driver needs to re-verify their identity. Please try again later.",
-        })
-
-    # Atomically claim the invite first so a replayed/concurrent accept
-    # (double-click, resubmit) can't pass this check twice.
-    prior_status = invite.status
-    claimed = RideInvite.objects.filter(
-        id=invite.id, status__in=(RideInvite.STATUS_SENT, RideInvite.STATUS_VIEWED),
-    ).update(status=RideInvite.STATUS_ACCEPTED, responded_at=timezone.now())
-    if not claimed:
-        return render(request, 'invite-detail.html', {
-            'invite': invite, 'token': token,
-            'error':  'This invite has already been responded to.',
-        })
-
-    updated = Rides.objects.filter(
-        id=ride.id, seats_available__gte=seats
-    ).update(seats_available=F('seats_available') - seats)
-    if not updated:
-        # Couldn't complete the acceptance — release the claim so the invite
-        # stays actionable instead of being stuck "accepted" with no booking.
-        RideInvite.objects.filter(id=invite.id).update(status=prior_status, responded_at=None)
-        return render(request, 'invite-detail.html', {
-            'invite': invite, 'token': token,
-            'error':  'Sorry, this ride is now full.' if seats == 1
-                      else 'Sorry, this ride no longer has enough seats.',
-        })
-    Rides.objects.filter(id=ride.id, seats_available=0).update(status='full')
-
-    if existing:
-        # Confirm the rider's draft in place, as create_ride_booking promotes
-        # it: keeps its chat history, seat count and any price agreed there.
-        # Conditional, so a draft booked or dropped meanwhile isn't overwritten.
-        confirmed_at = timezone.now()
-        promoted = RideBooking.objects.filter(
-            id=existing.id, status=RideBooking.STATUS_DRAFT,
-        ).update(status=RideBooking.STATUS_CONFIRMED, confirmed_at=confirmed_at)
-        if not promoted:
-            Rides.objects.filter(id=ride.id).update(
-                seats_available=Least(F('seats_available') + seats, ride.seats_total))
-            Rides.objects.filter(id=ride.id, status='full').update(status='posted')
-            RideInvite.objects.filter(id=invite.id).update(status=prior_status, responded_at=None)
-            return render(request, 'invite-detail.html', {
-                'invite': invite, 'token': token,
-                'error':  'Your booking on this ride changed meanwhile. Please reload and try again.',
-            })
-        booking = existing
-        booking.status       = RideBooking.STATUS_CONFIRMED
-        booking.confirmed_at = confirmed_at
-        _notify_booking_status(booking)
-    else:
-        booking = RideBooking.objects.create(
-            ride=ride,
-            passenger=invite.passenger,
-            seats=seats,
-            agreed_price_cents=ride.price_cents * seats + settings.SERVICE_FEE_CENTS,
-            status=RideBooking.STATUS_CONFIRMED,
-            confirmed_at=timezone.now(),
-        )
-    notify_bookings_changed([ride.driver_id], 'A passenger accepted your ride invite.')
-
-    _send_booking_confirmation_emails(booking)
-
-    return redirect('ride-summary', ride_id=encode_id(ride.id))
+    return redirect('ride-summary', ride_id=encode_id(invite.ride_id))
 
 
 @login_required
@@ -4771,15 +3525,10 @@ def decline_invite_view(request, token):
             'error':  'This invite was not sent to your account.',
         })
 
-    updated = RideInvite.objects.filter(
-        id=invite.id, status__in=(RideInvite.STATUS_SENT, RideInvite.STATUS_VIEWED),
-    ).update(status=RideInvite.STATUS_DECLINED, responded_at=timezone.now())
-    if not updated:
-        return render(request, 'invite-detail.html', {
-            'invite': invite, 'token': token,
-            'error':  'This invite has already been responded to.',
-        })
-    invite.status = RideInvite.STATUS_DECLINED
+    try:
+        invites.decline_invite(invite)
+    except invites.InviteError as e:
+        return render(request, 'invite-detail.html', {'invite': invite, 'token': token, 'error': e.message})
 
     return render(request, 'invite-declined.html', {'invite': invite})
 
