@@ -6085,3 +6085,80 @@ class ChatSocketBadFrameTests(TransactionTestCase):
                 seen = async_to_sync(run)()
             self.assertEqual((seen['type'], seen['body']), ('message', 'Is the seat still free?'), status)
             self.assertEqual(Message.objects.get().sender, self.rider, status)
+
+
+class ContactFormTests(TestCase):
+    """The Contact Us form (contact_view): the behaviour the app's contact
+    endpoint shares (komute/services/contact.py)."""
+    FORM = {'name': 'Jordan Lee', 'email': 'jordan@example.com', 'role': 'Driver',
+            'topic': 'Help with a booking', 'subject': 'Seat count', 'message': 'Hello there.'}
+
+    def setUp(self):
+        cache.clear()
+        mail.outbox.clear()
+
+    def post(self, **changes):
+        return self.client.post(reverse('contact-us'), {**self.FORM, **changes})
+
+    def test_page_renders(self):
+        self.assertEqual(self.client.get(reverse('contact-us')).status_code, 200)
+
+    def test_sends_to_the_contact_inbox(self):
+        response = self.post()
+        self.assertEqual((response.status_code, response.json()), (200, {'success': True}))
+        sent = mail.outbox[-1]
+        self.assertEqual(sent.subject, '[Komüte Contact] Help with a booking: Seat count')
+        self.assertEqual(sent.to, [settings.CONTACT_EMAIL])
+        self.assertEqual(sent.from_email, settings.DEFAULT_FROM_EMAIL)
+        self.assertEqual(sent.reply_to, ['Jordan Lee <jordan@example.com>'])
+        for line in ('Name:     Jordan Lee', 'Email:    jordan@example.com', 'Role:     Driver',
+                     'Topic:    Help with a booking', 'Subject:  Seat count', 'Message:\nHello there.'):
+            self.assertIn(line, sent.body)
+
+    def test_role_is_optional(self):
+        self.post(role='')
+        self.assertIn('Role:     —', mail.outbox[-1].body)
+
+    def test_required_fields(self):
+        for field in ('name', 'email', 'topic', 'subject', 'message'):
+            response = self.post(**{field: '   '})
+            self.assertEqual((response.status_code, response.json()),
+                             (400, {'error': 'Please fill in all required fields.'}), field)
+        self.assertEqual(mail.outbox, [])
+
+    def test_bad_email(self):
+        response = self.post(email='not-an-email')
+        self.assertEqual(response.json(), {'error': 'Please enter a valid email address.'})
+
+    def test_name_is_cleaned(self):
+        response = self.post(name='\x07\x08')
+        self.assertEqual((response.status_code, response.json()), (400, {'error': 'Please enter your name.'}))
+        self.post(name='Jo\x00rdan ' + 'x' * 200)
+        self.assertEqual(mail.outbox[-1].reply_to[0].split(' <')[0], 'Jordan ' + 'x' * 92)
+
+    def test_line_breaks_in_the_subject_still_send(self):
+        """Were a 500 "Could not send message" (the Subject header refuses
+        line breaks); now they become spaces."""
+        response = self.post(subject='Seat\r\ncount\x0b please', topic='Help with\na booking')
+        self.assertEqual(response.status_code, 200)
+        sent = mail.outbox[-1]
+        self.assertEqual(sent.subject, '[Komüte Contact] Help with a booking: Seat count please')
+        self.assertIn('Subject:  Seat count please\n', sent.body)
+        response = self.post(subject='\x07\x0b')
+        self.assertEqual(response.json(), {'error': 'Please fill in all required fields.'})
+        self.assertEqual(len(mail.outbox), 1)
+
+    def test_mail_failure(self):
+        with patch('django.core.mail.EmailMultiAlternatives.send', side_effect=OSError('down')), \
+                self.assertLogs('komute', 'ERROR'):
+            response = self.post()
+        self.assertEqual((response.status_code, response.json()),
+                         (500, {'error': 'Could not send message. Please try again later.'}))
+
+    @override_settings(RATE_LIMITS={**settings.RATE_LIMITS, 'contact': (1, 3600)})
+    def test_rate_limit(self):
+        self.post()
+        response = self.post()
+        self.assertEqual((response.status_code, response.json()),
+                         (429, {'error': 'Too many messages sent. Please try again later.'}))
+        self.assertEqual(len(mail.outbox), 1)

@@ -1,7 +1,6 @@
 import json
 import logging
 from datetime import date, datetime, timedelta
-from email.utils import formataddr
 from urllib.parse import quote, urlsplit
 
 
@@ -12,7 +11,6 @@ from django.shortcuts import get_object_or_404, render, redirect
 from django.http import Http404
 from django.contrib import messages
 from django.contrib.auth import get_user_model, login, logout, update_session_auth_hash
-from django.core.validators import validate_email
 from django.core.exceptions import ValidationError
 from django.utils import timezone
 from django.core.paginator import Paginator
@@ -21,7 +19,7 @@ from django.views.decorators.http import require_POST
 from django.views.decorators.csrf import csrf_exempt, csrf_protect
 from django.contrib.auth.decorators import login_required
 from allauth.account.views import ConfirmEmailView as AllauthConfirmEmailView
-from django.core.mail import EmailMultiAlternatives
+from django.core.mail import EmailMultiAlternatives  # noqa: F401  (tests patch it here)
 from django.core import signing
 from django.utils.http import url_has_allowed_host_and_scheme
 from django.urls import Resolver404, resolve, reverse
@@ -81,7 +79,7 @@ from .services.verification import (  # noqa: F401  (_reason_codes: tests)
     review_state as _verification_review_state,
 )
 # Reviews, reports and blocks (module 7).
-from .services import safety
+from .services import contact, safety
 # Chat history (module 5).
 from .services import chat as chat_rules
 # Bookings and price offers (module 4).
@@ -1352,50 +1350,11 @@ def contact_view(request):
     if _rate_limited(request, 'contact'):
         return JsonResponse({'error': 'Too many messages sent. Please try again later.'}, status=429)
 
-    name    = request.POST.get('name',    '').strip()[:100]
-    email   = request.POST.get('email',   '').strip()
-    role    = request.POST.get('role',    '').strip()
-    topic   = request.POST.get('topic',   '').strip()
-    subject = request.POST.get('subject', '').strip()
-    message = request.POST.get('message', '').strip()
-
-    if not all([name, email, topic, subject, message]):
-        return JsonResponse({'error': 'Please fill in all required fields.'}, status=400)
-
     try:
-        validate_email(email)
-    except ValidationError:
-        return JsonResponse({'error': 'Please enter a valid email address.'}, status=400)
-
-    # Strip control/non-printable characters before this goes into the
-    # Reply-To header value below.
-    name = ''.join(ch for ch in name if ch.isprintable()).strip()
-    if not name:
-        return JsonResponse({'error': 'Please enter your name.'}, status=400)
-
-    body = (
-        f"New contact form submission from Komüte\n"
-        f"{'─' * 45}\n\n"
-        f"Name:     {name}\n"
-        f"Email:    {email}\n"
-        f"Role:     {role or '—'}\n"
-        f"Topic:    {topic}\n"
-        f"Subject:  {subject}\n\n"
-        f"Message:\n{message}\n"
-    )
-
-    try:
-        msg = EmailMultiAlternatives(
-            subject=f"[Komüte Contact] {topic}: {subject}",
-            body=body,
-            from_email=settings.DEFAULT_FROM_EMAIL,
-            to=[settings.CONTACT_EMAIL],
-            reply_to=[formataddr((name, email))],
-        )
-        msg.send(fail_silently=False)
-    except Exception:
-        logger.exception('contact_view: could not send the contact email')
-        return JsonResponse({'error': 'Could not send message. Please try again later.'}, status=500)
+        contact.send_message(*(request.POST.get(f, '').strip()
+                               for f in ('name', 'email', 'role', 'topic', 'subject', 'message')))
+    except contact.ContactError as e:
+        return JsonResponse({'error': e.message}, status=e.status)
 
     return JsonResponse({'success': True})
 

@@ -26,4 +26,6 @@ urlpatterns = [
     path('safety/', include(('api.v1.safety.urls', 'safety'), namespace='safety')),
     # Module 8: driver identity verification
     path('verification/', include(('api.v1.verification.urls', 'verification'), namespace='verification')),
+    # Module 9: app config and the contact form
+    path('app/', include(('api.v1.appconfig.urls', 'app'), namespace='app')),
 ]

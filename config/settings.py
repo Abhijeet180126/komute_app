@@ -491,6 +491,20 @@ API_ENABLED = config('API_ENABLED', default=False, cast=bool)
 # The OpenAPI schema and Swagger UI (/api/v1/schema/, /api/v1/docs/) are
 # staff-only unless this is True (handy locally; keep False in production).
 API_DOCS_PUBLIC = config('API_DOCS_PUBLIC', default=False, cast=bool)
+# What the app reads at start-up (GET /api/v1/app/config/, module 9). The
+# website never reads these. Versions are "1.2.3"; an app older than the
+# minimum must update before it goes on. APP_MAINTENANCE=True tells the app
+# to show APP_MAINTENANCE_MESSAGE instead of its screens (the API itself
+# keeps answering).
+APP_MIN_VERSION_IOS        = config('APP_MIN_VERSION_IOS',        default='0.0.0')
+APP_MIN_VERSION_ANDROID    = config('APP_MIN_VERSION_ANDROID',    default='0.0.0')
+APP_LATEST_VERSION_IOS     = config('APP_LATEST_VERSION_IOS',     default='')
+APP_LATEST_VERSION_ANDROID = config('APP_LATEST_VERSION_ANDROID', default='')
+APP_STORE_URL_IOS          = config('APP_STORE_URL_IOS',          default='')
+APP_STORE_URL_ANDROID      = config('APP_STORE_URL_ANDROID',      default='')
+APP_MAINTENANCE            = config('APP_MAINTENANCE', default=False, cast=bool)
+APP_MAINTENANCE_MESSAGE    = config('APP_MAINTENANCE_MESSAGE',
+                                    default='Komüte is down for maintenance. Please try again soon.')
 
 # allauth.headless gives the app its login token (X-Session-Token header).
 # Only the "app" client: the website keeps its own cookie-based login.
