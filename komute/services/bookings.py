@@ -27,6 +27,8 @@ logger = logging.getLogger('komute.views')
 
 ACTIVE = (RideBooking.STATUS_DRAFT, RideBooking.STATUS_REQUESTED, RideBooking.STATUS_CONFIRMED)
 MAX_OFFER_CENTS = 100_000
+# The chat's message (komute.consumers.ChatConsumer.ERROR_MESSAGES['nego_locked']).
+NEGO_LOCKED_MSG = 'Price negotiation opens once the driver accepts the booking request.'
 
 
 class BookingError(Exception):
@@ -400,7 +402,10 @@ def create_offer(booking, user, price_raw):
     if user not in (booking.ride.driver, booking.passenger):
         raise BookingError('Forbidden.', status=403, code='forbidden')
 
-    if booking.status not in (RideBooking.STATUS_REQUESTED, RideBooking.STATUS_CONFIRMED):
+    # As in the chat: locked while the request waits for the driver.
+    if booking.status == RideBooking.STATUS_REQUESTED:
+        raise BookingError(NEGO_LOCKED_MSG, code='nego_locked')
+    if booking.status != RideBooking.STATUS_CONFIRMED:
         raise BookingError('Negotiation is closed for this booking.', code='negotiation_closed')
 
     if UserBlock.objects.between(booking.ride.driver_id, booking.passenger_id):
@@ -440,7 +445,10 @@ def respond_offer(offer, user, action, price_raw=None):
     if user not in (booking.ride.driver, booking.passenger):
         raise BookingError('Forbidden.', status=403, code='forbidden')
 
-    if booking.status not in (RideBooking.STATUS_REQUESTED, RideBooking.STATUS_CONFIRMED):
+    # As in the chat: locked while the request waits for the driver.
+    if booking.status == RideBooking.STATUS_REQUESTED:
+        raise BookingError(NEGO_LOCKED_MSG, code='nego_locked')
+    if booking.status != RideBooking.STATUS_CONFIRMED:
         raise BookingError(f'This booking is no longer active ({booking.status}).', code='negotiation_closed')
 
     if UserBlock.objects.between(booking.ride.driver_id, booking.passenger_id):
@@ -673,9 +681,16 @@ def chat_accept(user, booking_id, offer_id, price):
     # alone is ambiguous once a proposer has superseded their own pending
     # offer with a newer one (same price could belong to a stale offer).
     if offer_id is not None:
+        # The page sends the number it was given; anything else is stale
+        # (it used to raise and drop the socket).
+        if isinstance(offer_id, bool) or not isinstance(offer_id, int):
+            return 'offer_stale', None
         offer = PriceOffer.objects.filter(id=offer_id, booking_id=booking_id).first()
     else:
-        price_cents = int(round(float(price) * 100))
+        try:
+            price_cents = int(round(float(price) * 100))
+        except (TypeError, ValueError, OverflowError):
+            return 'offer_stale', None
         offer = (
             PriceOffer.objects
             .filter(booking_id=booking_id, price_cents=price_cents, status=PriceOffer.STATUS_PENDING)

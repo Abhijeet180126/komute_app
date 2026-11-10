@@ -7,7 +7,7 @@ from django.utils import timezone
 
 from komute.services.common import display_name
 from komute.services.geo import haversine_km
-from komute.services.rides import local_dt
+from komute.services.rides import CARRIED_STATUSES, local_dt
 
 
 def build_receipt_pdf(ride):
@@ -34,7 +34,8 @@ def build_receipt_pdf(ride):
         minutes = int((delta.total_seconds() % 3600) // 60)
         duration = f"{hours}h {minutes}m" if hours else f"{minutes}m"
 
-    active_bookings = [b for b in ride.bookings.all() if b.status not in ('cancelled', 'rejected')]
+    # Only the riders the trip carried (see summary_stats).
+    active_bookings = [b for b in ride.bookings.all() if b.status in CARRIED_STATUSES]
     passenger_count = sum(b.seats for b in active_bookings)
 
     CO2_PER_KM_KG = 0.12

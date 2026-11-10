@@ -4,19 +4,14 @@ from drf_spectacular.types import OpenApiTypes
 from drf_spectacular.utils import extend_schema_field
 from rest_framework import serializers
 
-from komute.hashid_utils import decode_id, encode_id
+from komute.hashid_utils import decode_id_strict, encode_id
 
 
 def decode_hashid(value):
     """The primary key for a hashid, or None. Only the exact string
     encode_id() makes is accepted: decode_id() alone would also take a hashid
     of several numbers and return the first one."""
-    if not isinstance(value, str) or not value:
-        return None
-    pk = decode_id(value)
-    if pk is None or encode_id(pk) != value:
-        return None
-    return pk
+    return decode_id_strict(value)
 
 
 @extend_schema_field(OpenApiTypes.STR)

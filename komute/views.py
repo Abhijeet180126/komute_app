@@ -18,8 +18,6 @@ from django.contrib import messages
 from django.contrib.auth import get_user_model, login, logout, update_session_auth_hash
 from django.core.validators import validate_email
 from django.core.exceptions import ValidationError
-from django.db import transaction
-from django.db.models import Avg, Q
 from django.utils import timezone
 from django.core.paginator import Paginator
 from django.views.decorators.cache import never_cache
@@ -33,9 +31,9 @@ from django.utils.http import url_has_allowed_host_and_scheme
 from django.urls import Resolver404, resolve, reverse
 
 from .client_ip import client_ip as _client_ip
-from .models import Rides, Vehicle, RideBooking, PriceOffer, Message, VerificationLog, Review, RideInvite, UserBlock, UserReport, BiometricConsent, LegalAcceptance, EmailLog
+from .models import Rides, Vehicle, RideBooking, PriceOffer, Message, VerificationLog, Review, RideInvite, UserBlock, BiometricConsent, LegalAcceptance, EmailLog
 from .middleware import LegalAcceptanceMiddleware, legal_versions_key
-from .hashid_utils import encode_id, decode_id
+from .hashid_utils import encode_id, decode_id, decode_id_strict as decode_hashid
 from .notifications import booking_fingerprint
 from .tasks import send_later
 from . import private_media
@@ -70,7 +68,6 @@ from .services.profiles import split_phone as _split_phone
 from .services.booking_status import (  # noqa: F401  (BLOCKED_CHAT_MESSAGE: tests)
     BLOCKED_CHAT_MESSAGE,
     chat_status as _chat_status,
-    notify_booking_status as _notify_booking_status,
 )
 from .services.geo import (  # noqa: F401  (_haversine_km, _geo_box_q, _max_ride_date: tests)
     geo_box_q as _geo_box_q,
@@ -81,6 +78,8 @@ from .services.geo import (  # noqa: F401  (_haversine_km, _geo_box_q, _max_ride
 from .services import rides as ride_rules
 from .services.receipts import build_receipt_pdf
 from .services import invites, route_demand
+# Reviews, reports and blocks (module 7).
+from .services import safety
 # Chat history (module 5).
 from .services import chat as chat_rules
 # Bookings and price offers (module 4).
@@ -1103,8 +1102,11 @@ def my_rides_view(request):
         ui_status = RIDE_STATUS_TO_UI.get(ride.status, 'active')
 
         if ride.status == 'completed':
-            total_earned_cents += ride.price_cents * booked
-            passengers_helped += booked
+            # Seats on bookings the trip carried: a request never answered
+            # holds a seat but earned nothing.
+            carried = sum(b.seats for b in ride.bookings.all() if b.status in ride_rules.CARRIED_STATUSES)
+            total_earned_cents += ride.price_cents * carried
+            passengers_helped += carried
 
         stops = list(ride.stops.all())
         prefs = []
@@ -1764,7 +1766,10 @@ def leave_review_view(request, booking_id):
         messages.error(request, "You don't have access to this review.")
         return redirect('my-rides')
 
-    if booking.status != RideBooking.STATUS_COMPLETED and ride.status != 'completed':
+    # The same test as saving the review: this booking's trip happened. The
+    # page used to open for a cancelled, rejected or draft booking on a
+    # completed ride, and the review was then refused.
+    if not safety.took_place(booking):
         messages.error(request, "You can only review completed rides.")
         return redirect('my-rides')
 
@@ -1790,7 +1795,8 @@ def leave_review_view(request, booking_id):
 
     return render(request, 'review.html', {
         'booking_id':          encode_id(booking.id),
-        'reviewee_id':         reviewee.id,
+        # The opaque id, as everywhere else (submit_review_view decodes it).
+        'reviewee_id':         encode_id(reviewee.id),
         'reviewee_name':       reviewee_name,
         'reviewee_first_name': reviewee_first_name,
         'reviewee_initials':   reviewee_initials,
@@ -1813,24 +1819,27 @@ def submit_review_view(request):
         data = json.loads(request.body)
     except json.JSONDecodeError:
         return JsonResponse({'error': 'Invalid JSON'}, status=400)
+    # A JSON list or number here used to end in a server error.
+    if not isinstance(data, dict):
+        return JsonResponse({'error': 'Invalid JSON'}, status=400)
 
-    booking_id  = decode_id(data.get('booking_id', ''))
-    reviewee_id = data.get('reviewee_id')
-    rating      = data.get('rating')
-    body         = (data.get('comment') or '').strip() or None
+    booking_key  = data.get('booking_id', '')
+    booking_id   = decode_id(booking_key) if isinstance(booking_key, str) else None
+    reviewee_id  = data.get('reviewee_id')
+    rating       = data.get('rating')
     is_anonymous = bool(data.get('anonymous', False))
-    tags         = data.get('tags') or []
-    subratings   = data.get('subratings') or {}
 
     if not all([booking_id, reviewee_id, rating]):
         return JsonResponse({'error': 'booking_id, reviewee_id, and rating are required.'}, status=400)
 
+    # Whole stars 1-5; a comment, tags and detailed ratings as the page offers
+    # them (komute.services.safety).
     try:
-        rating = int(rating)
-        if not 1 <= rating <= 5:
-            raise ValueError
-    except (ValueError, TypeError):
-        return JsonResponse({'error': 'Rating must be between 1 and 5.'}, status=400)
+        rating = safety.clean_rating(rating)
+        body, tags, subratings = safety.clean_review_extras(
+            data.get('comment'), data.get('tags'), data.get('subratings'))
+    except safety.SafetyError as e:
+        return JsonResponse({'error': e.message}, status=400)
 
     booking = get_object_or_404(
         RideBooking.objects.select_related('ride__driver', 'passenger'),
@@ -1855,10 +1864,14 @@ def submit_review_view(request):
     if not took_place:
         return JsonResponse({'error': 'Can only review completed rides.'}, status=400)
 
-    try:
-        reviewee_id = int(reviewee_id)
-    except (ValueError, TypeError):
-        return JsonResponse({'error': 'Invalid reviewee_id.'}, status=400)
+    # The page sends the opaque id; a page opened before that change sent the
+    # database id, which is still understood.
+    reviewee_key = str(reviewee_id)
+    reviewee_id = decode_hashid(reviewee_key)
+    if reviewee_id is None:
+        if not reviewee_key.isdigit():
+            return JsonResponse({'error': 'Invalid reviewee_id.'}, status=400)
+        reviewee_id = int(reviewee_key)
 
     expected_reviewee_id = booking.passenger_id if is_driver else ride.driver_id
     if reviewee_id != expected_reviewee_id:
@@ -1867,27 +1880,8 @@ def submit_review_view(request):
     if Review.objects.filter(booking=booking, reviewer=user).exists():
         return JsonResponse({'error': 'You have already reviewed this trip.'}, status=400)
 
-    with transaction.atomic():
-        Review.objects.create(
-            booking=booking,
-            reviewer=user,
-            reviewee_id=expected_reviewee_id,
-            rating=rating,
-            body=body,
-            tags_json=tags or None,
-            subratings_json=subratings or None,
-            is_anonymous=is_anonymous,
-        )
-
-        # Recompute the reviewee's avg_rating from scratch rather than folding
-        # this one rating in -- cheap at this scale, and avoids drift from any
-        # review that's ever edited/deleted out from under a running average.
-        # select_for_update so two reviews landing on the same reviewee at
-        # once can't race and have the second update clobber the first.
-        reviewee = User.objects.select_for_update().get(id=expected_reviewee_id)
-        avg = Review.objects.filter(reviewee_id=expected_reviewee_id).aggregate(Avg('rating'))['rating__avg']
-        reviewee.avg_rating = round(avg, 2) if avg is not None else 0
-        reviewee.save(update_fields=['avg_rating'])
+    safety.save_review(booking, user, expected_reviewee_id, rating=rating, body=body,
+                       is_anonymous=is_anonymous, tags=tags, subratings=subratings)
 
     return JsonResponse({'success': True})
 
@@ -3005,60 +2999,13 @@ def decline_invite_view(request, token):
 # REPORT AND BLOCK (ISSUES.md A1)
 # ──────────────────────────────────────────────────────────────────
 
-REPORT_DETAILS_MAX_CHARS = 2000
+REPORT_DETAILS_MAX_CHARS = safety.REPORT_DETAILS_MAX_CHARS
 
 
 def _safety_target(request):
-    """The other user a report or block is about, and the booking it came
-    from. Named by a booking the signed-in user is part of (`booking`), or by
-    a ride they can view (`ride`, meaning its driver), never by a raw user
-    ID. Returns (None, None) if neither names someone else."""
-    me = request.user
-    booking_key = request.POST.get('booking', '').strip()
-    ride_key = request.POST.get('ride', '').strip()
-    if booking_key:
-        booking_id = decode_id(booking_key)
-        booking = booking_id and (
-            RideBooking.objects.select_related('ride__driver', 'passenger').filter(id=booking_id).first()
-        )
-        if not booking:
-            return None, None
-        if me == booking.passenger:
-            return booking.ride.driver, booking
-        if me == booking.ride.driver:
-            return booking.passenger, booking
-        return None, None
-    if ride_key:
-        ride_id = decode_id(ride_key)
-        ride = ride_id and Rides.objects.select_related('driver').filter(id=ride_id).first()
-        if not ride or ride.driver == me:
-            return None, None
-        booking = RideBooking.objects.filter(ride=ride, passenger=me).order_by('-booked_at').first()
-        return ride.driver, booking
-    return None, None
-
-
-def _send_report_admin_email(request, report):
-    """Tell staff a report came in. The report is saved either way."""
-    admin_url = request.build_absolute_uri(reverse('admin:komute_userreport_change', args=[report.id]))
-    booking = report.booking
-    lines = [
-        f"New user report #{report.id}",
-        '─' * 45,
-        '',
-        f"Reported:  {report.reported.full_name} <{report.reported.email}> (user {report.reported_id})",
-        f"Reporter:  {report.reporter.full_name} <{report.reporter.email}> (user {report.reporter_id})",
-        f"Reason:    {report.get_reason_display()}",
-    ]
-    if booking:
-        lines.append(f"Booking:   #{booking.id} ({booking.status}), ride {booking.ride.origin} → {booking.ride.destination}")
-    lines += ['', 'Details:', report.details or '(none)', '', f"Review it in the admin: {admin_url}"]
-    send_later(EmailMultiAlternatives(
-        subject=f"[Komüte Report] {report.get_reason_display()} — report #{report.id}",
-        body='\n'.join(lines),
-        from_email=settings.DEFAULT_FROM_EMAIL,
-        to=[settings.ADMIN_EMAIL],
-    ), EmailLog.KIND_REPORT_ADMIN)
+    """The other user a report or block names (komute.services.safety)."""
+    return safety.safety_target(request.user, request.POST.get('booking', '').strip(),
+                                request.POST.get('ride', '').strip())
 
 
 @login_required
@@ -3071,36 +3018,12 @@ def report_user_view(request):
     if reported is None:
         return JsonResponse({'error': 'User not found.'}, status=404)
 
-    reason = request.POST.get('reason', '').strip()
-    if reason not in dict(UserReport.REASON_CHOICES):
-        return JsonResponse({'error': 'Please choose a reason.'}, status=400)
-    details = request.POST.get('details', '').strip()
-    if len(details) > REPORT_DETAILS_MAX_CHARS:
-        return JsonResponse({'error': f'Please keep the details under {REPORT_DETAILS_MAX_CHARS} characters.'}, status=400)
-    if reason == UserReport.REASON_OTHER and not details:
-        return JsonResponse({'error': 'Please tell us what happened.'}, status=400)
-
-    report = UserReport.objects.create(
-        reporter=request.user,
-        reported=reported,
-        booking=booking,
-        reason=reason,
-        details=details,
-    )
-    _send_report_admin_email(request, report)
+    try:
+        safety.report_user(request, request.user, reported, booking,
+                           request.POST.get('reason', '').strip(), request.POST.get('details', '').strip())
+    except safety.SafetyError as e:
+        return JsonResponse({'error': e.message}, status=e.status)
     return JsonResponse({'ok': True})
-
-
-def _close_chats_between(user_a, user_b):
-    """Lock any open chat page between two users who are now blocked."""
-    bookings = (
-        RideBooking.objects
-        .filter(Q(ride__driver=user_a, passenger=user_b) | Q(ride__driver=user_b, passenger=user_a))
-        .filter(status__in=(RideBooking.STATUS_DRAFT, RideBooking.STATUS_REQUESTED, RideBooking.STATUS_CONFIRMED))
-        .select_related('ride')
-    )
-    for booking in bookings:
-        _notify_booking_status(booking)
 
 
 @login_required
@@ -3110,9 +3033,7 @@ def block_user_view(request):
     if target is None:
         return JsonResponse({'error': 'User not found.'}, status=404)
 
-    _, created = UserBlock.objects.get_or_create(blocker=request.user, blocked=target)
-    if created:
-        _close_chats_between(request.user, target)
+    safety.block(request.user, target)
     return JsonResponse({'ok': True})
 
 
@@ -3120,9 +3041,6 @@ def block_user_view(request):
 @require_POST
 def unblock_user_view(request, user_id):
     real_id = decode_id(user_id)
-    deleted = 0
-    if real_id:
-        deleted, _ = UserBlock.objects.filter(blocker=request.user, blocked_id=real_id).delete()
-    if deleted:
+    if real_id and safety.unblock(request.user, real_id):
         messages.success(request, "User unblocked.")
     return redirect('profile')

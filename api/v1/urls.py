@@ -22,4 +22,6 @@ urlpatterns = [
     # Module 4: bookings, price offers, inbox
     path('bookings/', include((booking_urls.booking_patterns, 'bookings'), namespace='bookings')),
     path('offers/', include((booking_urls.offer_patterns, 'offers'), namespace='offers')),
+    # Module 7: reviews, reports, blocks
+    path('safety/', include(('api.v1.safety.urls', 'safety'), namespace='safety')),
 ]

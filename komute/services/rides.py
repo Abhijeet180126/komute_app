@@ -584,6 +584,7 @@ def vehicle_card(vehicle):
 # ──────────────────────────────────────────────────────────────────
 
 CO2_PER_KM_KG = 0.12
+CARRIED_STATUSES = (RideBooking.STATUS_CONFIRMED, RideBooking.STATUS_COMPLETED)
 
 
 def summary_viewer(ride, user):
@@ -624,9 +625,12 @@ def summary_stats(ride):
         minutes = int((delta.total_seconds() % 3600) // 60)
         duration = f"{hours}h {minutes}m" if hours else f"{minutes}m"
 
+    # The riders the trip carried. A pre-request chat (draft) or a request the
+    # driver never answered stays as it was when the ride completes, and used
+    # to be counted here as a passenger and in "Total received".
     active_bookings = [
         b for b in ride.bookings.all()
-        if b.status not in ('cancelled', 'rejected')
+        if b.status in CARRIED_STATUSES
     ]
     passenger_count = sum(b.seats for b in active_bookings)
 

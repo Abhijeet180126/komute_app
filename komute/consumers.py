@@ -101,7 +101,16 @@ class ChatConsumer(AsyncWebsocketConsumer):
             await self.send(text_data=json.dumps({'type': 'error', 'message': 'Message too long (max 2000 characters).'}))
             return
 
-        data = json.loads(text_data)
+        # A frame the page wouldn't send (not JSON, not an object, a body that
+        # isn't text) is answered and ignored; it used to drop the socket.
+        try:
+            data = json.loads(text_data)
+        except (TypeError, ValueError):
+            data = None
+        if not isinstance(data, dict) or not isinstance(data.get('body', ''), str):
+            await self.send(text_data=json.dumps({'type': 'error', 'code': 'bad_request',
+                                                  'message': "That message couldn't be read."}))
+            return
         msg_type = data.get('type')
 
         if msg_type == 'ping':
