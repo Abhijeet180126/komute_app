@@ -1595,18 +1595,7 @@ body.role-rider .driver-only { display: none; }
            BIOMETRIC_NOTICE_VERSION in settings.py whenever this text changes. -->
       <div id="verifyConsentStep" style="text-align:left;">
         <p class="verify-modal-title" style="font-size:18px;text-align:center;">Identity check with your face</p>
-        <div class="verify-consent-text" style="max-height:46vh;overflow-y:auto;font-size:13px;line-height:1.5;color:#334155;">
-          <p style="margin:0 0 8px;">To confirm you are the person on your driver's licence, Komüte compares a selfie you take now with the photo on your licence.</p>
-          <ul style="margin:0 0 8px;padding-left:18px;">
-            <li><strong>What we collect:</strong> a selfie from your camera, a photo of your licence that you add in the next step, and a face-match score worked out from them. The score is a measurement of your facial geometry, which some laws treat as biometric information.</li>
-            <li><strong>Why:</strong> only to confirm your identity before you can offer rides. We don't use it for anything else, and we never sell it.</li>
-            <li><strong>Who processes it:</strong> Komüte's own verification system, on our servers, only to produce this result. The images aren't sent to any other company.</li>
-            <li><strong>How long we keep it:</strong> Komüte doesn't store the selfie or the licence photo: they are used for this check only and never saved. The face-match score is permanently deleted within 30 days of the verification decision. We keep only a pass or fail result, for up to 1 year.</li>
-            <li><strong>Your choice:</strong> you don't have to agree. If you don't, you can still use Komüte as a rider, but you can't be verified as a driver. You can withdraw consent at any time by writing to <a href="mailto:privacy@komute.net">privacy@komute.net</a>; we then delete any biometric data we still hold.</li>
-            <li><strong>A person can review the result:</strong> the decision is made by an automated check. If it rejects you, you can ask a member of our team to review it from the result screen or your profile, or at <a href="mailto:privacy@komute.net">privacy@komute.net</a>. If the check can't reach a clear result, a person decides.</li>
-          </ul>
-          <p style="margin:0;">More detail: <a href="{% url 'privacy-policy' %}" target="_blank" rel="noopener">Privacy Policy, section 12</a>.</p>
-        </div>
+        {% include 'biometric-notice.html' %}
         <label style="display:flex;gap:8px;align-items:flex-start;margin:12px 0 4px;font-size:13px;cursor:pointer;">
           <input type="checkbox" id="vsConsentCheck" onchange="document.getElementById('vsConsentAgreeBtn').disabled = !this.checked" style="margin-top:3px;">
           <span>I have read this notice and I agree to Komüte collecting and using my biometric information as described above.</span>

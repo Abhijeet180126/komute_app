@@ -1,8 +1,5 @@
-import base64
 import json
 import logging
-import re
-import uuid
 from datetime import date, datetime, timedelta
 from email.utils import formataddr
 from urllib.parse import quote, urlsplit
@@ -10,7 +7,6 @@ from urllib.parse import quote, urlsplit
 
 from django.conf import settings
 from django.core.cache import cache
-from django.core.files.uploadhandler import MemoryFileUploadHandler
 from django.http import JsonResponse, HttpResponse
 from django.shortcuts import get_object_or_404, render, redirect
 from django.http import Http404
@@ -31,13 +27,12 @@ from django.utils.http import url_has_allowed_host_and_scheme
 from django.urls import Resolver404, resolve, reverse
 
 from .client_ip import client_ip as _client_ip
-from .models import Rides, Vehicle, RideBooking, PriceOffer, Message, VerificationLog, Review, RideInvite, UserBlock, BiometricConsent, LegalAcceptance, EmailLog
+from .models import Rides, Vehicle, RideBooking, PriceOffer, Message, Review, RideInvite, UserBlock, LegalAcceptance
 from .middleware import LegalAcceptanceMiddleware, legal_versions_key
 from .hashid_utils import encode_id, decode_id, decode_id_strict as decode_hashid
 from .notifications import booking_fingerprint
-from .tasks import send_later
 from . import private_media
-from .private_media import delete_stored_file, open_stored_file, save_private_image
+from .private_media import delete_stored_file, save_private_image
 # Account logic shared with the mobile app API (docs/api-modular-breakup.md,
 # module 1). The old private names below are kept as aliases; some are only
 # used by komute.social and the tests.
@@ -78,6 +73,13 @@ from .services.geo import (  # noqa: F401  (_haversine_km, _geo_box_q, _max_ride
 from .services import rides as ride_rules
 from .services.receipts import build_receipt_pdf
 from .services import invites, route_demand
+# Driver verification (module 8).
+from .services import verification
+from .services.verification import (  # noqa: F401  (_reason_codes: tests)
+    InMemoryUploadHandler as _InMemoryUploadHandler,
+    reason_codes as _reason_codes,
+    review_state as _verification_review_state,
+)
 # Reviews, reports and blocks (module 7).
 from .services import safety
 # Chat history (module 5).
@@ -2552,58 +2554,6 @@ def private_media_view(request, path):
     return response
 
 
-# Keyword -> category for DL-Verification's free-text rejection_reasons. The
-# service can't send codes, and its text may quote licence values, which the
-# privacy policy (s.9/s.13) doesn't let us keep -- so only the category is
-# stored. First match wins: image quality before the field checks, and vehicle
-# before licence number so "licence plate number" isn't read as the DL number.
-_REASON_PATTERNS = [
-    (VerificationLog.REASON_IMAGE_QUALITY, re.compile(r"blur|unreadable|illegible|quality|glare|too dark|retry", re.I)),
-    (VerificationLog.REASON_FACE_MISMATCH, re.compile(r"face|facial|biometric|selfie", re.I)),
-    (VerificationLog.REASON_VEHICLE_MISMATCH, re.compile(r"vehicle|plate|colou?r|alpr", re.I)),
-    (VerificationLog.REASON_EXPIRY_MISMATCH, re.compile(r"expir", re.I)),
-    (VerificationLog.REASON_DOB_MISMATCH, re.compile(r"birth|\bdob\b", re.I)),
-    (VerificationLog.REASON_LICENSE_NUMBER_MISMATCH, re.compile(r"licen[cs]e\s*(number|no\b|#)|\bdl\s*(number|no\b)", re.I)),
-    (VerificationLog.REASON_NAME_MISMATCH, re.compile(r"\bname\b", re.I)),
-]
-
-
-# Shown when a check failed but the service gave no reason for it.
-_STAGE_FAILED_REASONS = {
-    "license_ocr": "The licence check didn't pass: the details read from your licence photo didn't match your profile.",
-    "face_biometrics": "The face check didn't pass: your selfie didn't match the photo on your licence.",
-    "vehicle_verification": "The vehicle check didn't pass: your vehicle photo didn't match your vehicle details.",
-}
-
-
-def _reason_codes(reasons):
-    """Categories for the service's rejection reasons, deduplicated in order."""
-    codes = []
-    for reason in reasons:
-        code = next((c for c, pat in _REASON_PATTERNS if pat.search(reason)), VerificationLog.REASON_OTHER)
-        if code not in codes:
-            codes.append(code)
-    return codes
-
-
-def _record_biometric_consent(request, user):
-    """Stores proof that `user` accepted the current biometric notice."""
-    BiometricConsent.objects.create(
-        user=user,
-        notice_version=settings.BIOMETRIC_NOTICE_VERSION,
-        **_consent_request_details(request),
-    )
-
-
-class _InMemoryUploadHandler(MemoryFileUploadHandler):
-    """Keeps every uploaded file in memory whatever its size. Django's default
-    writes files over FILE_UPLOAD_MAX_MEMORY_SIZE to a temp file on disk; the
-    licence photo must never touch disk (audit P-5/P-13). Nginx's
-    client_max_body_size still caps the request."""
-    def handle_raw_input(self, *args, **kwargs):
-        self.activated = True
-
-
 @csrf_exempt
 def verify_driver_view(request):
     # Upload handlers must be swapped before anything reads the body, and
@@ -2616,7 +2566,7 @@ def verify_driver_view(request):
 def _verify_driver_view(request):
     """POST /profile/verify-driver/ - calls DL-Verification Node API and updates driver_verified."""
     try:
-        import requests as http_client
+        import requests as http_client  # noqa: F401  (500 early if it is missing)
     except ImportError:
         return JsonResponse({"error": "requests library not installed on this server."}, status=500)
 
@@ -2637,219 +2587,29 @@ def _verify_driver_view(request):
     # current notice on this attempt, before any image is read or sent. An
     # old version means the page predates a wording change, so the driver
     # hasn't seen the text now in force.
-    if request.POST.get("biometric_consent") != "1":
-        return JsonResponse({"error": "Please read the biometric notice and tick the box to agree before verifying."}, status=400)
-    if request.POST.get("notice_version") != settings.BIOMETRIC_NOTICE_VERSION:
-        return JsonResponse({"error": "The biometric notice has changed. Please reload the page and review it again."}, status=400)
+    refused = verification.consent_error(request.POST.get("biometric_consent") == "1",
+                                         request.POST.get("notice_version"))
+    if refused:
+        return JsonResponse({"error": refused[0]}, status=400)
 
-    # The licence photo comes with this request and is never written to
-    # storage: it is resized in memory, sent to DL-Verification and dropped
-    # with the request (audit P-5/P-13).
-    license_file = request.FILES.get("license_image")
-    if not license_file:
-        return JsonResponse({"error": "Please add a photo of your driving license."}, status=400)
+    # The licence photo and selfie are resized in memory, sent to
+    # DL-Verification and dropped (audit P-5/P-13; komute.services.verification).
     try:
-        license_bytes = _resize_image(license_file, label=f"user={user.id} verify-license").read()
-    except ValidationError as e:
-        return JsonResponse({"error": f"License photo: {e.messages[0]} Please choose another photo."}, status=400)
-
-    # Only the selfie captured for this attempt counts. The profile photo is
-    # never used: it may legitimately show the driver's vehicle instead of
-    # their face, and it isn't proof that the person is present now.
-    selfie_file = request.FILES.get("selfie")
-    if not selfie_file:
-        return JsonResponse({"error": "Please take a selfie using the camera when prompted."}, status=400)
-    # Same size as the stored photos, not the full-resolution original.
-    try:
-        selfie_bytes = _resize_image(selfie_file, label=f"user={user.id} verify-selfie").read()
-    except ValidationError as e:
-        return JsonResponse({"error": f"Selfie: {e.messages[0]} Please take the selfie again."}, status=400)
-
-    # The verification pipeline scores DL OCR, face biometrics, and vehicle
-    # ALPR as one composite decision -- a missing vehicle photo makes the
-    # whole pipeline reject the driver (not just the vehicle), so a vehicle
-    # with a photo is required before calling out to the service at all.
-    user_vehicle = user.vehicles.filter(is_primary=True).first() or user.vehicles.first()
-    if not user_vehicle or not user_vehicle.photo_url:
-        return JsonResponse({"error": "Please add a vehicle with a photo to your profile before verifying."}, status=400)
-
-    try:
-        with open_stored_file(user_vehicle.photo_url) as f:
-            vehicle_bytes = f.read()
-    except Exception:
-        logger.exception("verify_driver_view: could not read vehicle image for user %s", user.id)
-        return JsonResponse({"error": "Could not read vehicle image. Please try again later."}, status=500)
-
-    payload = {
-        "request_id": f"req_{uuid.uuid4().hex[:8]}",
-        "driver_id": f"usr_{user.id}",
-        "personal_info": {
-            "full_name": user.full_name or "",
-            "date_of_birth": user.dob.strftime("%Y-%m-%d") if user.dob else "",
-        },
-        "license_details": {
-            "license_number": user.license_number or "",
-            "issuing_province": user.license_province or "",
-            "expiry_date": user.license_expiry.strftime("%Y-%m-%d") if user.license_expiry else "",
-        },
-        "vehicle_details": {
-            "make": user_vehicle.make,
-            "model": user_vehicle.model,
-            "year": user_vehicle.year,
-            "color": user_vehicle.color,
-            "plate_number": user_vehicle.plate,
-        },
-        "images": {
-            "selfie_base64": base64.b64encode(selfie_bytes).decode("utf-8"),
-            "license_image_base64": base64.b64encode(license_bytes).decode("utf-8"),
-            "vehicle_photo_base64": base64.b64encode(vehicle_bytes).decode("utf-8"),
-        },
-    }
-
-    # The consent record is written before the images leave the server.
-    _record_biometric_consent(request, user)
-
-    resp = None
-    try:
-        resp = http_client.post(
-            settings.DL_VERIFICATION_API_URL,
-            headers={"X-API-Key": settings.DL_VERIFICATION_API_KEY},
-            json=payload,
-            timeout=120,
-        )
-        resp.raise_for_status()
-        result = resp.json()
-    except http_client.exceptions.ConnectionError:
-        return JsonResponse({"error": "Verification service is offline. Make sure DL-Verification is running."}, status=503)
-    except Exception:
-        logger.exception("verify_driver_view: verification service call failed for user %s", user.id)
-        upload_logger.warning("verification failed: user=%s service error (HTTP %s)",
-                              user.id, getattr(resp, "status_code", "-"))
-        return JsonResponse({"error": "Verification service error. Please try again later."}, status=503)
-
-    decision = result.get("decision")
-    stages = result.get("stages", {})
-    stage_results = {
-        name: bool((stages.get(name) or {}).get("passed", False))
-        for name in ("license_ocr", "face_biometrics", "vehicle_verification")
-    }
-    # The service approves on one combined score (licence OCR + face +
-    # vehicle, > 85%), which can carry a failed check. A driver passes only
-    # if every check passed as well; a missing check counts as failed.
-    verified = decision == "APPROVED" and all(stage_results.values())
-    stage2 = stages.get("face_biometrics", {})
-    try:
-        similarity = float(stage2.get("vlm_confidence", 0.0))
-    except (TypeError, ValueError):
-        similarity = 0.0
-
-    user.driver_verified  = verified
-    user.face_match_score = similarity
-    update_fields = ["driver_verified", "face_match_score"]
-    if verified:
-        # Starts a new DRIVER_REVERIFY_DAYS period.
-        user.driver_verified_at        = timezone.now()
-        user.reverify_reminder_sent_at = None
-        update_fields += ["driver_verified_at", "reverify_reminder_sent_at"]
-    user.save(update_fields=update_fields)
-
-    if stage_results["vehicle_verification"]:
-        user_vehicle.vehicle_verified = True
-        user_vehicle.save(update_fields=["vehicle_verified"])
-
-    rejection_reasons = result.get("rejection_reasons") or []
-    if not isinstance(rejection_reasons, list):
-        rejection_reasons = [str(rejection_reasons)]
-    rejection_reasons = [str(r) for r in rejection_reasons]
-    # An approval with a failed check comes with no reasons; name the checks.
-    if not verified and not rejection_reasons:
-        rejection_reasons = [_STAGE_FAILED_REASONS[name] for name, ok in stage_results.items() if not ok]
-
-    # Privacy policy s.9/s.13: keep the outcome and minimum details only. The
-    # OCR output and the reason text (which can quote licence values) are not
-    # stored; the driver sees the reasons in this response.
-    reason_codes = _reason_codes(rejection_reasons)
-
-    # No clear decision from the service: a person decides (audit P-10) and
-    # the driver waits, unverified.
-    if decision not in ("APPROVED", "REJECTED"):
-        log_result = VerificationLog.RESULT_MANUAL_REVIEW
-    else:
-        log_result = VerificationLog.RESULT_APPROVED if verified else VerificationLog.RESULT_REJECTED
-    borderline = log_result == VerificationLog.RESULT_MANUAL_REVIEW
-    log = VerificationLog.objects.create(
-        user=user,
-        stage_results=stage_results,
-        reason_codes=reason_codes or None,
-        face_score=similarity,
-        result=log_result,
-        **({"review_status": VerificationLog.REVIEW_PENDING,
-            "review_source": VerificationLog.REVIEW_SOURCE_BORDERLINE,
-            "review_requested_at": timezone.now()} if borderline else {}),
-    )
-    if borderline:
-        _send_review_admin_email(request, log)
-    # Reason codes only, never the reason text (see above).
-    upload_logger.info(
-        "verification result: user=%s decision=%s stages=%s reasons=%s image_bytes=selfie:%d,license:%d,vehicle:%d",
-        user.id, decision, stage_results, reason_codes,
-        len(selfie_bytes), len(license_bytes), len(vehicle_bytes),
-    )
-
-    details = "; ".join(rejection_reasons)
+        result = verification.verify(request, user, request.FILES.get("license_image"),
+                                     request.FILES.get("selfie"), _consent_request_details(request))
+    except verification.VerificationError as e:
+        return JsonResponse({"error": e.message}, status=e.status)
 
     return JsonResponse({
-        "verified":   verified,
-        "similarity": round(similarity * 100, 1),
-        "face_match": stage2,
-        "decision":   {"status": decision, "details": details},
+        "verified":   result["verified"],
+        "similarity": round(result["similarity"] * 100, 1),
+        "face_match": result["face_match"],
+        "decision":   {"status": result["decision"], "details": "; ".join(result["reasons"])},
         # A person will look at this result anyway (borderline).
-        "review_pending": borderline,
+        "review_pending": result["review_pending"],
         # Law 25 s.12.1: a rejection can be sent to a person for review.
-        "can_request_review": log_result == VerificationLog.RESULT_REJECTED,
+        "can_request_review": result["can_request_review"],
     })
-
-
-VERIFICATION_REVIEW_COMMENT_MAX_CHARS = 2000
-
-
-def _latest_verification(user):
-    return VerificationLog.objects.filter(user=user).order_by('-created_at', '-id').first()
-
-
-def _verification_review_state(user):
-    log = _latest_verification(user)
-    if not log:
-        return ""
-    if log.review_status == VerificationLog.REVIEW_PENDING:
-        return "pending"
-    if log.result == VerificationLog.RESULT_REJECTED and not log.review_status:
-        return "available"
-    return ""
-
-
-def _send_review_admin_email(request, log):
-    """Tell staff a verification attempt is waiting in the review queue."""
-    admin_url = request.build_absolute_uri(reverse('admin:komute_verificationlog_change', args=[log.id]))
-    user = log.user
-    lines = [
-        f"Verification #{log.id} needs a review ({log.get_review_source_display()})",
-        '─' * 45,
-        '',
-        f"Driver:    {user.full_name} <{user.email}> (user {user.id})",
-        f"Result:    {log.get_result_display()}",
-        f"Checks:    {log.stage_results}",
-        f"Reasons:   {', '.join(log.reason_codes or []) or '(none)'}",
-    ]
-    if log.driver_comment:
-        lines += ['', "Driver's comment:", log.driver_comment]
-    lines += ['', f"Review it in the admin: {admin_url}"]
-    send_later(EmailMultiAlternatives(
-        subject=f"[Komüte Verification] Review needed — #{log.id}",
-        body='\n'.join(lines),
-        from_email=settings.DEFAULT_FROM_EMAIL,
-        to=[settings.ADMIN_EMAIL],
-    ), EmailLog.KIND_REVIEW_ADMIN)
 
 
 @login_required
@@ -2858,20 +2618,10 @@ def request_verification_review_view(request):
     """POST /profile/verify-driver/review/ - the driver asks a person to
     review their latest rejected verification (Quebec Law 25 s.12.1, GDPR
     Art. 22). Puts it in the admin's review queue with their comment."""
-    comment = request.POST.get('comment', '').strip()
-    if len(comment) > VERIFICATION_REVIEW_COMMENT_MAX_CHARS:
-        return JsonResponse({'error': f'Please keep your comment under {VERIFICATION_REVIEW_COMMENT_MAX_CHARS} characters.'}, status=400)
-    log = _latest_verification(request.user)
-    if log and log.review_status == VerificationLog.REVIEW_PENDING:
-        return JsonResponse({'error': 'A review of your verification is already under way.'}, status=409)
-    if not log or log.result != VerificationLog.RESULT_REJECTED or log.review_status:
-        return JsonResponse({'error': 'There is no rejected verification to review.'}, status=400)
-    log.review_status = VerificationLog.REVIEW_PENDING
-    log.review_source = VerificationLog.REVIEW_SOURCE_DRIVER
-    log.driver_comment = comment or None
-    log.review_requested_at = timezone.now()
-    log.save(update_fields=['review_status', 'review_source', 'driver_comment', 'review_requested_at'])
-    _send_review_admin_email(request, log)
+    try:
+        verification.request_review(request, request.user, request.POST.get('comment', '').strip())
+    except verification.VerificationError as e:
+        return JsonResponse({'error': e.message}, status=e.status)
     return JsonResponse({'ok': True})
 
 

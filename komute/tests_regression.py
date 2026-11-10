@@ -2936,7 +2936,7 @@ class VerifyDriverViewGateTests(TestCase):
     def test_no_vehicle_rejected(self):
         c = Client()
         c.login(username='vd_driver@example.com', password='TestPass123')
-        with patch('komute.views.open_stored_file', mock_open(read_data=b'fake-bytes')):
+        with patch('komute.services.verification.open_stored_file', mock_open(read_data=b'fake-bytes')):
             resp = c.post(reverse('verify-driver'), self._selfie_file())
         self.assertEqual(resp.status_code, 400)
         self.assertIn('vehicle', json.loads(resp.content)['error'].lower())
@@ -2948,7 +2948,7 @@ class VerifyDriverViewGateTests(TestCase):
         )
         c = Client()
         c.login(username='vd_driver@example.com', password='TestPass123')
-        with patch('komute.views.open_stored_file', mock_open(read_data=b'fake-bytes')):
+        with patch('komute.services.verification.open_stored_file', mock_open(read_data=b'fake-bytes')):
             resp = c.post(reverse('verify-driver'), self._selfie_file())
         self.assertEqual(resp.status_code, 400)
         self.assertIn('vehicle', json.loads(resp.content)['error'].lower())
@@ -2968,7 +2968,7 @@ class VerifyDriverViewGateTests(TestCase):
         }
         c = Client()
         c.login(username='vd_driver@example.com', password='TestPass123')
-        with patch('komute.views.open_stored_file', mock_open(read_data=b'fake-bytes')), \
+        with patch('komute.services.verification.open_stored_file', mock_open(read_data=b'fake-bytes')), \
              patch('requests.post', return_value=mock_resp) as mock_post:
             resp = c.post(reverse('verify-driver'), self._selfie_file())
 
@@ -3008,7 +3008,7 @@ class VerifyDriverViewGateTests(TestCase):
         self.driver.save(update_fields=['selfie_url'])
         c = Client()
         c.login(username='vd_driver@example.com', password='TestPass123')
-        with patch('komute.views.open_stored_file', mock_open(read_data=b'fake-bytes')), \
+        with patch('komute.services.verification.open_stored_file', mock_open(read_data=b'fake-bytes')), \
              patch('requests.post') as mock_post:
             resp = c.post(reverse('verify-driver'), {**_licence_image(), **_consent_fields()})
         self.assertEqual(resp.status_code, 400)
@@ -3030,7 +3030,7 @@ class VerifyDriverViewGateTests(TestCase):
         }
         c = Client()
         c.login(username='vd_driver@example.com', password='TestPass123')
-        with patch('komute.views.open_stored_file', mock_open(read_data=b'fake-bytes')), \
+        with patch('komute.services.verification.open_stored_file', mock_open(read_data=b'fake-bytes')), \
              patch('requests.post', return_value=mock_resp):
             resp = c.post(reverse('verify-driver'), self._selfie_file())
 
@@ -3335,7 +3335,7 @@ class ImageUploadTests(TestCase):
             "rejection_reasons": ["Facial biometrics mismatch for JOHN SMITH"],
         }
         selfie = SimpleUploadedFile('s.jpg', self._big_jpeg(), content_type='image/jpeg')
-        with patch('komute.views.open_stored_file', mock_open(read_data=b'fake-bytes')), \
+        with patch('komute.services.verification.open_stored_file', mock_open(read_data=b'fake-bytes')), \
              patch('requests.post', return_value=mock_resp) as mock_post, \
              self.assertLogs('komute.uploads', 'INFO') as logs:
             resp = self.client.post(reverse('verify-driver'), {'selfie': selfie, **_licence_image(), **_consent_fields()})
@@ -3350,7 +3350,7 @@ class ImageUploadTests(TestCase):
 
     def test_unreadable_verification_selfie_rejected_before_call(self):
         self._verifiable()
-        with patch('komute.views.open_stored_file', mock_open(read_data=b'fake-bytes')), \
+        with patch('komute.services.verification.open_stored_file', mock_open(read_data=b'fake-bytes')), \
              patch('requests.post') as mock_post:
             resp = self.client.post(reverse('verify-driver'), {
                 'selfie': SimpleUploadedFile('s.jpg', b'garbage', content_type='image/jpeg'),
@@ -3362,7 +3362,7 @@ class ImageUploadTests(TestCase):
     def _verify(self, licence):
         mock_resp = MagicMock()
         mock_resp.json.return_value = {"decision": "REJECTED", "stages": {}, "rejection_reasons": []}
-        with patch('komute.views.open_stored_file', mock_open(read_data=b'fake-bytes')), \
+        with patch('komute.services.verification.open_stored_file', mock_open(read_data=b'fake-bytes')), \
              patch('requests.post', return_value=mock_resp) as mock_post:
             resp = self.client.post(reverse('verify-driver'), {
                 'selfie': SimpleUploadedFile('s.jpg', _jpeg_bytes(), content_type='image/jpeg'),
@@ -3394,7 +3394,7 @@ class ImageUploadTests(TestCase):
         def spy(file_obj, *args, **kwargs):
             seen.append(type(file_obj))
             return real_resize(file_obj, *args, **kwargs)
-        with patch('komute.views._resize_image', side_effect=spy):
+        with patch('komute.services.verification.resize_image', side_effect=spy):
             resp, _ = self._verify(SimpleUploadedFile('l.jpg', self._big_jpeg(), content_type='image/jpeg'))
         self.assertEqual(resp.status_code, 200)
         self.assertEqual(seen, [InMemoryUploadedFile, InMemoryUploadedFile])
@@ -3908,7 +3908,7 @@ class BiometricConsentTests(TestCase):
                 on_call()
             return mock_resp
 
-        with patch('komute.views.open_stored_file', mock_open(read_data=b'fake-bytes')) as mock_file, \
+        with patch('komute.services.verification.open_stored_file', mock_open(read_data=b'fake-bytes')) as mock_file, \
              patch('requests.post', side_effect=fake_post) as mock_post:
             resp = self._client().post(reverse('verify-driver'), data, REMOTE_ADDR='203.0.113.7')
         return resp, mock_post, mock_file
@@ -4009,7 +4009,7 @@ class VerificationResultStorageTests(TestCase):
         mock_resp.json.return_value = body
         c = Client()
         c.login(username='vd_driver@example.com', password='TestPass123')
-        with patch('komute.views.open_stored_file', mock_open(read_data=b'fake-bytes')), \
+        with patch('komute.services.verification.open_stored_file', mock_open(read_data=b'fake-bytes')), \
              patch('requests.post', return_value=mock_resp):
             return c.post(reverse('verify-driver'), self._selfie_file())
 

@@ -24,4 +24,6 @@ urlpatterns = [
     path('offers/', include((booking_urls.offer_patterns, 'offers'), namespace='offers')),
     # Module 7: reviews, reports, blocks
     path('safety/', include(('api.v1.safety.urls', 'safety'), namespace='safety')),
+    # Module 8: driver identity verification
+    path('verification/', include(('api.v1.verification.urls', 'verification'), namespace='verification')),
 ]
