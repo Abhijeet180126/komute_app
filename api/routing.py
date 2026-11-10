@@ -13,12 +13,15 @@ from django.urls import re_path
 
 from api.common.authentication import user_for_token
 from api.v1.chat.consumers import AppChatConsumer
+from api.v1.notifications.consumers import AppNotifyConsumer
 
 APP_SOCKET_PREFIX = '/ws/app/'
 TOKEN_HEADER = b'x-session-token'
 
 app_websocket_urlpatterns = [
     re_path(r'^ws/app/chat/(?P<token>[A-Za-z0-9_:\-\.]+)/$', AppChatConsumer.as_asgi()),
+    # Module 6: live "your bookings changed" notices while the app is open.
+    re_path(r'^ws/app/notify/$', AppNotifyConsumer.as_asgi()),
 ]
 
 
