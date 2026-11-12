@@ -98,7 +98,11 @@ class LegalAcceptanceMiddleware:
     Left open: the legal pages themselves, logout, account deletion, contact,
     email confirmation, private media, robots.txt, the sitemap and the admin. Unnamed routes are
     either redirects to named ones or the old deactivate link. Websocket chat
-    isn't covered, but the chat page that opens it is."""
+    isn't covered, but the chat page that opens it is.
+
+    The mobile app API (/api/, only when API_ENABLED) is left alone too: it
+    signs in by token, not this cookie, and answers JSON, so it checks the
+    acceptance itself (api.common.permissions.HasAcceptedTerms)."""
 
     SESSION_KEY = 'legal_accepted_versions'
     EXEMPT_URL_NAMES = {
@@ -120,7 +124,8 @@ class LegalAcceptanceMiddleware:
             return None
         match = request.resolver_match
         if (match is None or match.url_name is None
-                or match.url_name in self.EXEMPT_URL_NAMES or 'admin' in match.namespaces):
+                or match.url_name in self.EXEMPT_URL_NAMES or 'admin' in match.namespaces
+                or 'api' in match.namespaces):
             return None
         current = legal_versions_key()
         if request.session.get(self.SESSION_KEY) == current:

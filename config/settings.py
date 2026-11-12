@@ -80,8 +80,15 @@ INSTALLED_APPS = [
     'channels',
     'axes',
     'django_q',
+    # Mobile app API (docs/api-modular-breakup.md). None of these has models
+    # or middleware; the /api/ routes exist only when API_ENABLED=True.
+    'allauth.headless',
+    'rest_framework',
+    'drf_spectacular',
+    'drf_spectacular_sidecar',
     # 'komute',
     'komute.apps.KomuteConfig',
+    'api',
 ]
 
 ASGI_APPLICATION = 'config.asgi.application'
@@ -444,11 +451,20 @@ _APPLE_KEY_ID    = config('APPLE_KEY_ID', default='')
 _APPLE_KEY_PATH  = config('APPLE_PRIVATE_KEY_PATH', default='')
 if _APPLE_CLIENT_ID and _APPLE_TEAM_ID and _APPLE_KEY_ID and _APPLE_KEY_PATH:
     INSTALLED_APPS.append('allauth.socialaccount.providers.apple')
+    _apple_key = Path(_APPLE_KEY_PATH).read_text()
     SOCIALACCOUNT_PROVIDERS['apple'] = {
         # allauth's names: "secret" is the Key ID, "key" the Team ID.
         'APPS': [{'client_id': _APPLE_CLIENT_ID, 'secret': _APPLE_KEY_ID, 'key': _APPLE_TEAM_ID,
-                  'settings': {'certificate_key': Path(_APPLE_KEY_PATH).read_text()}}],
+                  'settings': {'certificate_key': _apple_key}}],
     }
+    # Sign in with Apple inside the iOS app (API, /api/v1/auth/social/token/):
+    # Apple issues that token for the app's bundle ID, not the Services ID.
+    # "hidden" keeps the website's sign-in on the Services ID entry above.
+    _APPLE_APP_BUNDLE_ID = config('APPLE_APP_BUNDLE_ID', default='')
+    if _APPLE_APP_BUNDLE_ID:
+        SOCIALACCOUNT_PROVIDERS['apple']['APPS'].append(
+            {'client_id': _APPLE_APP_BUNDLE_ID, 'secret': _APPLE_KEY_ID, 'key': _APPLE_TEAM_ID,
+             'settings': {'certificate_key': _apple_key, 'hidden': True}})
 SOCIALACCOUNT_ADAPTER = 'komute.social.SocialAccountAdapter'
 SOCIALACCOUNT_FORMS = {'signup': 'komute.social.SocialSignupForm'}
 # Always show the finish-signup page: phone, date of birth and the Terms.
@@ -464,6 +480,82 @@ SOCIALACCOUNT_STORE_TOKENS = False
 LOGIN_URL = "/login/"
 LOGIN_REDIRECT_URL = "/"
 LOGOUT_REDIRECT_URL = "/"
+
+
+# ---------------------------------------------------------------------------
+# Mobile app API (/api/v1/, docs/api-modular-breakup.md)
+# ---------------------------------------------------------------------------
+# Off by default: config/urls.py registers no /api/ route, so every /api/
+# URL is a 404 exactly as before. Turn on in .env only for the Flutter app.
+API_ENABLED = config('API_ENABLED', default=False, cast=bool)
+# The OpenAPI schema and Swagger UI (/api/v1/schema/, /api/v1/docs/) are
+# staff-only unless this is True (handy locally; keep False in production).
+API_DOCS_PUBLIC = config('API_DOCS_PUBLIC', default=False, cast=bool)
+# What the app reads at start-up (GET /api/v1/app/config/, module 9). The
+# website never reads these. Versions are "1.2.3"; an app older than the
+# minimum must update before it goes on. APP_MAINTENANCE=True tells the app
+# to show APP_MAINTENANCE_MESSAGE instead of its screens (the API itself
+# keeps answering).
+APP_MIN_VERSION_IOS        = config('APP_MIN_VERSION_IOS',        default='0.0.0')
+APP_MIN_VERSION_ANDROID    = config('APP_MIN_VERSION_ANDROID',    default='0.0.0')
+APP_LATEST_VERSION_IOS     = config('APP_LATEST_VERSION_IOS',     default='')
+APP_LATEST_VERSION_ANDROID = config('APP_LATEST_VERSION_ANDROID', default='')
+APP_STORE_URL_IOS          = config('APP_STORE_URL_IOS',          default='')
+APP_STORE_URL_ANDROID      = config('APP_STORE_URL_ANDROID',      default='')
+APP_MAINTENANCE            = config('APP_MAINTENANCE', default=False, cast=bool)
+APP_MAINTENANCE_MESSAGE    = config('APP_MAINTENANCE_MESSAGE',
+                                    default='Komüte is down for maintenance. Please try again soon.')
+
+# allauth.headless gives the app its login token (X-Session-Token header).
+# Only the "app" client: the website keeps its own cookie-based login.
+# Tokens are Django session keys, so they can be revoked server-side.
+HEADLESS_CLIENTS = ("app",)
+
+REST_FRAMEWORK = {
+    # Token only. No SessionAuthentication, so a browser cookie never
+    # authenticates an API call and CSRF doesn't come into it.
+    'DEFAULT_AUTHENTICATION_CLASSES': [
+        'api.common.authentication.SessionTokenAuthentication',
+    ],
+    'DEFAULT_PERMISSION_CLASSES': [
+        'rest_framework.permissions.IsAuthenticated',
+    ],
+    # JSON only; no browsable HTML API.
+    'DEFAULT_RENDERER_CLASSES': [
+        'rest_framework.renderers.JSONRenderer',
+    ],
+    'DEFAULT_PARSER_CLASSES': [
+        'rest_framework.parsers.JSONParser',
+        'rest_framework.parsers.MultiPartParser',
+    ],
+    'DEFAULT_PAGINATION_CLASS': 'api.common.pagination.StandardPagination',
+    'PAGE_SIZE': 20,
+    'DEFAULT_THROTTLE_CLASSES': [
+        'api.common.throttles.AnonBurstThrottle',
+        'api.common.throttles.UserBurstThrottle',
+    ],
+    # Catch-all per-client limits on top of the per-action RATE_LIMITS
+    # buckets (api.common.throttles.KomuteActionThrottle).
+    'DEFAULT_THROTTLE_RATES': {
+        'anon': config('API_THROTTLE_ANON', default='60/min'),
+        'user': config('API_THROTTLE_USER', default='240/min'),
+    },
+    'EXCEPTION_HANDLER': 'api.common.exceptions.api_exception_handler',
+    'DEFAULT_SCHEMA_CLASS': 'drf_spectacular.openapi.AutoSchema',
+    'TEST_REQUEST_DEFAULT_FORMAT': 'json',
+}
+
+SPECTACULAR_SETTINGS = {
+    'TITLE': 'Komüte API',
+    'DESCRIPTION': 'API for the Komüte mobile app. Send the token from login as the X-Session-Token header.',
+    'VERSION': '1.0.0',
+    'SERVE_INCLUDE_SCHEMA': False,
+    'SCHEMA_PATH_PREFIX': r'/api/v1',
+    'COMPONENT_SPLIT_REQUEST': True,
+    'SWAGGER_UI_DIST': 'SIDECAR',
+    'SWAGGER_UI_FAVICON_HREF': 'SIDECAR',
+    'REDOC_DIST': 'SIDECAR',
+}
 
 
 

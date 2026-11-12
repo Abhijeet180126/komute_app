@@ -2,7 +2,6 @@ import json
 import logging
 from channels.generic.websocket import AsyncWebsocketConsumer
 from channels.db import database_sync_to_async
-from django.utils import timezone
 
 from .notifications import booking_fingerprint, user_group_name
 
@@ -102,7 +101,16 @@ class ChatConsumer(AsyncWebsocketConsumer):
             await self.send(text_data=json.dumps({'type': 'error', 'message': 'Message too long (max 2000 characters).'}))
             return
 
-        data = json.loads(text_data)
+        # A frame the page wouldn't send (not JSON, not an object, a body that
+        # isn't text) is answered and ignored; it used to drop the socket.
+        try:
+            data = json.loads(text_data)
+        except (TypeError, ValueError):
+            data = None
+        if not isinstance(data, dict) or not isinstance(data.get('body', ''), str):
+            await self.send(text_data=json.dumps({'type': 'error', 'code': 'bad_request',
+                                                  'message': "That message couldn't be read."}))
+            return
         msg_type = data.get('type')
 
         if msg_type == 'ping':
@@ -135,6 +143,9 @@ class ChatConsumer(AsyncWebsocketConsumer):
                 'sender_id': user.id,
                 'initials':  initials,
                 'time':      msg.created_at.strftime('%I:%M %p').lstrip('0'),
+                # For the mobile app's socket only; chat_message below doesn't send them.
+                'message_id': msg.id,
+                'sent_at':    msg.created_at.isoformat(),
             })
 
         elif msg_type == 'price_offer':
@@ -266,110 +277,13 @@ class ChatConsumer(AsyncWebsocketConsumer):
 
     @database_sync_to_async
     def save_price_offer(self, user, booking_id, price):
-        from .models import RideBooking, PriceOffer
-        booking = RideBooking.objects.get(id=booking_id)
-        if booking.status == RideBooking.STATUS_REQUESTED:
-            # The page disables negotiation while the driver hasn't answered
-            # the request; enforce it here too, not just in the browser.
-            return None, 'nego_locked'
-        if booking.status not in (RideBooking.STATUS_DRAFT, RideBooking.STATUS_CONFIRMED):
-            return None, 'booking_inactive'
-        # Same bounds as create_price_offer_view: 1 cent to $1,000 a seat.
-        try:
-            price_cents = int(round(float(price) * 100))
-        except (TypeError, ValueError, OverflowError):
-            return None, 'bad_price'
-        if not 0 < price_cents <= 100_000:
-            return None, 'bad_price'
-        PriceOffer.objects.filter(
-            booking=booking,
-            proposed_by=user,
-            status=PriceOffer.STATUS_PENDING,
-        ).update(status=PriceOffer.STATUS_DECLINED, responded_at=timezone.now())
-        return PriceOffer.objects.create(
-            booking=booking,
-            proposed_by=user,
-            price_cents=price_cents,
-        ), None
+        from .services.bookings import chat_offer
+        return chat_offer(user, booking_id, price)
 
     @database_sync_to_async
     def accept_price_offer(self, user, booking_id, offer_id, price):
-        from .models import RideBooking, PriceOffer, Rides
-        from django.conf import settings
-        from django.db import transaction
-        from django.db.models import F
-
-        booking = RideBooking.objects.select_related('ride__driver', 'passenger').filter(id=booking_id).first()
-        if booking is not None and booking.status == RideBooking.STATUS_REQUESTED:
-            # Agreeing a price confirms the booking, so while the request is
-            # waiting for the driver this would bypass their accept/reject.
-            return 'nego_locked', None
-        if booking is None or booking.status not in (RideBooking.STATUS_DRAFT, RideBooking.STATUS_CONFIRMED):
-            return 'booking_inactive', None
-        # cancel_ride_view leaves drafts in place, so a draft can outlive its
-        # ride; agreeing a price must not confirm a seat on it.
-        if booking.ride.status not in ('posted', 'full') or booking.ride.depart_at <= timezone.now():
-            return 'booking_inactive', None
-
-        # Prefer the specific offer the client had on screen — matching by price
-        # alone is ambiguous once a proposer has superseded their own pending
-        # offer with a newer one (same price could belong to a stale offer).
-        if offer_id is not None:
-            offer = PriceOffer.objects.filter(id=offer_id, booking_id=booking_id).first()
-        else:
-            price_cents = int(round(float(price) * 100))
-            offer = (
-                PriceOffer.objects
-                .filter(booking_id=booking_id, price_cents=price_cents, status=PriceOffer.STATUS_PENDING)
-                .exclude(proposed_by=user)
-                .order_by('-created_at')
-                .first()
-            )
-        if offer is not None and offer.proposed_by_id == user.id:
-            # Only the other side can accept an offer (same rule as
-            # respond_price_offer_view); otherwise a rider could offer a
-            # price and confirm it themselves.
-            return 'own_offer', None
-        if offer is None or offer.status != PriceOffer.STATUS_PENDING:
-            return 'offer_stale', None
-
-        agreed_price_cents = offer.price_cents * booking.seats + settings.SERVICE_FEE_CENTS
-        was_unconfirmed = booking.status in (RideBooking.STATUS_DRAFT, RideBooking.STATUS_REQUESTED)
-        # Agreeing a price confirms the booking, which a driver whose identity
-        # verification has lapsed may not do (same rule as accept_booking_view).
-        if was_unconfirmed and not booking.ride.driver.driver_verification_current:
-            return 'driver_unverified', None
-
-        with transaction.atomic():
-            if booking.status == RideBooking.STATUS_DRAFT:
-                # A pre-request chat ("Chat with driver") never went through
-                # "Request to book", so no seat was ever reserved — agreeing on
-                # a price here IS the booking, so reserve the seat now.
-                reserved = Rides.objects.filter(
-                    id=booking.ride_id, seats_available__gte=booking.seats,
-                ).update(seats_available=F('seats_available') - booking.seats)
-                if not reserved:
-                    return 'no_seats', None
-                Rides.objects.filter(id=booking.ride_id, seats_available=0).update(status='full')
-                booking.ride.seats_available -= booking.seats
-
-            offer.status = PriceOffer.STATUS_ACCEPTED
-            offer.responded_at = timezone.now()
-            offer.save(update_fields=['status', 'responded_at'])
-
-            update_fields = {'agreed_price_cents': agreed_price_cents}
-            if was_unconfirmed:
-                update_fields['status'] = RideBooking.STATUS_CONFIRMED
-                update_fields['confirmed_at'] = timezone.now()
-            RideBooking.objects.filter(id=booking_id).update(**update_fields)
-
-        if was_unconfirmed:
-            booking.agreed_price_cents = agreed_price_cents
-            booking.status = RideBooking.STATUS_CONFIRMED
-            from .views import _send_booking_confirmation_emails
-            _send_booking_confirmation_emails(booking)
-
-        return 'ok', offer.price_cents / 100
+        from .services.bookings import chat_accept
+        return chat_accept(user, booking_id, offer_id, price)
 
 
 class NotifyConsumer(AsyncWebsocketConsumer):

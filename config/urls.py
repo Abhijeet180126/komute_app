@@ -19,8 +19,17 @@ from django.contrib import admin
 from django.urls import path, include
 from django.views.static import serve
 
+def api_urlpatterns():
+    """The mobile app API, only when API_ENABLED=True (docs/api-modular-breakup.md).
+    Off, nothing is registered and /api/... is a 404 as before."""
+    if not settings.API_ENABLED:
+        return []
+    return [path('api/', include(('api.urls', 'api'), namespace='api'))]
+
+
 urlpatterns = [
     path(settings.ADMIN_URL, admin.site.urls),
+    *api_urlpatterns(),
     path('', include('komute.urls')),
 ]
 

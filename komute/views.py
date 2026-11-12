@@ -1,96 +1,119 @@
-import base64
-import calendar
-import io
-import ipaddress
 import json
 import logging
-import math
-import os
-import re
-import uuid
 from datetime import date, datetime, timedelta
-from email.utils import formataddr
 from urllib.parse import quote, urlsplit
 
 
 from django.conf import settings
 from django.core.cache import cache
-from django.core.files.base import ContentFile
-from django.core.files.uploadhandler import MemoryFileUploadHandler
-from django.http import FileResponse, JsonResponse, HttpResponse
+from django.http import JsonResponse, HttpResponse
 from django.shortcuts import get_object_or_404, render, redirect
 from django.http import Http404
 from django.contrib import messages
-from django.contrib.auth import get_user_model, authenticate, login, logout, update_session_auth_hash
-from django.core.validators import validate_email
+from django.contrib.auth import get_user_model, login, logout, update_session_auth_hash
 from django.core.exceptions import ValidationError
-from django.db import transaction
-from django.db.models import Avg, Count, F, Q, Sum
-from django.db.models.functions import ExtractHour, Least
 from django.utils import timezone
 from django.core.paginator import Paginator
 from django.views.decorators.cache import never_cache
 from django.views.decorators.http import require_POST
 from django.views.decorators.csrf import csrf_exempt, csrf_protect
 from django.contrib.auth.decorators import login_required
-from django.contrib.auth.password_validation import validate_password
-from allauth.account.models import EmailAddress
-from allauth.account.models import EmailConfirmationHMAC
 from allauth.account.views import ConfirmEmailView as AllauthConfirmEmailView
-from allauth.socialaccount.models import SocialAccount
-from django.core.mail import EmailMultiAlternatives
+from django.core.mail import EmailMultiAlternatives  # noqa: F401  (tests patch it here)
 from django.core import signing
-from django.utils.crypto import salted_hmac, constant_time_compare
 from django.utils.http import url_has_allowed_host_and_scheme
-from django.template.loader import render_to_string
 from django.urls import Resolver404, resolve, reverse
 
 from .client_ip import client_ip as _client_ip
-from .models import Rides, RideStop, Vehicle, RideBooking, PriceOffer, Message, RideSearch, VerificationLog, Review, RideInvite, UserBlock, UserReport, BiometricConsent, LegalAcceptance, EmailLog
+from .models import Rides, Vehicle, RideBooking, PriceOffer, Message, Review, RideInvite, UserBlock, LegalAcceptance
 from .middleware import LegalAcceptanceMiddleware, legal_versions_key
-from .hashid_utils import encode_id, decode_id
-from .notifications import booking_fingerprint, notify_bookings_changed
-from .tasks import send_later
+from .hashid_utils import encode_id, decode_id, decode_id_strict as decode_hashid
+from .notifications import booking_fingerprint
 from . import private_media
-from .private_media import delete_stored_file, open_stored_file, save_private_image
-from .service_area import in_quebec
+from .private_media import delete_stored_file, save_private_image
+# Account logic shared with the mobile app API (docs/api-modular-breakup.md,
+# module 1). The old private names below are kept as aliases; some are only
+# used by komute.social and the tests.
+from .services import accounts
+from .services.accounts import (
+    account_deletion_message as _account_deletion_message,
+    build_data_export as _build_data_export,
+    check_signup_details as _check_signup_details,
+    decode_deactivate_token as _decode_deactivate_token,
+    decode_password_reset_token as _decode_password_reset_token,
+    latest_adult_dob as _latest_adult_dob,
+    load_country_codes as _load_country_codes,
+    make_deactivate_token as _make_deactivate_token,  # noqa: F401
+    make_password_reset_token as _make_password_reset_token,  # noqa: F401
+    send_delete_account_email as _send_delete_account_email,
+    send_welcome_email as _send_welcome_email,  # noqa: F401
+)
+from .services.common import (
+    UNNAMED_USER as _UNNAMED_USER,
+    consent_details,
+    display_name as _display_name,
+)
+# Profile and vehicles (module 2).
+from .services import profiles, vehicles as vehicle_rules
+from .services.images import resize_image as _resize_image
+from .services.profiles import split_phone as _split_phone
+# Rides (module 3).
+from .services.booking_status import (  # noqa: F401  (BLOCKED_CHAT_MESSAGE: tests)
+    BLOCKED_CHAT_MESSAGE,
+    chat_status as _chat_status,
+)
+from .services.geo import (  # noqa: F401  (_haversine_km, _geo_box_q, _max_ride_date: tests)
+    geo_box_q as _geo_box_q,
+    haversine_km as _haversine_km,
+    max_ride_date as _max_ride_date,
+    zone_or_utc as _zone_or_utc,
+)
+from .services import rides as ride_rules
+from .services.receipts import build_receipt_pdf
+from .services import invites, route_demand
+# Driver verification (module 8).
+from .services import verification
+from .services.verification import (  # noqa: F401  (_reason_codes: tests)
+    InMemoryUploadHandler as _InMemoryUploadHandler,
+    reason_codes as _reason_codes,
+    review_state as _verification_review_state,
+)
+# Reviews, reports and blocks (module 7).
+from .services import contact, safety
+# Chat history (module 5).
+from .services import chat as chat_rules
+# Bookings and price offers (module 4).
+from .services import bookings as booking_rules
+from .services.bookings import (  # noqa: F401  (komute.consumers, tests)
+    send_booking_cancelled_emails as _send_booking_cancelled_emails,
+    send_booking_confirmation_emails as _send_booking_confirmation_emails,
+    send_booking_rejected_email as _send_booking_rejected_email,
+    send_booking_request_email as _send_booking_request_email,
+)
+from .services.invites import (  # noqa: F401  (_make_invite_token: tests)
+    make_invite_token as _make_invite_token,
+    resolve_invite_token as _resolve_invite_token,
+)
+from .services.rides import (  # noqa: F401  (RIDE_PREFERENCE_OPTIONS: tests)
+    MAX_TZ_OFFSET_MINUTES as _MAX_TZ_OFFSET_MINUTES,
+    RIDE_PREFERENCE_OPTIONS,
+    parse_duration_seconds as _parse_duration_seconds,
+)
 
 User = get_user_model()
 logger = logging.getLogger(__name__)
 
 
-_UNNAMED_USER = 'Komüte user'
-
-
-def _display_name(user):
-    """How another person is named on pages and in emails: their name, never
-    their email address (some older accounts have no name)."""
-    return (user.full_name or '').strip().title() or _UNNAMED_USER
-
-
-
-
 def _consent_request_details(request):
     """IP address and user agent stored with a consent or acceptance record.
     An address that doesn't parse is stored as null."""
-    ip = _client_ip(request)
-    try:
-        ipaddress.ip_address(ip)
-    except ValueError:
-        ip = None
-    return {"ip_address": ip, "user_agent": request.META.get("HTTP_USER_AGENT", "")[:300]}
+    return consent_details(_client_ip(request), request.META.get("HTTP_USER_AGENT", ""))
 
 
 def _record_legal_acceptance(request, user, source):
     """Stores that `user` accepted the current Terms and Privacy Policy, and
     remembers it in the session so LegalAcceptanceMiddleware lets them on."""
-    LegalAcceptance.objects.create(
-        user=user,
-        terms_version=settings.TERMS_VERSION,
-        privacy_version=settings.PRIVACY_VERSION,
-        source=source,
-        **_consent_request_details(request),
-    )
+    accounts.record_legal_acceptance(user, source, _consent_request_details(request))
     if request.user.is_authenticated and request.user.pk == user.pk:
         request.session[LegalAcceptanceMiddleware.SESSION_KEY] = legal_versions_key()
 
@@ -124,413 +147,40 @@ def _rate_limited(request, name, extra_key='', per_ip=True):
 _TOO_MANY_ATTEMPTS_MSG = "Too many attempts. Please try again later."
 
 
-def _fmt_ride_local(ride):
-    """Return depart_at formatted in the timezone the driver used when posting.
-    Falls back to UTC if no tz is stored on the ride."""
-    if ride.tz:
-        try:
-            from zoneinfo import ZoneInfo
-            local = ride.depart_at.astimezone(ZoneInfo(ride.tz))
-            tzname = local.tzname() or ''
-            fmt = local.strftime('%A, %B %d, %Y at %I:%M %p') + (f' {tzname}' if tzname else '')
-            return fmt.replace(' 0', ' ')
-        except Exception:
-            pass
-    return ride.depart_at.strftime('%A, %B %d, %Y at %I:%M %p UTC')
-
-
-def _local_dt(ride, dt):
-    """Convert a UTC datetime to the ride's stored timezone. Returns naive UTC on failure."""
-    if ride.tz and dt:
-        try:
-            from zoneinfo import ZoneInfo
-            return dt.astimezone(ZoneInfo(ride.tz))
-        except Exception:
-            pass
-    return dt
-
-
-def _zone_or_utc(name):
-    """ZoneInfo for an IANA timezone name sent by the browser (the `tz` form
-    field); UTC when it's missing or not a known zone."""
-    from zoneinfo import ZoneInfo
-    if name:
-        try:
-            return ZoneInfo(name)
-        except (ValueError, KeyError):   # ZoneInfoNotFoundError is a KeyError
-            pass
-    return ZoneInfo('UTC')
-
-
-def _local_day_bounds(day, tz):
-    """[start, end) of calendar day `day` in `tz`, as aware datetimes, for
-    filtering a DateTimeField. `depart_at__date` would use the UTC date, which
-    puts a Toronto ride at 8 pm on the next day (ISSUES.md H5)."""
-    start = datetime.combine(day, datetime.min.time(), tzinfo=tz)
-    end = datetime.combine(day + timedelta(days=1), datetime.min.time(), tzinfo=tz)
-    return start, end
-
-
-def _send_booking_confirmation_emails(booking):
-    try:
-        ride    = booking.ride
-        rider   = booking.passenger
-        driver  = ride.driver
-        vehicle = ride.vehicle
-
-        depart_display = _fmt_ride_local(ride)
-        amount         = f"${booking.agreed_price_cents / 100:.2f}"
-        booking_ref    = f"KMT-{ride.depart_at.year}-{ride.id:04d}-B{booking.id}"
-        vehicle_display = f"{vehicle.year} {vehicle.make} {vehicle.model}" if vehicle else "N/A"
-        vehicle_plate   = vehicle.plate if vehicle else "N/A"
-        seats_remaining = ride.seats_available
-
-        rider_ctx = {
-            'rider_name':      _display_name(rider),
-            'driver_name':     _display_name(driver),
-            'origin':          ride.origin,
-            'destination':     ride.destination,
-            'depart_display':  depart_display,
-            'vehicle_display': vehicle_display,
-            'vehicle_plate':   vehicle_plate,
-            'seats':           booking.seats,
-            'amount':          amount,
-            'booking_ref':     booking_ref,
-        }
-        driver_ctx = {
-            'driver_name':     _display_name(driver),
-            'rider_name':      _display_name(rider),
-            'origin':          ride.origin,
-            'destination':     ride.destination,
-            'depart_display':  depart_display,
-            'seats':           booking.seats,
-            'seats_remaining': seats_remaining,
-            'seats_total':     ride.seats_total,
-            'amount':          amount,
-            'booking_ref':     booking_ref,
-        }
-
-        rider_html  = render_to_string('account/email/booking_confirmed_rider.html',  rider_ctx)
-        driver_html = render_to_string('account/email/booking_confirmed_driver.html', driver_ctx)
-
-        rider_msg = EmailMultiAlternatives(
-            subject=f"Your ride to {ride.destination.split(',')[0].strip()} is confirmed! 🎉",
-            body=f"Hi {rider_ctx['rider_name']}, your booking is confirmed. Ref: {booking_ref}",
-            from_email=settings.DEFAULT_FROM_EMAIL,
-            to=[rider.mail_to],
-            reply_to=[settings.REPLY_TO_EMAIL_BOOKING_CONFIRMATION],
-        )
-        rider_msg.attach_alternative(rider_html, 'text/html')
-        send_later(rider_msg, EmailLog.KIND_BOOKING_CONFIRMED, rider)
-
-        driver_msg = EmailMultiAlternatives(
-            subject=f"You accepted {rider_ctx['rider_name']}'s ride request 🚗",
-            body=f"Hi {driver_ctx['driver_name']}, you accepted {rider_ctx['rider_name']}'s request for {booking.seats} seat(s). Ref: {booking_ref}",
-            from_email=settings.DEFAULT_FROM_EMAIL,
-            to=[driver.mail_to],
-            reply_to=[settings.REPLY_TO_EMAIL_BOOKING_CONFIRMATION],
-        )
-        driver_msg.attach_alternative(driver_html, 'text/html')
-        send_later(driver_msg, EmailLog.KIND_BOOKING_CONFIRMED, driver)
-    except Exception:
-        logger.exception('_send_booking_confirmation_emails could not build or queue an email')
-
-
-def _send_booking_cancelled_emails(booking):
-    """Passenger cancelled their booking — notify the driver."""
-    try:
-        ride   = booking.ride
-        rider  = booking.passenger
-        driver = ride.driver
-
-        depart_display = _fmt_ride_local(ride)
-        booking_ref    = f"KMT-{ride.depart_at.year}-{ride.id:04d}-B{booking.id}"
-
-        ctx = {
-            'driver_name':    _display_name(driver),
-            'rider_name':     (rider.full_name  or rider.email).title(),
-            'origin':         ride.origin,
-            'destination':    ride.destination,
-            'depart_display': depart_display,
-            'seats':          booking.seats,
-            'booking_ref':    booking_ref,
-        }
-        html = render_to_string('account/email/booking_cancelled_driver.html', ctx)
-        msg  = EmailMultiAlternatives(
-            subject=f"{ctx['rider_name']} cancelled their booking on your ride",
-            body=f"Hi {ctx['driver_name']}, {ctx['rider_name']} has cancelled their {booking.seats} seat(s). Ref: {booking_ref}",
-            from_email=settings.DEFAULT_FROM_EMAIL,
-            to=[driver.mail_to],
-            reply_to=[settings.REPLY_TO_EMAIL_BOOKING_CANCELLED],
-        )
-        msg.attach_alternative(html, 'text/html')
-        send_later(msg, EmailLog.KIND_BOOKING_CANCELLED, driver)
-    except Exception:
-        logger.exception('_send_booking_cancelled_emails could not build or queue an email')
-
-
-def _send_booking_request_email(booking):
-    """Rider requested a booking — notify the driver."""
-    try:
-        ride   = booking.ride
-        rider  = booking.passenger
-        driver = ride.driver
-
-        depart_display = _fmt_ride_local(ride)
-        booking_ref    = f"KMT-{ride.depart_at.year}-{ride.id:04d}-B{booking.id}"
-
-        ctx = {
-            'driver_name':    _display_name(driver),
-            'rider_name':     (rider.full_name  or rider.email).title(),
-            'origin':         ride.origin,
-            'destination':    ride.destination,
-            'depart_display': depart_display,
-            'seats':          booking.seats,
-            'booking_ref':    booking_ref,
-        }
-        html = render_to_string('account/email/booking_requested_driver.html', ctx)
-        msg  = EmailMultiAlternatives(
-            subject=f"New booking request from {ctx['rider_name']} 🔔",
-            body=f"Hi {ctx['driver_name']}, {ctx['rider_name']} has requested {booking.seats} seat(s) on your ride. Ref: {booking_ref}",
-            from_email=settings.DEFAULT_FROM_EMAIL,
-            to=[driver.mail_to],
-            reply_to=[settings.REPLY_TO_EMAIL_BOOKING_REQUEST],
-        )
-        msg.attach_alternative(html, 'text/html')
-        send_later(msg, EmailLog.KIND_BOOKING_REQUEST, driver)
-    except Exception:
-        logger.exception('_send_booking_request_email could not build or queue an email')
-
-
-def _send_booking_rejected_email(booking):
-    """Driver rejected a booking request — notify the rider."""
-    try:
-        ride   = booking.ride
-        rider  = booking.passenger
-        driver = ride.driver
-
-        depart_display = _fmt_ride_local(ride)
-        booking_ref    = f"KMT-{ride.depart_at.year}-{ride.id:04d}-B{booking.id}"
-
-        ctx = {
-            'rider_name':     (rider.full_name  or rider.email).title(),
-            'driver_name':    _display_name(driver),
-            'origin':         ride.origin,
-            'destination':    ride.destination,
-            'depart_display': depart_display,
-            'booking_ref':    booking_ref,
-        }
-        html = render_to_string('account/email/booking_rejected_rider.html', ctx)
-        msg  = EmailMultiAlternatives(
-            subject="Your booking request was not accepted",
-            body=f"Hi {ctx['rider_name']}, unfortunately the driver could not accommodate your booking request. Ref: {booking_ref}",
-            from_email=settings.DEFAULT_FROM_EMAIL,
-            to=[rider.mail_to],
-            reply_to=[settings.REPLY_TO_EMAIL_BOOKING_REJECTED],
-        )
-        msg.attach_alternative(html, 'text/html')
-        send_later(msg, EmailLog.KIND_BOOKING_REJECTED, rider)
-    except Exception:
-        logger.exception('_send_booking_rejected_email could not build or queue an email')
-
-
-def _send_ride_cancelled_emails(ride, affected_bookings):
-    """Driver cancelled the whole ride — notify every affected passenger."""
-    try:
-        driver         = ride.driver
-        depart_display = _fmt_ride_local(ride)
-
-        for booking in affected_bookings:
-            try:
-                rider = booking.passenger
-                ctx   = {
-                    'rider_name':     (rider.full_name  or rider.email).title(),
-                    'driver_name':    _display_name(driver),
-                    'origin':         ride.origin,
-                    'destination':    ride.destination,
-                    'depart_display': depart_display,
-                    'seats':          booking.seats,
-                }
-                html = render_to_string('account/email/ride_cancelled_rider.html', ctx)
-                msg  = EmailMultiAlternatives(
-                    subject=f"Your ride to {ride.destination.split(',')[0].strip()} has been cancelled",
-                    body=f"Hi {ctx['rider_name']}, your ride with {ctx['driver_name']} on {depart_display} has been cancelled.",
-                    from_email=settings.DEFAULT_FROM_EMAIL,
-                    to=[rider.mail_to],
-                    reply_to=[settings.REPLY_TO_EMAIL_RIDE_CANCELLED],
-                )
-                msg.attach_alternative(html, 'text/html')
-                send_later(msg, EmailLog.KIND_RIDE_CANCELLED, rider)
-            except Exception:
-                logger.exception('_send_ride_cancelled_emails could not build or queue an email')
-    except Exception:
-        logger.exception('_send_ride_cancelled_emails could not build or queue an email')
-
-
-def _send_welcome_email(request, user):
-    try:
-        login_url = request.build_absolute_uri(reverse('login'))
-        ctx = {
-            'first_name': (user.full_name or user.email).title().split()[0],
-            'login_url':  login_url,
-        }
-        html = render_to_string('account/email/welcome.html', ctx)
-        msg  = EmailMultiAlternatives(
-            subject="Welcome to Komüte! 🌿",
-            body=f"Hi {ctx['first_name']}, welcome to Komüte! Your account is ready — log in at {login_url} to find or offer your first ride.",
-            from_email=settings.DEFAULT_FROM_EMAIL,
-            to=[user.mail_to],
-            reply_to=[settings.REPLY_TO_EMAIL_ACCOUNT_SIGNUP],
-        )
-        msg.attach_alternative(html, 'text/html')
-        send_later(msg, EmailLog.KIND_WELCOME, user)
-    except Exception:
-        logger.exception('_send_welcome_email could not build or queue an email')
-
-
-_EMAIL_UNVERIFIED_MSG = (
-    "Please verify your email address first: click \"Verify Now\" next to "
-    "your email on your profile page."
-)
-
-_DOB_MISSING_MSG = (
-    "Please add your date of birth on your profile page first. "
-    "KOMUTE is for adults aged 18 and over."
-)
-
-
-def _latest_adult_dob():
-    """The latest date of birth that is 18 today (Feb 29 -> Feb 28)."""
-    today = date.today()
-    try:
-        return today.replace(year=today.year - 18)
-    except ValueError:
-        return today.replace(year=today.year - 18, day=28)
-
-
-def _parse_dob(dob_str):
-    """(dob, error) for a submitted date of birth. Ages 18 to 100 only
-    (audit L-5); an empty value is an error, so every caller requires it."""
-    if not dob_str:
-        return None, "Date of birth is required."
-    try:
-        dob = date.fromisoformat(dob_str)
-    except ValueError:
-        return None, "Invalid date of birth."
-    today = date.today()
-    age = today.year - dob.year - ((today.month, today.day) < (dob.month, dob.day))
-    if age < 18:
-        return None, "You must be at least 18 years old."
-    if age > 100:
-        return None, "Please enter a valid date of birth (age must be 100 or under)."
-    return dob, None
-
-
-_PHONE_RE = re.compile(r'^\+?[1-9]\d{6,14}$')
-_PHONE_NUMBER_RE = re.compile(r'^\d{4,14}$')
-
-# Service area gate: rides can only be posted/searched with an origin and
-# destination inside the US or Canada. Two boxes because Hawaii sits well
-# outside the CONUS+Canada+Alaska box and would otherwise be excluded.
-_US_CANADA_BBOX = (-168.0, 24.0, -52.0, 72.0)   # (min_lon, min_lat, max_lon, max_lat)
-_HAWAII_BBOX    = (-161.0, 18.0, -154.0, 23.0)
-
-
-def _in_us_canada(lat, lng):
-    for min_lon, min_lat, max_lon, max_lat in (_US_CANADA_BBOX, _HAWAII_BBOX):
-        if min_lat <= lat <= max_lat and min_lon <= lng <= max_lon:
-            return True
-    return False
-
-
-def _service_area_error(lat, lng, kind):
-    """Why a picked point can't be used, or None. `kind` names it in the
-    message: "pickup", "drop-off" or "stop". Quebec is left out at launch
-    (audit P-11, see service_area.py)."""
-    if not _in_us_canada(lat, lng):
-        return f"We currently only support {kind} locations in the US and Canada."
-    if in_quebec(lat, lng):
-        return f"Komüte isn't available in Quebec yet. Please choose a {kind} location outside Quebec."
-    return None
 
 
 def _clean_stops(post):
-    """The ride form's named stops, each with the coordinates of the
-    suggestion the driver picked. Returns (stops, error): stops is a list of
-    dicts with the stop's form index, location, lat and lng; error is a
-    message for the first stop that wasn't picked or is out of area. A typed
-    but unpicked stop used to be saved at 0,0 and never matched a search
-    (ISSUES.md M2)."""
-    lats = post.getlist('stop_lat')
-    lngs = post.getlist('stop_lng')
-    stops = []
-    for idx, loc in enumerate(post.getlist('stop_location')):
-        loc = loc.strip()
-        if not loc:
+    """The form's stops, checked by komute.services.rides.clean_stops."""
+    return ride_rules.clean_stops(post.getlist('stop_location'), post.getlist('stop_lat'), post.getlist('stop_lng'))
+
+
+def _vehicle_rows_error(post):
+    """The first vehicle row that profile_view would save (make, plate and a
+    year) with a value too long for its column or a year out of range, as
+    the message to show; None if all fit. Values are read exactly as the
+    save loop reads them."""
+    makes       = post.getlist("vehicle_make")
+    models_list = post.getlist("vehicle_model")
+    years       = post.getlist("vehicle_year")
+    colors      = post.getlist("vehicle_color")
+    plates      = post.getlist("vehicle_plate")
+    for i, make in enumerate(makes):
+        make = make.strip()
+        plate = plates[i].strip() if i < len(plates) else ""
+        if not make or not plate:
             continue
         try:
-            lat, lng = float(lats[idx]), float(lngs[idx])
-        except (IndexError, ValueError, TypeError):
-            lat = lng = 0.0
-        if lat == 0 and lng == 0:
-            return stops, f'Pick "{loc}" from the suggestions list, or remove that stop.'
-        if not _in_us_canada(lat, lng):
-            return stops, f'"{loc}" is outside the US and Canada. We currently only support stops there.'
-        if in_quebec(lat, lng):
-            return stops, f'"{loc}" is in Quebec. Komüte isn\'t available in Quebec yet, so please choose a stop outside Quebec.'
-        stops.append({'idx': idx, 'location': loc, 'lat': lat, 'lng': lng})
-    return stops, None
-
-
-_MAX_RIDE_LEAD_MONTHS = 4
-
-
-def _max_ride_date(today=None):
-    """Today + 4 calendar months (day clamped to the target month's length),
-    the furthest-out a ride can be posted or searched for. Pass `today` to
-    count from a user's local date instead of the server's."""
-    today = today or date.today()
-    m = today.month - 1 + _MAX_RIDE_LEAD_MONTHS
-    y = today.year + m // 12
-    m = m % 12 + 1
-    day = min(today.day, calendar.monthrange(y, m)[1])
-    return today.replace(year=y, month=m, day=day)
-
-
-# Bounds on numbers posted by forms and scripts (audit L-10): without them
-# "inf" or a huge value raised OverflowError (a 500) in float/timedelta maths
-# or overflowed the database's integer columns.
-_MAX_PRICE_CENTS = 100_000                 # $1,000 a seat, the price-offer cap too
-_MAX_DURATION_SECONDS = 7 * 24 * 3600      # longer than any US/Canada drive
-_MAX_TZ_OFFSET_MINUTES = 14 * 60           # real UTC offsets run -12:00..+14:00
-
-# Ride preference tags, in the order post-ride.html shows them. Edit Ride
-# uses this list and search filters match these exact names, so keep all
-# three in step (RidePreferenceOptionsTests checks post-ride.html).
-RIDE_PREFERENCE_OPTIONS = [
-    'Music OK', 'Chatty Driver', 'Quiet Ride', 'Pet Friendly', 'No Smoking',
-    'Luggage OK', 'Verified Only', 'On-Time Driver', 'Winter Tires',
-    'Flexible with Time',
-]
-
-
-def _parse_dollars_to_cents(value):
-    """Dollar string → whole cents. Raises ValueError for text, NaN or
-    infinity; the caller checks the range."""
-    amount = float(value)
-    if not math.isfinite(amount):
-        raise ValueError('price must be a finite number')
-    return int(round(amount * 100))
-
-
-def _parse_duration_seconds(value):
-    """The route duration a page script posts, or 0 (unknown) when it's
-    missing, malformed or out of range."""
-    try:
-        seconds = int(value or 0)
-    except (ValueError, TypeError):
-        return 0
-    return seconds if 0 < seconds <= _MAX_DURATION_SECONDS else 0
+            yr = int(years[i]) if i < len(years) and years[i] else None
+        except ValueError:
+            yr = None
+        if not yr:
+            continue
+        model = models_list[i] if i < len(models_list) else ""
+        color = colors[i] if i < len(colors) else ""
+        message = vehicle_rules.fields_error(make, model, yr, color, plate)
+        if message:
+            return f"Vehicle {i + 1}: {message}"
+    return None
 
 
 def _has_valid_vehicle_row(post):
@@ -548,21 +198,6 @@ def _has_valid_vehicle_row(post):
             return True
     return False
 
-_country_codes_cache = None
-
-def _load_country_codes():
-    global _country_codes_cache
-    if _country_codes_cache is None:
-        path = os.path.join(settings.BASE_DIR, "static", "data", "country_codes.json")
-        with open(path, encoding="utf-8") as f:
-            _country_codes_cache = json.load(f)
-    return _country_codes_cache
-
-
-def _valid_dial_codes():
-    return {c["dial_code"] for c in _load_country_codes()}
-
-
 _PRIORITY_COUNTRY_NAMES = ("Canada", "United States")
 
 def _dropdown_countries():
@@ -577,80 +212,7 @@ def _dropdown_countries():
     return priority, others
 
 
-def _split_phone(phone):
-    """Split a stored E.164 phone string back into (country_code, phone_number)
-    for re-populating the separate form fields."""
-    if not phone:
-        return "", ""
-    for code in sorted(_valid_dial_codes(), key=len, reverse=True):
-        if phone.startswith(code):
-            return code, phone[len(code):]
-    return "", phone
-
-def _haversine_km(lat1, lng1, lat2, lng2):
-    R = 6371.0
-    dlat = math.radians(lat2 - lat1)
-    dlng = math.radians(lng2 - lng1)
-    a = (math.sin(dlat / 2) ** 2
-         + math.cos(math.radians(lat1)) * math.cos(math.radians(lat2))
-         * math.sin(dlng / 2) ** 2)
-    return R * 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
-
-
-def _geo_box_q(lat, lng, radius_km, lat_field, lng_field):
-    """Q for the lat/lng box around a circle of radius_km, so SQL can drop
-    far-away rows before _haversine_km checks the rest (audit F-2). The box
-    holds the whole circle, so it never drops a row the haversine test would
-    keep. The longitude half-width is the exact one, asin(sin(r/R)/cos(lat)),
-    not the smaller r/(R*cos(lat))."""
-    ang = radius_km / 6371.0
-    dlat = math.degrees(ang)
-    q = Q(**{f"{lat_field}__gte": lat - dlat, f"{lat_field}__lte": lat + dlat})
-    ratio = math.sin(ang) / max(math.cos(math.radians(lat)), 1e-12)
-    if ratio < 1:  # otherwise the circle reaches a pole: any longitude
-        dlng = math.degrees(math.asin(ratio))
-        q &= Q(**{f"{lng_field}__gte": lng - dlng, f"{lng_field}__lte": lng + dlng})
-    return q
-
-
 upload_logger = logging.getLogger("komute.uploads")
-
-
-def _resize_image(file_obj, max_dim=1200, quality=85, label="image"):
-    """Validate that file_obj is a decodable image under the size cap, and
-    return a ContentFile with it resized to max_dim on its longest side.
-    Raises django.core.exceptions.ValidationError if the upload is too large
-    or isn't a valid image (including Pillow's decompression-bomb guard
-    tripping) — callers must reject the upload, never fall back to storing
-    the unverified raw bytes. Every upload is logged under `label`
-    (ISSUES.md H2)."""
-    max_bytes = settings.IMAGE_UPLOAD_MAX_MB * 1024 * 1024
-    desc = (f"{label} name={getattr(file_obj, 'name', '')!r} size={file_obj.size} "
-            f"type={getattr(file_obj, 'content_type', '')!r}")
-    if file_obj.size > max_bytes:
-        upload_logger.warning("upload rejected (too large): %s", desc)
-        raise ValidationError(f"File is too large (max {settings.IMAGE_UPLOAD_MAX_MB} MB).")
-
-    from PIL import Image, ImageOps
-    try:
-        file_obj.seek(0)
-        img = Image.open(file_obj)
-        original_dims = img.size
-        # JPEGs decode at a reduced scale (no smaller than max_dim), which
-        # keeps memory down for high-resolution phone photos.
-        img.draft('RGB', (max_dim, max_dim))
-        img = ImageOps.exif_transpose(img)  # fix camera rotation
-        if img.mode not in ('RGB', 'L'):
-            img = img.convert('RGB')
-        img.thumbnail((max_dim, max_dim), Image.LANCZOS)
-        buf = io.BytesIO()
-        img.save(buf, format='JPEG', quality=quality, optimize=True)
-    except Exception as e:
-        upload_logger.warning("upload rejected (not a readable image: %s): %s", type(e).__name__, desc)
-        raise ValidationError("That file isn't a valid image.")
-    upload_logger.info("upload accepted: %s dims=%dx%d -> %dx%d, %d bytes",
-                       desc, *original_dims, *img.size, buf.tell())
-    return ContentFile(buf.getvalue(), name='image.jpg')
 
 
 def _safe_next(request):
@@ -662,39 +224,6 @@ def _safe_next(request):
                                        require_https=request.is_secure()):
         return next_url
     return ""
-
-
-def _check_signup_details(full_name, country_code, phone_number, dob_str, agreed_to_terms):
-    """Checks the fields both signup pages ask for (email/password signup and
-    the Google/Apple one, komute.social). Returns (errors, E.164 phone, dob)."""
-    errors = {}
-    if not full_name:
-        errors["full_name"] = "Full name is required."
-
-    phone = ""
-    if not country_code:
-        errors["country_code"] = "Please select a country code."
-    elif country_code not in _valid_dial_codes():
-        errors["country_code"] = "Please select a valid country code."
-
-    if not phone_number:
-        errors["phone_number"] = "Phone number is required."
-    elif not _PHONE_NUMBER_RE.match(phone_number):
-        errors["phone_number"] = "Enter a valid phone number (digits only)."
-
-    if not errors.get("country_code") and not errors.get("phone_number"):
-        phone = f"{country_code}{phone_number}"
-        if not _PHONE_RE.match(phone):
-            errors["phone_number"] = "Phone must be in E.164 format (e.g. +14155552671)."
-
-    # 18+ only (audit L-5): checked here, not first at booking.
-    dob, dob_error = _parse_dob(dob_str)
-    if dob_error:
-        errors["dob"] = dob_error
-
-    if agreed_to_terms != "1":
-        errors["agreed_to_terms"] = "You must accept the Terms & Conditions and the Privacy Policy to sign up."
-    return errors, phone, dob
 
 
 def _with_next(url_name, next_url):
@@ -737,44 +266,11 @@ def signup_view(request):
 
         errors, phone, dob = _check_signup_details(full_name, country_code, phone_number,
                                                    dob_str, agreed_to_terms)
-
-        if not email:
-            errors["email"] = "Email address is required."
-        else:
-            try:
-                validate_email(email)
-            except ValidationError:
-                errors["email"] = "Enter a valid email address (e.g. user@example.com)."
-            else:
-                if User.objects.filter(email__iexact=email).exists():
-                    errors["email"] = "An account with this email already exists."
-
-        if not password:
-            errors["password"] = "Password is required."
-        else:
-            try:
-                # Unsaved instance so UserAttributeSimilarityValidator can
-                # compare the password against this signup's own email/name,
-                # without a real row existing yet.
-                validate_password(password, user=User(username=email, email=email, full_name=full_name))
-            except ValidationError as e:
-                errors["password"] = " ".join(e.messages)
-
-        if password != confirm_password:
-            errors["confirm_password"] = "Passwords do not match."
+        errors.update(accounts.check_signup_credentials(email, password, confirm_password, full_name))
 
         if not errors:
-            with transaction.atomic():
-                new_user = User.objects.create_user(
-                    username=email,
-                    email=email,
-                    password=password,
-                    full_name=full_name,
-                    phone=phone or None,
-                    dob=dob,
-                )
-                _record_legal_acceptance(request, new_user, LegalAcceptance.SOURCE_SIGNUP)
-            _send_welcome_email(request, new_user)
+            accounts.create_account(request, email=email, password=password, full_name=full_name,
+                                    phone=phone, dob=dob, consent=_consent_request_details(request))
             messages.success(request, "You have successfully signed up. Now Login to the account.")
             return redirect(_with_next("login", next_url))
 
@@ -804,20 +300,8 @@ def login_view(request):
             messages.error(request, "Too many login attempts. Please wait a few minutes and try again.")
             return render(request, "login.html", {"next": next_url})
 
-        # forgot_password_view resolves accounts case-insensitively
-        # (email__iexact), but ModelBackend's username lookup is an exact
-        # match -- so look the account up the same way here first and
-        # authenticate with its actual stored casing, or a user whose email
-        # was typed/auto-capitalized differently than it was stored (or than
-        # a mixed-case signup produced) could reset their password
-        # successfully via email yet still be told "Invalid email or
-        # password" when logging in with it.
-        lookup_email = email
-        if email:
-            matched_user = User.objects.filter(email__iexact=email).first()
-            if matched_user:
-                lookup_email = matched_user.email
-        user = authenticate(request, username=lookup_email, password=password)
+        # Case-insensitive, as forgot-password is (see the service).
+        user = accounts.authenticate_by_email(request, email, password)
         if user:
             is_first_login = user.last_login is None
             login(request, user)
@@ -838,10 +322,7 @@ def role_select_view(request):
 
     next_url = _safe_next(request)
     if request.method == "POST":
-        role = request.POST.get("role")
-        if role in ["rider", "driver"]:
-            user.role = role
-            user.save(update_fields=["role"])
+        if accounts.set_role(user, request.POST.get("role")):
             return redirect(next_url or "profile")
 
     return render(request, "role-select.html", {"role": user.role, "next": next_url})
@@ -886,111 +367,52 @@ def profile_view(request):
         license_province   = request.POST.get("license_province", "").strip()
         license_expiry_str = request.POST.get("license_expiry", "").strip()
 
-        if not full_name:
-            errors["full_name"] = "Full name is required."
-        if role not in ("rider", "driver"):
-            errors["role"] = "Invalid role selected."
-
-        phone = ""
-        if phone_number or country_code:
-            if not country_code or country_code not in _valid_dial_codes():
-                errors["country_code"] = "Please select a valid country code."
-            if not phone_number:
-                errors["phone_number"] = "Phone number is required."
-            elif not _PHONE_NUMBER_RE.match(phone_number):
-                errors["phone_number"] = "Enter a valid phone number (digits only)."
-            if not errors.get("country_code") and not errors.get("phone_number"):
-                phone = f"{country_code}{phone_number}"
-                if not _PHONE_RE.match(phone):
-                    errors["phone_number"] = "Phone must be in E.164 format (e.g. +14155552671)."
-
-        # Required for riders too: booking needs it (audit L-5).
-        dob, dob_error = _parse_dob(dob_str)
-        if dob_error:
-            errors["dob"] = dob_error
-
-        license_expiry = None
-        if license_expiry_str:
-            try:
-                license_expiry = date.fromisoformat(license_expiry_str)
-            except ValueError:
-                errors["license_expiry"] = "Invalid license expiry date."
-            else:
-                # The date picker already blocks past dates; this enforces it
-                # server-side. DL-Verification cross-checks this value against
-                # the license, so it must be a real, current expiry.
-                if role == "driver" and license_expiry < timezone.localdate():
-                    errors["license_expiry"] = "Your license has expired. Please enter the expiry date of a valid license."
+        errors, phone, dob, license_expiry = profiles.check_profile(
+            full_name, country_code, phone_number, dob_str, role, license_expiry_str, gender, bio)
 
         if role == "driver":
             submitted_plates = [p.strip() for p in request.POST.getlist("vehicle_plate") if p.strip()]
             if len(submitted_plates) != len({p.upper() for p in submitted_plates}):
-                errors["vehicles"] = "Duplicate plate numbers are not allowed."
+                errors["vehicles"] = vehicle_rules.DUPLICATE_PLATE_MSG
             else:
                 for plate in submitted_plates:
-                    if Vehicle.objects.filter(plate=plate).exclude(owner=user).exists():
-                        errors["vehicles"] = f"Plate \"{plate}\" is already registered to another vehicle."
+                    if vehicle_rules.plate_registered_elsewhere(user, plate):
+                        errors["vehicles"] = vehicle_rules.plate_taken_msg(plate)
                         break
 
+            if not errors.get("vehicles"):
+                rows_error = _vehicle_rows_error(request.POST)
+                if rows_error:
+                    errors["vehicles"] = rows_error
+
             if not errors.get("vehicles") and not _has_valid_vehicle_row(request.POST):
-                errors["vehicles"] = "You must add at least one vehicle to be a driver."
+                errors["vehicles"] = profiles.DRIVER_NEEDS_VEHICLE_MSG
 
         if not errors:
-            # Details DL-Verification compared against the license. Changing
-            # any of them means the driver is no longer verified as entered
-            # (C3). Comparison mirrors the service: case and hyphens ignored.
-            identity_changed = role == "driver" and user.driver_verified and (
-                _norm_name(full_name) != _norm_name(user.full_name)
-                or dob != user.dob
-                or _norm_code(license_number) != _norm_code(user.license_number)
-                or license_province.casefold() != (user.license_province or "").casefold()
-                or license_expiry != user.license_expiry
-            )
-
-            user.full_name = full_name
-            user.phone     = phone or None
-            user.dob       = dob
-            user.gender    = gender or None
-            user.role      = role
-            user.bio       = bio or None
-
-            update_fields = ["full_name", "phone", "dob", "gender", "role", "bio"]
+            # Name, DOB or licence changes end a driver's verification (C3).
+            update_fields, identity_reset = profiles.apply_profile(
+                user, full_name=full_name, phone=phone, dob=dob, gender=gender, role=role, bio=bio,
+                license_number=license_number, license_province=license_province,
+                license_expiry=license_expiry)
             # Replaced image files, deleted only once the new URLs are saved.
             stale_urls = []
             # A rejected photo must not end in "Profile saved successfully".
             image_rejected = False
 
-            if role == "driver":
-                user.license_number   = license_number or None
-                user.license_province = license_province or None
-                user.license_expiry   = license_expiry
-                update_fields += ["license_number", "license_province", "license_expiry"]
-
-                # The licence photo isn't saved with the profile: it is taken
-                # in the verification step and never stored (audit P-5/P-13).
-
-                if identity_changed and user.driver_verified:
-                    user.driver_verified  = False
-                    user.face_match_score = None
-                    update_fields += ["driver_verified", "face_match_score"]
-                    messages.warning(request, "Your name, date of birth or license details changed. Please verify your identity again before posting rides.")
+            if identity_reset:
+                messages.warning(request, profiles.IDENTITY_CHANGED_MSG)
 
             # selfie / profile picture upload — all roles
             selfie_file = request.FILES.get("selfie_file")
             if selfie_file and selfie_file.size > 0:
                 try:
-                    resized = _resize_image(selfie_file, label=f"user={user.id} profile-photo")
+                    photo_fields, photo_stale = profiles.set_profile_photo(user, selfie_file)
                 except ValidationError as e:
                     image_rejected = True
                     messages.error(request, f"Profile photo: {e.messages[0]}")
                 else:
-                    stale_urls += [user.selfie_url, user.avatar_url]
-                    url = save_private_image(private_media.KIND_SELFIE, user.id, resized)
-                    user.selfie_url = url
-                    user.avatar_url = url
-                    update_fields += ["selfie_url", "avatar_url"]
-                    # No re-verification needed: the profile photo (face or
-                    # vehicle) is never compared with the license.
+                    stale_urls += photo_stale
+                    update_fields += photo_fields
 
             user.save(update_fields=update_fields)
             for old_url in set(stale_urls):
@@ -1042,13 +464,8 @@ def profile_view(request):
                     color = colors[i] if i < len(colors) else ""
                     # DL-Verification checked make, model, year, colour and
                     # plate against the photo; any real change voids that.
-                    details_changed = not is_new and (
-                        make.casefold() != (vehicle.make or "").casefold()
-                        or model.strip().casefold() != (vehicle.model or "").strip().casefold()
-                        or yr != vehicle.year
-                        or color.strip().casefold() != (vehicle.color or "").strip().casefold()
-                        or _norm_code(plate) != _norm_code(vehicle.plate)
-                    )
+                    details_changed = not is_new and vehicle_rules.details_changed(
+                        vehicle, make, model, yr, color, plate)
 
                     vehicle.make      = make
                     vehicle.model     = model
@@ -1100,8 +517,7 @@ def profile_view(request):
             return redirect("profile")
 
     priority_countries, countries = _dropdown_countries()
-    reverify_due_at = user.driver_reverify_due_at
-    verification_current = user.driver_verification_current
+    status = profiles.driver_status(user, [v["vehicle_verified"] for v in vehicles])
     context = {
         "user": user,
         "full_name": full_name,
@@ -1128,19 +544,10 @@ def profile_view(request):
         "avatar_url": user.avatar_url or "",
         "vehicles": vehicles,
         "errors": errors,
-        "driver_verified": verification_current,
+        # driver_verified, reverify_due_at, license_expired,
+        # has_unverified_vehicle, reverify_soon, reverify_expired.
+        **status,
         "face_match_score": user.face_match_score,
-        "reverify_due_at": reverify_due_at,
-        # Verified against a license that has since expired.
-        "license_expired": user.driver_verified and user.license_expired,
-        # Verified driver with a vehicle that still needs a verification run.
-        "has_unverified_vehicle": verification_current and any(
-            not v["vehicle_verified"] for v in vehicles
-        ),
-        # Verified, but inside the reminder window before it lapses.
-        "reverify_soon": verification_current and reverify_due_at is not None and (
-            reverify_due_at - timezone.now() <= timedelta(days=settings.DRIVER_REVERIFY_REMINDER_DAYS)
-        ),
         # Uploading a file as the verification selfie is a development
         # convenience only; in production the selfie must come from the
         # live camera.
@@ -1151,9 +558,6 @@ def profile_view(request):
         "verification_review": _verification_review_state(user),
         "image_upload_max_mb": settings.IMAGE_UPLOAD_MAX_MB,
         "upload_request_max_mb": settings.UPLOAD_REQUEST_MAX_MB,
-        # Was verified, and that verification has run out.
-        "reverify_expired": not verification_current and reverify_due_at is not None
-                            and timezone.now() >= reverify_due_at,
         "account_deletion_grace_days": settings.ACCOUNT_DELETION_GRACE_DAYS,
         # Users this user has blocked, each with an Unblock button (ISSUES.md A1).
         "blocked_users": [
@@ -1176,28 +580,11 @@ def post_ride_view(request):
     if not user:
         return redirect("login")
 
-    if user.role != "driver":
-        messages.error(request, "Only drivers can post rides.")
-        return redirect("profile")
-
-    # Ride emails go to this address (audit S-10).
-    if not user.email_verified:
-        messages.error(request, _EMAIL_UNVERIFIED_MSG)
-        return redirect("profile")
-
-    if not user.dob:
-        messages.error(request, "Please add your date of birth in your profile before posting a ride.")
-        return redirect("profile")
-
-    if not user.driver_verification_current:
-        if user.driver_verified:
-            messages.error(request, "Your identity verification has expired. Please re-verify to post a ride.")
-        else:
-            messages.error(request, "You must be verified to post a ride.")
-        return redirect("profile")
-
-    if not user.vehicles.filter(vehicle_verified=True).exists():
-        messages.error(request, "You need at least one verified vehicle to post a ride.")
+    # Driver, verified email, date of birth, current verification, a
+    # verified vehicle (in that order).
+    reason = ride_rules.post_ride_block_reason(user)
+    if reason:
+        messages.error(request, reason)
         return redirect("profile")
 
     vehicles = user.vehicles.all()
@@ -1272,18 +659,11 @@ def post_ride_view(request):
         # 0,0 means the hidden lat/lng were never filled, i.e. the driver typed
         # a place but didn't pick one of the suggestions -- telling them it's
         # outside the US/Canada would send them looking for the wrong problem.
-        if not origin:
-            errors["origin"] = "Starting point is required."
-        elif origin_lat == 0 and origin_lng == 0:
-            errors["origin"] = "Please pick a location from the suggestions."
-        elif area_error := _service_area_error(origin_lat, origin_lng, "pickup"):
-            errors["origin"] = area_error
-        if not destination:
-            errors["destination"] = "Final destination is required."
-        elif dest_lat == 0 and dest_lng == 0:
-            errors["destination"] = "Please pick a location from the suggestions."
-        elif area_error := _service_area_error(dest_lat, dest_lng, "drop-off"):
-            errors["destination"] = area_error
+        if error := ride_rules.endpoint_error(origin, origin_lat, origin_lng, "pickup", "Starting point is required."):
+            errors["origin"] = error
+        if error := ride_rules.endpoint_error(destination, dest_lat, dest_lng, "drop-off",
+                                         "Final destination is required."):
+            errors["destination"] = error
         clean_stops, stops_error = _clean_stops(request.POST)
         if stops_error:
             errors["stops"] = stops_error
@@ -1294,29 +674,13 @@ def post_ride_view(request):
         if not vehicle_id:
             errors["vehicle"] = "Please select a vehicle."
 
-        seats = None
-        if seats_str:
-            try:
-                seats = int(seats_str)
-                if seats < 1 or seats > 8:
-                    errors["seats"] = "Seats must be between 1 and 8."
-            except ValueError:
-                errors["seats"] = "Invalid seat count."
-        else:
-            errors["seats"] = "Seat count is required."
+        seats, error = ride_rules.seats_error(seats_str)
+        if error:
+            errors["seats"] = error
 
-        price_cents = 0
-        if not price_str:
-            errors["price"] = "Price per seat is required."
-        else:
-            try:
-                price_cents = _parse_dollars_to_cents(price_str)
-                if price_cents <= 0:
-                    errors["price"] = "Price per seat must be greater than 0."
-                elif price_cents > _MAX_PRICE_CENTS:
-                    errors["price"] = "Price per seat cannot exceed $1,000."
-            except ValueError:
-                errors["price"] = "Invalid price."
+        price_cents, error = ride_rules.price_error(price_str, ride_rules.POST_PRICE_ZERO_MSG)
+        if error:
+            errors["price"] = error
 
         depart_at = None
         depart_utc_str = request.POST.get('depart_utc', '').strip()
@@ -1326,10 +690,8 @@ def post_ride_view(request):
                 if timezone.is_naive(depart_at):
                     from datetime import timezone as _utc
                     depart_at = depart_at.replace(tzinfo=_utc.utc)
-                if depart_at < timezone.now() + timedelta(minutes=30):
-                    errors["depart_time"] = "Departure must be at least 30 minutes from now."
-                elif depart_at.date() > _max_ride_date():
-                    errors["date"] = "Rides can only be posted up to 4 months in advance."
+                if bad := ride_rules.departure_error(depart_at, ride_rules.POST_TOO_FAR_MSG):
+                    errors[bad[0]] = bad[1]
             except ValueError:
                 errors["depart_time"] = "Invalid departure date or time."
         elif date_str and time_str and "date" not in errors and "depart_time" not in errors:
@@ -1337,10 +699,8 @@ def post_ride_view(request):
                 # No depart_utc (script didn't run): the form's date and time
                 # are the driver's local ones.
                 depart_at = timezone.make_aware(datetime.fromisoformat(f"{date_str}T{time_str}"), driver_tz)
-                if depart_at < timezone.now() + timedelta(minutes=30):
-                    errors["depart_time"] = "Departure must be at least 30 minutes from now."
-                elif depart_at.date() > _max_ride_date():
-                    errors["date"] = "Rides can only be posted up to 4 months in advance."
+                if bad := ride_rules.departure_error(depart_at, ride_rules.POST_TOO_FAR_MSG):
+                    errors[bad[0]] = bad[1]
             except ValueError:
                 errors["depart_time"] = "Invalid departure date or time."
 
@@ -1356,80 +716,20 @@ def post_ride_view(request):
         recurring_end = None
         recurring_days = []
         if is_recurring:
-            if not recurring_end_str:
-                errors["recurring_end_date"] = "End date is required for recurring rides."
-            else:
-                try:
-                    recurring_end = date.fromisoformat(recurring_end_str)
-                    if depart_at and recurring_end <= depart_at.astimezone(driver_tz).date():
-                        errors["recurring_end_date"] = "End date must be after the departure date."
-                    # Same 4-month limit as a single ride (audit D-8). One ride
-                    # row per matching day is created below, so this also
-                    # stops a one-request database flood.
-                    elif recurring_end > _max_ride_date():
-                        errors["recurring_end_date"] = "Recurring rides can repeat up to 4 months in advance."
-                except ValueError:
-                    errors["recurring_end_date"] = "Invalid end date."
-
-            if recurring_days_str:
-                try:
-                    recurring_days = [int(d) for d in recurring_days_str.split(",") if d.strip()]
-                except ValueError:
-                    pass
-            if not recurring_days:
-                errors["recurring_days"] = "Select at least one day of the week."
+            recurring_errs, recurring_end, recurring_days = ride_rules.recurring_errors(
+                recurring_end_str, recurring_days_str, depart_at, driver_tz)
+            errors.update(recurring_errs)
 
         if not errors:
             duration_seconds = _parse_duration_seconds(request.POST.get("duration_seconds"))
 
-            def _create_ride(depart_dt, group_id=None):
-                arrive_dt = depart_dt + timedelta(seconds=duration_seconds) if duration_seconds > 0 else None
-                ride = Rides.objects.create(
-                    driver=user,
-                    vehicle=vehicle,
-                    origin=origin,
-                    origin_lat=origin_lat,
-                    origin_lng=origin_lng,
-                    destination=destination,
-                    dest_lat=dest_lat,
-                    dest_lng=dest_lng,
-                    depart_at=depart_dt,
-                    arrive_at=arrive_dt,
-                    seats_total=seats,
-                    seats_available=seats,
-                    price_cents=price_cents,
-                    passenger_gender_pref=passenger_gender_pref,
-                    notes=notes or None,
-                    preferences_json=preferences_json or None,
-                    recurring_group_id=group_id,
-                    tz=tz_name,
-                    expected_duration_seconds=duration_seconds if duration_seconds > 0 else None,
-                )
-                for stop in clean_stops:
-                    RideStop.objects.create(
-                        ride=ride, stop_order=stop['idx'] + 1,
-                        location=stop['location'], lat=stop['lat'], lng=stop['lng'],
-                    )
-                return ride
-
-            if is_recurring:
-                # Weekdays and the clock time are the driver's local ones
-                # (ISSUES.md H5): in UTC an 8 pm Toronto ride lands on the
-                # next weekday, and DST would shift it by an hour.
-                group_id = str(uuid.uuid4())
-                local_depart = depart_at.astimezone(driver_tz)
-                current = local_depart.date()
-                ride_time = local_depart.time().replace(tzinfo=None)
-                first_ride = None
-                while current <= recurring_end:
-                    if current.weekday() in recurring_days:
-                        dt = datetime.combine(current, ride_time, tzinfo=driver_tz)
-                        r = _create_ride(dt, group_id)
-                        if first_ride is None:
-                            first_ride = r
-                    current += timedelta(days=1)
-            else:
-                first_ride = _create_ride(depart_at)
+            first_ride = ride_rules.create_rides(
+                user, vehicle=vehicle, origin=origin, origin_lat=origin_lat, origin_lng=origin_lng,
+                destination=destination, dest_lat=dest_lat, dest_lng=dest_lng, depart_at=depart_at,
+                seats=seats, price_cents=price_cents, passenger_gender_pref=passenger_gender_pref,
+                notes=notes, preferences_json=preferences_json, tz_name=tz_name, driver_tz=driver_tz,
+                duration_seconds=duration_seconds, stops=clean_stops,
+                recurring_end=recurring_end if is_recurring else None, recurring_days=recurring_days)
 
             return redirect("ride-success", ride_id=encode_id(first_ride.id))
 
@@ -1482,17 +782,8 @@ def search_rides_view(request):
     errors = {}
 
     if parsed_search_date:
-        if parsed_search_date < rider_today:
-            errors['date'] = 'Search date cannot be in the past.'
-        elif parsed_search_date > _max_ride_date(rider_today):
-            errors['date'] = 'You can only search up to 4 months ahead.'
-
-    _TIME_SLOT_HOURS = {
-        'early_morning': (5, 8),
-        'morning':       (8, 12),
-        'afternoon':     (12, 17),
-        'evening':       (17, 21),
-    }
+        if date_error := ride_rules.search_date_error(parsed_search_date, rider_today):
+            errors['date'] = date_error
 
     if search_performed:
         try:
@@ -1503,112 +794,15 @@ def search_rides_view(request):
         except (ValueError, TypeError):
             s_origin_lat = s_origin_lng = s_dest_lat = s_dest_lng = 0.0
 
-        if search_from and (s_origin_lat or s_origin_lng):
-            if area_error := _service_area_error(s_origin_lat, s_origin_lng, 'pickup'):
-                errors['from'] = area_error
-        if search_to and (s_dest_lat or s_dest_lng):
-            if area_error := _service_area_error(s_dest_lat, s_dest_lng, 'drop-off'):
-                errors['to'] = area_error
+        errors.update(ride_rules.search_area_errors(
+            search_from, search_to, s_origin_lat, s_origin_lng, s_dest_lat, s_dest_lng))
 
     if search_performed and not errors:
-        if parsed_search_date:
-            try:
-                RideSearch.objects.create(
-                    user=request.user if request.user.is_authenticated else None,
-                    origin=search_from,
-                    origin_lat=s_origin_lat,
-                    origin_lng=s_origin_lng,
-                    destination=search_to,
-                    dest_lat=s_dest_lat,
-                    dest_lng=s_dest_lng,
-                    search_date=parsed_search_date,
-                    passenger_count=seats_needed or 1,
-                )
-            except (ValueError, TypeError):
-                pass
-
-        qs = (
-            Rides.objects
-            .filter(status__in=['posted', 'full'], depart_at__gte=timezone.now())
-            # Blocked either way: neither sees the other's rides (ISSUES.md A1).
-            .exclude(driver_id__in=UserBlock.objects.hidden_ids(request.user.id))
-            .select_related('driver', 'vehicle')
-            .prefetch_related('stops')
-            .order_by('depart_at')
-        )
-
-        # Filter out gender-restricted rides that don't match the rider's gender
-        user_gender = request.user.gender or ''
-        if user_gender == 'female':
-            qs = qs.exclude(passenger_gender_pref='men_only')
-        elif user_gender == 'male':
-            qs = qs.exclude(passenger_gender_pref='women_only')
-        else:
-            qs = qs.filter(passenger_gender_pref='any')
-
-        # Coordinate-based proximity search (falls back to text if no coords)
-        use_origin_coords = bool(s_origin_lat and s_origin_lng)
-        use_dest_coords   = bool(s_dest_lat and s_dest_lng)
-
-        if search_from and not use_origin_coords:
-            qs = qs.filter(
-                Q(origin__icontains=search_from) | Q(stops__location__icontains=search_from)
-            ).distinct()
-        if search_to and not use_dest_coords:
-            qs = qs.filter(
-                Q(destination__icontains=search_to) | Q(stops__location__icontains=search_to)
-            ).distinct()
-
-        if parsed_search_date:
-            day_start, day_end = _local_day_bounds(parsed_search_date, rider_tz)
-            qs = qs.filter(depart_at__gte=day_start, depart_at__lt=day_end)
-
-        if seats_needed:
-            qs = qs.filter(seats_available__gte=seats_needed)
-        # Clamped like seats_needed: no ride costs over $1,000 a seat.
-        if filter_max_price:
-            try:
-                max_cents = _parse_dollars_to_cents(filter_max_price)
-                qs = qs.filter(price_cents__lte=min(max(max_cents, 0), _MAX_PRICE_CENTS))
-            except ValueError:
-                pass
-        if filter_time_slot in _TIME_SLOT_HOURS:
-            start_h, end_h = _TIME_SLOT_HOURS[filter_time_slot]
-            qs = (qs.annotate(local_hour=ExtractHour('depart_at', tzinfo=rider_tz))
-                    .filter(local_hour__gte=start_h, local_hour__lt=end_h))
-        if filter_preference:
-            qs = qs.filter(preferences_json__icontains=filter_preference)
-
-        # Proximity: the SQL box drops far-away rides (audit F-2), then the
-        # haversine test below keeps those within the radius of the ride's
-        # endpoint or one of its stops.
-        radius = settings.SEARCH_RADIUS_KM
-        if use_origin_coords:
-            qs = qs.filter(
-                _geo_box_q(s_origin_lat, s_origin_lng, radius, 'origin_lat', 'origin_lng')
-                | _geo_box_q(s_origin_lat, s_origin_lng, radius, 'stops__lat', 'stops__lng')
-            ).distinct()
-        if use_dest_coords:
-            qs = qs.filter(
-                _geo_box_q(s_dest_lat, s_dest_lng, radius, 'dest_lat', 'dest_lng')
-                | _geo_box_q(s_dest_lat, s_dest_lng, radius, 'stops__lat', 'stops__lng')
-            ).distinct()
-
-        def _near(lat, lng, ride_lat, ride_lng, stops):
-            return (_haversine_km(lat, lng, ride_lat, ride_lng) <= radius
-                    or any(_haversine_km(lat, lng, st.lat, st.lng) <= radius for st in stops))
-
-        if use_origin_coords or use_dest_coords:
-            rides = [
-                ride for ride in qs
-                if (not use_origin_coords or _near(s_origin_lat, s_origin_lng,
-                                                   ride.origin_lat, ride.origin_lng, ride.stops.all()))
-                and (not use_dest_coords or _near(s_dest_lat, s_dest_lng,
-                                                  ride.dest_lat, ride.dest_lng, ride.stops.all()))
-            ]
-        else:
-            rides = qs
-
+        rides = ride_rules.search_rides(
+            request.user, search_from=search_from, search_to=search_to, parsed_date=parsed_search_date,
+            rider_tz=rider_tz, seats_needed=seats_needed, max_price_str=filter_max_price,
+            time_slot=filter_time_slot, preference=filter_preference,
+            origin_lat=s_origin_lat, origin_lng=s_origin_lng, dest_lat=s_dest_lat, dest_lng=s_dest_lng)
     else:
         rides = []
 
@@ -1633,7 +827,7 @@ def search_rides_view(request):
         if ride.preferences_json:
             prefs = ride.preferences_json if isinstance(ride.preferences_json, list) else []
 
-        v = ride.vehicle
+        vehicle = ride_rules.vehicle_card(ride.vehicle)
         rides_data.append({
             'id':                  encode_id(ride.id),
             'origin':              ride.origin,
@@ -1650,9 +844,9 @@ def search_rides_view(request):
             'driver_rating':       round(rating, 1),
             'driver_rating_count': rating_count,
             'driver_rating_stars': rating_stars,
-            'vehicle_color':       v.color or 'silver',
-            'vehicle_display':     f"{v.year} {v.make} {v.model}",
-            'vehicle_plate':       v.plate,
+            'vehicle_color':       vehicle['color'],
+            'vehicle_display':     vehicle['display'],
+            'vehicle_plate':       vehicle['plate'],
         })
 
     page_obj.object_list = rides_data
@@ -1679,20 +873,6 @@ def about_view(request):
 
 def how_it_works_view(request):
     return render(request, "how-it-works.html")
-
-
-def _gender_pref_allows(ride, user):
-    """Whether `user` may join `ride` under its passenger gender preference.
-    Same rule as the search filter in search_rides_view, which only hides
-    the ride; booking and invites check it here (audit L-8)."""
-    if ride.passenger_gender_pref == 'women_only':
-        return user.gender == 'female'
-    if ride.passenger_gender_pref == 'men_only':
-        return user.gender == 'male'
-    return True
-
-
-_GENDER_PREF_MSG = "This ride is limited to passengers of a different gender."
 
 
 @login_required
@@ -1722,89 +902,18 @@ def create_ride_booking(request, ride_id):
         raise Http404
 
     if request.method == "POST":
-        # Both checks cover "Chat with driver" too: a draft can later be
-        # confirmed in chat or used to leave a review. Booking emails go to
-        # the rider's address, so it must be verified (audit S-10).
-        if not request.user.email_verified:
-            return JsonResponse({'ok': False, 'error': _EMAIL_UNVERIFIED_MSG}, status=403)
-        # Accounts from before DOB was asked at signup (audit L-5).
-        if not request.user.dob:
-            return JsonResponse({'ok': False, 'error': _DOB_MISSING_MSG}, status=403)
-        if ride.status not in ('posted', 'full') or ride.depart_at <= timezone.now():
-            return JsonResponse({'ok': False, 'error': 'This ride is no longer available.'}, status=400)
-        if not _gender_pref_allows(ride, request.user):
-            return JsonResponse({'ok': False, 'error': _GENDER_PREF_MSG}, status=403)
-        intent = request.POST.get("intent", "book")
+        # Verified email and date of birth, an open ride, the gender
+        # preference, seats 1-8, one active booking (komute.services.bookings).
         try:
-            seats = int(request.POST.get("seats", 1))
-        except (TypeError, ValueError):
-            return JsonResponse({'ok': False, 'error': 'Invalid seat count.'}, status=400)
-        if seats < 1 or seats > 8:
-            return JsonResponse({'ok': False, 'error': 'Seats must be between 1 and 8.'}, status=400)
-        pickup_stop_id   = request.POST.get("pickup_stop_id")
-        dropoff_stop_id  = request.POST.get("dropoff_stop_id")
-
-        pickup_stop  = RideStop.objects.filter(id=pickup_stop_id,  ride=ride).first() if pickup_stop_id  else None
-        dropoff_stop = RideStop.objects.filter(id=dropoff_stop_id, ride=ride).first() if dropoff_stop_id else None
-
-        existing = RideBooking.objects.filter(
-            ride=ride,
-            passenger=request.user,
-            status__in=[RideBooking.STATUS_DRAFT, RideBooking.STATUS_REQUESTED, RideBooking.STATUS_CONFIRMED],
-        ).first()
-
-        if existing and existing.status in (RideBooking.STATUS_REQUESTED, RideBooking.STATUS_CONFIRMED):
-            return JsonResponse({'ok': False, 'error': 'You have already requested this ride.'}, status=400)
-
+            booking = booking_rules.book_ride(
+                ride, request.user, intent=request.POST.get("intent", "book"),
+                seats_raw=request.POST.get("seats", 1),
+                pickup_stop_id=request.POST.get("pickup_stop_id"),
+                dropoff_stop_id=request.POST.get("dropoff_stop_id"))
+        except booking_rules.BookingError as e:
+            return JsonResponse({'ok': False, 'error': e.message}, status=e.status)
         from .chat_tokens import make_chat_token
-
-        if intent == "chat":
-            # Pre-request negotiation: open a chat without reserving a seat or notifying the driver.
-            if existing and existing.status == RideBooking.STATUS_DRAFT:
-                return JsonResponse({'ok': True, 'chat_token': make_chat_token(existing.id)})
-            draft = RideBooking.objects.create(
-                ride=ride,
-                passenger=request.user,
-                pickup_stop=pickup_stop,
-                dropoff_stop=dropoff_stop,
-                seats=seats,
-                agreed_price_cents=ride.price_cents * seats + settings.SERVICE_FEE_CENTS,
-                status=RideBooking.STATUS_DRAFT,
-            )
-            return JsonResponse({'ok': True, 'chat_token': make_chat_token(draft.id)})
-
-        updated = Rides.objects.filter(
-            id=ride.id, seats_available__gte=seats
-        ).update(seats_available=F('seats_available') - seats)
-        if not updated:
-            return JsonResponse({'ok': False, 'error': 'Not enough seats available.'}, status=400)
-        Rides.objects.filter(id=ride.id, seats_available=0).update(status='full')
-
-        if existing and existing.status == RideBooking.STATUS_DRAFT:
-            # Promote the draft in place — carries over its PriceOffer/Message history
-            # and keeps the chat token (which encodes only the booking id) still valid.
-            booking = existing
-            booking.pickup_stop  = pickup_stop
-            booking.dropoff_stop = dropoff_stop
-            booking.seats        = seats
-            booking.status       = RideBooking.STATUS_REQUESTED
-            booking.save(update_fields=['pickup_stop', 'dropoff_stop', 'seats', 'status'])
-        else:
-            booking = RideBooking.objects.create(
-                ride=ride,
-                passenger=request.user,
-                pickup_stop=pickup_stop,
-                dropoff_stop=dropoff_stop,
-                seats=seats,
-                agreed_price_cents=ride.price_cents * seats + settings.SERVICE_FEE_CENTS,
-                status=RideBooking.STATUS_REQUESTED,
-                confirmed_at=None,
-            )
-
-        token = make_chat_token(booking.id)
-        notify_bookings_changed([ride.driver_id], 'You have a new booking request.')
-        _send_booking_request_email(booking)
-        return JsonResponse({'ok': True, 'chat_token': token})
+        return JsonResponse({'ok': True, 'chat_token': make_chat_token(booking.id)})
 
     # GET — build context
     driver = ride.driver
@@ -1851,8 +960,8 @@ def create_ride_booking(request, ride_id):
         'driver_phone':        '',
         'driver_gender':       driver.get_gender_display() if driver.gender else '',
         'vehicle':             v,
-        'vehicle_color':       v.color or 'silver',
-        'vehicle_plate':       v.plate,
+        'vehicle_color':       ride_rules.vehicle_card(v)['color'],
+        'vehicle_plate':       ride_rules.vehicle_card(v)['plate'],
     }
 
     from .chat_tokens import make_chat_token
@@ -1877,69 +986,6 @@ def create_ride_booking(request, ride_id):
     })
 
 
-BLOCKED_CHAT_MESSAGE = "You can't message this user."
-
-
-def _chat_status(booking):
-    """Header badge and lock state of a booking's chat page. Shared by
-    chat_view and the live booking_status event (ISSUES.md H3), so a page
-    updated over the socket matches a freshly loaded one."""
-    ride_status = booking.ride.status
-    closed_message = ''
-    if booking.status == RideBooking.STATUS_CANCELLED:
-        label, status_class = 'Cancelled', 'cancelled'
-        closed_message = 'Booking was cancelled — messaging is closed.'
-    elif booking.status == RideBooking.STATUS_REJECTED:
-        label, status_class = 'Declined', 'cancelled'
-        closed_message = 'Booking request was declined — messaging is closed.'
-    elif booking.status == RideBooking.STATUS_COMPLETED or ride_status == 'completed':
-        label, status_class = 'Completed', 'completed'
-        closed_message = 'Ride completed — messaging is closed.'
-    elif ride_status == 'cancelled':
-        label, status_class = 'Ride Cancelled', 'cancelled'
-        closed_message = 'Ride was cancelled — messaging is closed.'
-    elif booking.status == RideBooking.STATUS_CONFIRMED:
-        label, status_class = 'Confirmed', 'active'
-    elif booking.status == RideBooking.STATUS_DRAFT:
-        label, status_class = 'Negotiating', 'active'
-    else:
-        label, status_class = 'Pending', 'pending'
-    # A block in either direction closes the chat (ISSUES.md A1). The badge
-    # keeps the booking's own status: the booking itself is left alone.
-    blocked = UserBlock.objects.between(booking.ride.driver_id, booking.passenger_id)
-    if blocked and not closed_message:
-        closed_message = BLOCKED_CHAT_MESSAGE
-    agreed_price = None
-    if booking.status in (RideBooking.STATUS_CONFIRMED, RideBooking.STATUS_COMPLETED) and booking.agreed_price_cents:
-        agreed_price = booking.agreed_price_cents // 100
-    return {
-        'agreed_price':   agreed_price,
-        'label':          label,
-        'status_class':   status_class,
-        'chat_locked':    status_class in ('cancelled', 'completed') or blocked,
-        # Negotiation requires a confirmed booking — blocked while approval is pending
-        'nego_locked':    booking.status == RideBooking.STATUS_REQUESTED,
-        'closed_message': closed_message,
-    }
-
-
-def _notify_booking_status(booking):
-    """Push a booking's new status to its open chat pages (ISSUES.md H3), so
-    they lock or unlock without a refresh. Best effort: a channel-layer
-    failure is logged, never raised, so the status change itself stands."""
-    from asgiref.sync import async_to_sync
-    from channels.layers import get_channel_layer
-    from .consumers import chat_group_name
-    try:
-        async_to_sync(get_channel_layer().group_send)(chat_group_name(booking.id), {
-            'type':   'booking_status',
-            'status': booking.status,
-            **_chat_status(booking),
-        })
-    except Exception:
-        logger.warning('Could not push status of booking %s to its chat', booking.id, exc_info=True)
-
-
 @login_required
 def cancel_booking_view(request, booking_id):
     if request.method != 'POST':
@@ -1953,34 +999,10 @@ def cancel_booking_view(request, booking_id):
     if booking.passenger != request.user:
         return JsonResponse({"error": "Not authorized"}, status=403)
 
-    if booking.status in (RideBooking.STATUS_CANCELLED, RideBooking.STATUS_REJECTED, RideBooking.STATUS_COMPLETED):
-        return JsonResponse({"error": f"Booking is already {booking.status}."}, status=400)
-
-    if booking.ride.status in ('completed', 'cancelled'):
-        return JsonResponse({"error": f"Cannot cancel — ride is already {booking.ride.status}."}, status=400)
-
-    if booking.ride.depart_at <= timezone.now():
-        return JsonResponse({"error": "Cannot cancel after the ride has departed."}, status=400)
-
-    ride = booking.ride
-    cancelled_at = timezone.now()
-
-    updated = RideBooking.objects.filter(id=booking.id).exclude(
-        status__in=(RideBooking.STATUS_CANCELLED, RideBooking.STATUS_REJECTED, RideBooking.STATUS_COMPLETED),
-    ).update(status=RideBooking.STATUS_CANCELLED, cancelled_at=cancelled_at)
-    if not updated:
-        return JsonResponse({"error": "Booking is already cancelled."}, status=400)
-    booking.status = RideBooking.STATUS_CANCELLED
-    booking.cancelled_at = cancelled_at
-
-    Rides.objects.filter(id=ride.id).update(
-        seats_available=Least(F('seats_available') + booking.seats, ride.seats_total)
-    )
-    Rides.objects.filter(id=ride.id, status='full').update(status='posted')
-    _notify_booking_status(booking)
-    notify_bookings_changed([ride.driver_id], 'A passenger cancelled their booking.')
-
-    _send_booking_cancelled_emails(booking)
+    try:
+        booking_rules.cancel_booking(booking)
+    except booking_rules.BookingError as e:
+        return JsonResponse({"error": e.message}, status=e.status)
 
     return JsonResponse({"success": True})
 
@@ -1999,32 +1021,10 @@ def accept_booking_view(request, booking_id):
     if booking.ride.driver != request.user:
         return JsonResponse({'error': 'Forbidden.'}, status=403)
 
-    if booking.status != RideBooking.STATUS_REQUESTED:
-        return JsonResponse({'error': f'Cannot accept a booking that is already {booking.status}.'}, status=400)
-
-    if not booking.ride.driver.driver_verification_current:
-        return JsonResponse({'error': 'Please verify your identity on your profile page before accepting bookings.'}, status=403)
-
-    # A request sent before a block stays pending; the driver can still
-    # reject it and the rider can cancel it, but it can't be confirmed.
-    if UserBlock.objects.between(booking.ride.driver_id, booking.passenger_id):
-        return JsonResponse({'error': "You can't accept this booking request."}, status=403)
-
-    # Conditional, like reject and cancel: a cancel that lands between the
-    # check above and this write must not be overwritten to confirmed after
-    # its seat was already released.
-    confirmed_at = timezone.now()
-    updated = RideBooking.objects.filter(
-        id=booking.id, status=RideBooking.STATUS_REQUESTED,
-    ).update(status=RideBooking.STATUS_CONFIRMED, confirmed_at=confirmed_at)
-    if not updated:
-        return JsonResponse({'error': 'This booking request is no longer pending.'}, status=400)
-    booking.status = RideBooking.STATUS_CONFIRMED
-    booking.confirmed_at = confirmed_at
-    _notify_booking_status(booking)
-    notify_bookings_changed([booking.passenger_id], 'Your booking request was accepted.')
-
-    _send_booking_confirmation_emails(booking)
+    try:
+        booking_rules.accept_booking(booking)
+    except booking_rules.BookingError as e:
+        return JsonResponse({'error': e.message}, status=e.status)
 
     return JsonResponse({'ok': True})
 
@@ -2043,25 +1043,10 @@ def reject_booking_view(request, booking_id):
     if booking.ride.driver != request.user:
         return JsonResponse({'error': 'Forbidden.'}, status=403)
 
-    if booking.status != RideBooking.STATUS_REQUESTED:
-        return JsonResponse({'error': f'Cannot reject a booking that is already {booking.status}.'}, status=400)
-
-    updated = RideBooking.objects.filter(
-        id=booking.id, status=RideBooking.STATUS_REQUESTED,
-    ).update(status=RideBooking.STATUS_REJECTED, rejected_at=timezone.now())
-    if not updated:
-        return JsonResponse({'error': f'Cannot reject a booking that is already {booking.status}.'}, status=400)
-    booking.status = RideBooking.STATUS_REJECTED
-
-    ride = booking.ride
-    Rides.objects.filter(id=ride.id).update(
-        seats_available=Least(F('seats_available') + booking.seats, ride.seats_total)
-    )
-    Rides.objects.filter(id=ride.id, status='full').update(status='posted')
-    _notify_booking_status(booking)
-    notify_bookings_changed([booking.passenger_id], 'Your booking request was declined.')
-
-    _send_booking_rejected_email(booking)
+    try:
+        booking_rules.reject_booking(booking)
+    except booking_rules.BookingError as e:
+        return JsonResponse({'error': e.message}, status=e.status)
 
     return JsonResponse({'ok': True})
 
@@ -2076,40 +1061,11 @@ def cancel_ride_view(request, ride_id):
         raise Http404
     ride = get_object_or_404(Rides, id=real_ride_id, driver=request.user)
 
-    if ride.status in ('completed', 'cancelled'):
-        return JsonResponse({"error": f"Cannot cancel — ride is already {ride.status}."}, status=400)
+    error = ride_rules.cancel_error(ride)
+    if error:
+        return JsonResponse({"error": error}, status=400)
 
-    if ride.depart_at <= timezone.now():
-        return JsonResponse({"error": "Cannot cancel after the ride has departed."}, status=400)
-
-    affected_bookings = list(
-        ride.bookings
-        .filter(status__in=(RideBooking.STATUS_REQUESTED, RideBooking.STATUS_CONFIRMED))
-        .select_related('passenger')
-    )
-
-    ride.bookings.filter(
-        status__in=(RideBooking.STATUS_REQUESTED, RideBooking.STATUS_CONFIRMED)
-    ).update(status=RideBooking.STATUS_CANCELLED, cancelled_at=timezone.now())
-
-    ride.status = 'cancelled'
-    ride.cancelled_at = timezone.now()
-    ride.save(update_fields=['status', 'cancelled_at'])
-    for booking in affected_bookings:
-        booking.status = RideBooking.STATUS_CANCELLED
-        booking.ride = ride
-        _notify_booking_status(booking)
-    # Pre-request chats stay drafts, but their chat closes with the ride.
-    drafts = list(ride.bookings.filter(status=RideBooking.STATUS_DRAFT))
-    for booking in drafts:
-        booking.ride = ride
-        _notify_booking_status(booking)
-    notify_bookings_changed(
-        [b.passenger_id for b in affected_bookings + drafts],
-        'The driver cancelled a ride you booked or asked about.',
-    )
-
-    _send_ride_cancelled_emails(ride, affected_bookings)
+    ride_rules.cancel_ride(ride)
 
     return JsonResponse({"success": True})
 
@@ -2146,8 +1102,11 @@ def my_rides_view(request):
         ui_status = RIDE_STATUS_TO_UI.get(ride.status, 'active')
 
         if ride.status == 'completed':
-            total_earned_cents += ride.price_cents * booked
-            passengers_helped += booked
+            # Seats on bookings the trip carried: a request never answered
+            # holds a seat but earned nothing.
+            carried = sum(b.seats for b in ride.bookings.all() if b.status in ride_rules.CARRIED_STATUSES)
+            total_earned_cents += ride.price_cents * carried
+            passengers_helped += carried
 
         stops = list(ride.stops.all())
         prefs = []
@@ -2321,21 +1280,13 @@ def chat_view(request, token):
     if request.user not in (booking.ride.driver, booking.passenger):
         raise Http404
 
-    other_user = booking.ride.driver if request.user == booking.passenger else booking.passenger
+    other_user = chat_rules.other_party(booking, request.user)
     initials = lambda u: ''.join(p[0].upper() for p in u.full_name.split()[:2])
 
-    history = (
-        Message.objects
-        .filter(ride=booking.ride)
-        .filter(
-            Q(sender=request.user, receiver=other_user) |
-            Q(sender=other_user, receiver=request.user)
-        )
-        .select_related('sender')
-    )
+    history = chat_rules.history(booking, request.user)
 
     # Mark unread messages (received by current user) as read
-    history.filter(receiver=request.user, read_at__isnull=True).update(read_at=timezone.now())
+    chat_rules.mark_read(history, request.user)
 
     history_json = [
         {
@@ -2356,21 +1307,11 @@ def chat_view(request, token):
     # Latest pending offer from the CURRENT user (outgoing — waiting for response)
     pending_outgoing_price = None
     if agreed_price is None:
-        pending_incoming = (
-            PriceOffer.objects
-            .filter(booking=booking, proposed_by=other_user, status=PriceOffer.STATUS_PENDING)
-            .order_by('-created_at')
-            .first()
-        )
+        pending_incoming = chat_rules.latest_pending_offer(booking, other_user)
         pending_incoming_price = pending_incoming.price_cents // 100 if pending_incoming else None
         pending_incoming_offer_id = pending_incoming.id if pending_incoming else None
 
-        pending_outgoing = (
-            PriceOffer.objects
-            .filter(booking=booking, proposed_by=request.user, status=PriceOffer.STATUS_PENDING)
-            .order_by('-created_at')
-            .first()
-        )
+        pending_outgoing = chat_rules.latest_pending_offer(booking, request.user)
         pending_outgoing_price = pending_outgoing.price_cents // 100 if pending_outgoing else None
 
     return render(request, 'chat.html', {
@@ -2409,50 +1350,11 @@ def contact_view(request):
     if _rate_limited(request, 'contact'):
         return JsonResponse({'error': 'Too many messages sent. Please try again later.'}, status=429)
 
-    name    = request.POST.get('name',    '').strip()[:100]
-    email   = request.POST.get('email',   '').strip()
-    role    = request.POST.get('role',    '').strip()
-    topic   = request.POST.get('topic',   '').strip()
-    subject = request.POST.get('subject', '').strip()
-    message = request.POST.get('message', '').strip()
-
-    if not all([name, email, topic, subject, message]):
-        return JsonResponse({'error': 'Please fill in all required fields.'}, status=400)
-
     try:
-        validate_email(email)
-    except ValidationError:
-        return JsonResponse({'error': 'Please enter a valid email address.'}, status=400)
-
-    # Strip control/non-printable characters before this goes into the
-    # Reply-To header value below.
-    name = ''.join(ch for ch in name if ch.isprintable()).strip()
-    if not name:
-        return JsonResponse({'error': 'Please enter your name.'}, status=400)
-
-    body = (
-        f"New contact form submission from Komüte\n"
-        f"{'─' * 45}\n\n"
-        f"Name:     {name}\n"
-        f"Email:    {email}\n"
-        f"Role:     {role or '—'}\n"
-        f"Topic:    {topic}\n"
-        f"Subject:  {subject}\n\n"
-        f"Message:\n{message}\n"
-    )
-
-    try:
-        msg = EmailMultiAlternatives(
-            subject=f"[Komüte Contact] {topic}: {subject}",
-            body=body,
-            from_email=settings.DEFAULT_FROM_EMAIL,
-            to=[settings.CONTACT_EMAIL],
-            reply_to=[formataddr((name, email))],
-        )
-        msg.send(fail_silently=False)
-    except Exception:
-        logger.exception('contact_view: could not send the contact email')
-        return JsonResponse({'error': 'Could not send message. Please try again later.'}, status=500)
+        contact.send_message(*(request.POST.get(f, '').strip()
+                               for f in ('name', 'email', 'role', 'topic', 'subject', 'message')))
+    except contact.ContactError as e:
+        return JsonResponse({'error': e.message}, status=e.status)
 
     return JsonResponse({'success': True})
 
@@ -2539,15 +1441,9 @@ def edit_ride_view(request, ride_id):
         driver=request.user,
     )
 
-    if ride.status != 'posted':
-        messages.error(request, "Cannot edit a ride that is cancelled or completed.")
-        return redirect('my-rides')
-
-    active_bookings = ride.bookings.filter(
-        status__in=[RideBooking.STATUS_REQUESTED, RideBooking.STATUS_CONFIRMED],
-    ).count()
-    if active_bookings > 0:
-        messages.error(request, "Cannot edit a ride that has active bookings.")
+    reason = ride_rules.edit_block_reason(ride)
+    if reason:
+        messages.error(request, reason)
         return redirect('my-rides')
 
     errors = {}
@@ -2580,45 +1476,24 @@ def edit_ride_view(request, ride_id):
             origin_lat = origin_lng = dest_lat = dest_lng = 0.0
 
         # 0,0: typed but not picked from the suggestions (same as post_ride_view).
-        if not origin:      errors['origin']      = 'Starting point is required.'
-        elif origin_lat == 0 and origin_lng == 0:
-            errors['origin'] = 'Please pick a location from the suggestions.'
-        elif area_error := _service_area_error(origin_lat, origin_lng, 'pickup'):
-            errors['origin'] = area_error
-        if not destination: errors['destination'] = 'Final destination is required.'
-        elif dest_lat == 0 and dest_lng == 0:
-            errors['destination'] = 'Please pick a location from the suggestions.'
-        elif area_error := _service_area_error(dest_lat, dest_lng, 'drop-off'):
-            errors['destination'] = area_error
+        if error := ride_rules.endpoint_error(origin, origin_lat, origin_lng, 'pickup', 'Starting point is required.'):
+            errors['origin'] = error
+        if error := ride_rules.endpoint_error(destination, dest_lat, dest_lng, 'drop-off',
+                                         'Final destination is required.'):
+            errors['destination'] = error
         clean_stops, stops_error = _clean_stops(request.POST)
         if stops_error:
             errors['stops'] = stops_error
         if not date_str:    errors['date']        = 'Date is required.'
         if not time_str:    errors['depart_time'] = 'Departure time is required.'
 
-        seats = None
-        if seats_str:
-            try:
-                seats = int(seats_str)
-                if seats < 1 or seats > 8:
-                    errors['seats'] = 'Seats must be between 1 and 8.'
-            except ValueError:
-                errors['seats'] = 'Invalid seat count.'
-        else:
-            errors['seats'] = 'Seat count is required.'
+        seats, error = ride_rules.seats_error(seats_str)
+        if error:
+            errors['seats'] = error
 
-        price_cents = 0
-        if not price_str:
-            errors['price'] = 'Price per seat is required.'
-        else:
-            try:
-                price_cents = _parse_dollars_to_cents(price_str)
-                if price_cents <= 0:
-                    errors['price'] = 'Price must be greater than 0.'
-                elif price_cents > _MAX_PRICE_CENTS:
-                    errors['price'] = 'Price per seat cannot exceed $1,000.'
-            except ValueError:
-                errors['price'] = 'Invalid price.'
+        price_cents, error = ride_rules.price_error(price_str, ride_rules.EDIT_PRICE_ZERO_MSG)
+        if error:
+            errors['price'] = error
 
         depart_at = None
         depart_utc_str = request.POST.get('depart_utc', '').strip()
@@ -2630,10 +1505,8 @@ def edit_ride_view(request, ride_id):
                 if timezone.is_naive(depart_at):
                     from datetime import timezone as _utc
                     depart_at = depart_at.replace(tzinfo=_utc.utc)
-                if depart_at < timezone.now() + timedelta(minutes=30):
-                    errors['depart_time'] = 'Departure must be at least 30 minutes from now.'
-                elif depart_at.date() > _max_ride_date():
-                    errors['date'] = 'Rides can only be scheduled up to 4 months in advance.'
+                if bad := ride_rules.departure_error(depart_at, ride_rules.EDIT_TOO_FAR_MSG):
+                    errors[bad[0]] = bad[1]
             except ValueError:
                 errors['depart_time'] = 'Invalid departure date or time.'
         elif date_str and time_str and 'date' not in errors and 'depart_time' not in errors:
@@ -2642,51 +1515,20 @@ def edit_ride_view(request, ride_id):
                 if abs(tz_offset) > _MAX_TZ_OFFSET_MINUTES:
                     raise ValueError('timezone offset out of range')
                 depart_at = timezone.make_aware(datetime.fromisoformat(f'{date_str}T{time_str}')) + timedelta(minutes=tz_offset)
-                if depart_at < timezone.now() + timedelta(minutes=30):
-                    errors['depart_time'] = 'Departure must be at least 30 minutes from now.'
-                elif depart_at.date() > _max_ride_date():
-                    errors['date'] = 'Rides can only be scheduled up to 4 months in advance.'
+                if bad := ride_rules.departure_error(depart_at, ride_rules.EDIT_TOO_FAR_MSG):
+                    errors[bad[0]] = bad[1]
             except (ValueError, OverflowError):  # OverflowError: a date near year 9999
                 errors['depart_time'] = 'Invalid departure date or time.'
 
         if not errors:
             duration_seconds = _parse_duration_seconds(request.POST.get('duration_seconds'))
 
-            if duration_seconds > 0:
-                arrive_at = depart_at + timedelta(seconds=duration_seconds)
-            elif ride.arrive_at and ride.depart_at:
-                arrive_at = depart_at + (ride.arrive_at - ride.depart_at)
-            else:
-                arrive_at = None
-
-            ride.origin      = origin
-            ride.origin_lat  = origin_lat
-            ride.origin_lng  = origin_lng
-            ride.destination = destination
-            ride.dest_lat    = dest_lat
-            ride.dest_lng    = dest_lng
-            ride.depart_at   = depart_at
-            ride.arrive_at   = arrive_at
-            if tz_name:
-                ride.tz = tz_name
-            if duration_seconds > 0:
-                ride.expected_duration_seconds = duration_seconds
-            booked_seats = RideBooking.objects.filter(
-                ride=ride,
-                status__in=[RideBooking.STATUS_REQUESTED, RideBooking.STATUS_CONFIRMED],
-            ).aggregate(total=Sum('seats'))['total'] or 0
-            ride.seats_total     = seats
-            ride.seats_available = max(0, seats - booked_seats)
-            ride.price_cents = price_cents
-            ride.notes       = notes or None
-            ride.preferences_json = preferences_json or None
-            ride.passenger_gender_pref = passenger_gender_pref
-            ride.save()
-
-            ride.stops.all().delete()
-            for stop in clean_stops:
-                RideStop.objects.create(ride=ride, stop_order=stop['idx'] + 1,
-                                        location=stop['location'], lat=stop['lat'], lng=stop['lng'])
+            ride_rules.update_ride(
+                ride, origin=origin, origin_lat=origin_lat, origin_lng=origin_lng, destination=destination,
+                dest_lat=dest_lat, dest_lng=dest_lng, depart_at=depart_at, tz_name=tz_name,
+                duration_seconds=duration_seconds, seats=seats, price_cents=price_cents, notes=notes,
+                preferences_json=preferences_json, passenger_gender_pref=passenger_gender_pref,
+                stops=clean_stops)
 
             messages.success(request, 'Ride updated successfully.')
             return redirect('my-rides')
@@ -2754,11 +1596,7 @@ def ride_summary_view(request, ride_id):
         id=real_ride_id,
     )
 
-    is_driver    = ride.driver == request.user
-    is_passenger = ride.bookings.filter(
-        passenger=request.user,
-        status__in=('confirmed', 'completed'),
-    ).exists()
+    is_driver, is_passenger = ride_rules.summary_viewer(ride, request.user)
 
     if not is_driver and not is_passenger:
         messages.error(request, "You don't have access to this ride summary.")
@@ -2768,31 +1606,11 @@ def ride_summary_view(request, ride_id):
         messages.error(request, "Ride summary is only available for completed rides.")
         return redirect('my-rides')
 
-    origin_city = ride.origin.split(',')[0].strip()
-    dest_city   = ride.destination.split(',')[0].strip()
-
-    distance_km = round(_haversine_km(
-        ride.origin_lat, ride.origin_lng,
-        ride.dest_lat,   ride.dest_lng,
-    ))
-
-    duration = ''
-    if ride.arrive_at and ride.depart_at:
-        delta   = ride.arrive_at - ride.depart_at
-        hours   = int(delta.total_seconds() // 3600)
-        minutes = int((delta.total_seconds() % 3600) // 60)
-        duration = f"{hours}h {minutes}m" if hours else f"{minutes}m"
-
-    active_bookings = [
-        b for b in ride.bookings.all()
-        if b.status not in ('cancelled', 'rejected')
-    ]
-    passenger_count = sum(b.seats for b in active_bookings)
-
-    CO2_PER_KM_KG = 0.12
-    co2_saved_kg  = round(passenger_count * distance_km * CO2_PER_KM_KG, 1)
-    trees_equiv   = round(co2_saved_kg / 21, 1)
-    km_avoided    = passenger_count * distance_km
+    stats = ride_rules.summary_stats(ride)
+    origin_city, dest_city = stats['origin_city'], stats['dest_city']
+    distance_km, duration = stats['distance_km'], stats['duration']
+    active_bookings, passenger_count = stats['active_bookings'], stats['passenger_count']
+    co2_saved_kg, trees_equiv, km_avoided = stats['co2_saved_kg'], stats['trees_equiv'], stats['km_avoided']
 
     # Sorted here so the prefetched stops are reused, not queried again.
     stops = sorted(ride.stops.all(), key=lambda s: s.stop_order)
@@ -2805,15 +1623,7 @@ def ride_summary_view(request, ride_id):
 
     stops_json = json.dumps([{'lng': s.lng, 'lat': s.lat} for s in stops])
 
-    arrival_note = 'arrived on time'
-    if ride.arrive_at and ride.depart_at and ride.expected_duration_seconds:
-        actual_seconds   = (ride.arrive_at - ride.depart_at).total_seconds()
-        expected_seconds = ride.expected_duration_seconds
-        diff = int((expected_seconds - actual_seconds) / 60)
-        if diff > 2:
-            arrival_note = f'arrived {diff} min early'
-        elif diff < -2:
-            arrival_note = f'arrived {abs(diff)} min late'
+    arrival_note = stats['arrival_note']
 
     # One query for the viewer's reviews, not one per booking (audit F-5).
     reviewed_ids = set(
@@ -2917,7 +1727,10 @@ def leave_review_view(request, booking_id):
         messages.error(request, "You don't have access to this review.")
         return redirect('my-rides')
 
-    if booking.status != RideBooking.STATUS_COMPLETED and ride.status != 'completed':
+    # The same test as saving the review: this booking's trip happened. The
+    # page used to open for a cancelled, rejected or draft booking on a
+    # completed ride, and the review was then refused.
+    if not safety.took_place(booking):
         messages.error(request, "You can only review completed rides.")
         return redirect('my-rides')
 
@@ -2943,7 +1756,8 @@ def leave_review_view(request, booking_id):
 
     return render(request, 'review.html', {
         'booking_id':          encode_id(booking.id),
-        'reviewee_id':         reviewee.id,
+        # The opaque id, as everywhere else (submit_review_view decodes it).
+        'reviewee_id':         encode_id(reviewee.id),
         'reviewee_name':       reviewee_name,
         'reviewee_first_name': reviewee_first_name,
         'reviewee_initials':   reviewee_initials,
@@ -2966,24 +1780,27 @@ def submit_review_view(request):
         data = json.loads(request.body)
     except json.JSONDecodeError:
         return JsonResponse({'error': 'Invalid JSON'}, status=400)
+    # A JSON list or number here used to end in a server error.
+    if not isinstance(data, dict):
+        return JsonResponse({'error': 'Invalid JSON'}, status=400)
 
-    booking_id  = decode_id(data.get('booking_id', ''))
-    reviewee_id = data.get('reviewee_id')
-    rating      = data.get('rating')
-    body         = (data.get('comment') or '').strip() or None
+    booking_key  = data.get('booking_id', '')
+    booking_id   = decode_id(booking_key) if isinstance(booking_key, str) else None
+    reviewee_id  = data.get('reviewee_id')
+    rating       = data.get('rating')
     is_anonymous = bool(data.get('anonymous', False))
-    tags         = data.get('tags') or []
-    subratings   = data.get('subratings') or {}
 
     if not all([booking_id, reviewee_id, rating]):
         return JsonResponse({'error': 'booking_id, reviewee_id, and rating are required.'}, status=400)
 
+    # Whole stars 1-5; a comment, tags and detailed ratings as the page offers
+    # them (komute.services.safety).
     try:
-        rating = int(rating)
-        if not 1 <= rating <= 5:
-            raise ValueError
-    except (ValueError, TypeError):
-        return JsonResponse({'error': 'Rating must be between 1 and 5.'}, status=400)
+        rating = safety.clean_rating(rating)
+        body, tags, subratings = safety.clean_review_extras(
+            data.get('comment'), data.get('tags'), data.get('subratings'))
+    except safety.SafetyError as e:
+        return JsonResponse({'error': e.message}, status=400)
 
     booking = get_object_or_404(
         RideBooking.objects.select_related('ride__driver', 'passenger'),
@@ -3008,10 +1825,14 @@ def submit_review_view(request):
     if not took_place:
         return JsonResponse({'error': 'Can only review completed rides.'}, status=400)
 
-    try:
-        reviewee_id = int(reviewee_id)
-    except (ValueError, TypeError):
-        return JsonResponse({'error': 'Invalid reviewee_id.'}, status=400)
+    # The page sends the opaque id; a page opened before that change sent the
+    # database id, which is still understood.
+    reviewee_key = str(reviewee_id)
+    reviewee_id = decode_hashid(reviewee_key)
+    if reviewee_id is None:
+        if not reviewee_key.isdigit():
+            return JsonResponse({'error': 'Invalid reviewee_id.'}, status=400)
+        reviewee_id = int(reviewee_key)
 
     expected_reviewee_id = booking.passenger_id if is_driver else ride.driver_id
     if reviewee_id != expected_reviewee_id:
@@ -3020,27 +1841,8 @@ def submit_review_view(request):
     if Review.objects.filter(booking=booking, reviewer=user).exists():
         return JsonResponse({'error': 'You have already reviewed this trip.'}, status=400)
 
-    with transaction.atomic():
-        Review.objects.create(
-            booking=booking,
-            reviewer=user,
-            reviewee_id=expected_reviewee_id,
-            rating=rating,
-            body=body,
-            tags_json=tags or None,
-            subratings_json=subratings or None,
-            is_anonymous=is_anonymous,
-        )
-
-        # Recompute the reviewee's avg_rating from scratch rather than folding
-        # this one rating in -- cheap at this scale, and avoids drift from any
-        # review that's ever edited/deleted out from under a running average.
-        # select_for_update so two reviews landing on the same reviewee at
-        # once can't race and have the second update clobber the first.
-        reviewee = User.objects.select_for_update().get(id=expected_reviewee_id)
-        avg = Review.objects.filter(reviewee_id=expected_reviewee_id).aggregate(Avg('rating'))['rating__avg']
-        reviewee.avg_rating = round(avg, 2) if avg is not None else 0
-        reviewee.save(update_fields=['avg_rating'])
+    safety.save_review(booking, user, expected_reviewee_id, rating=rating, body=body,
+                       is_anonymous=is_anonymous, tags=tags, subratings=subratings)
 
     return JsonResponse({'success': True})
 
@@ -3059,95 +1861,21 @@ def driver_inbox_view(request):
     # or price offer, the driver needs to see and respond to it, even though no
     # seat has been reserved yet. Untouched, empty drafts are filtered out below
     # so opening a draft chat alone still doesn't surface anything.
-    bookings_qs = (
-        RideBooking.objects
-        .filter(ride__driver=user)
-        .exclude(status__in=['cancelled', 'rejected'])
-        .select_related('ride', 'passenger')
-        .order_by('-booked_at')
-    )
-
-    # Deduplicate: one conversation per (ride, passenger) — keep the latest booking
-    seen = {}
-    for b in bookings_qs:
-        key = (b.ride_id, b.passenger_id)
-        if key not in seen:
-            seen[key] = b
-    unique_bookings = list(seen.values())
-    booking_ids = [b.id for b in unique_bookings]
-    ride_ids    = [b.ride_id for b in unique_bookings]
-
-    # 1 query: last message per (ride_id, other_user_id)
-    _msgs = (
-        Message.objects
-        .filter(ride_id__in=ride_ids)
-        .filter(Q(sender=user) | Q(receiver=user))
-        .order_by('-created_at')
-        .only('id', 'ride_id', 'sender_id', 'receiver_id', 'body', 'created_at')
-    )
-    last_msg_map = {}
-    for m in _msgs:
-        other_id = m.receiver_id if m.sender_id == user.id else m.sender_id
-        key = (m.ride_id, other_id)
-        if key not in last_msg_map:
-            last_msg_map[key] = m
-
-    # 1 query: unread count per (ride_id, passenger_id)
-    _unread = (
-        Message.objects
-        .filter(ride_id__in=ride_ids, receiver=user, read_at__isnull=True)
-        .values('ride_id', 'sender_id')
-        .annotate(cnt=Count('id'))
-    )
-    unread_map = {(r['ride_id'], r['sender_id']): r['cnt'] for r in _unread}
-
-    # 1 query: latest offer per booking_id
-    _offers = (
-        PriceOffer.objects
-        .filter(booking_id__in=booking_ids)
-        .order_by('-created_at')
-        .only('id', 'booking_id', 'status', 'price_cents', 'proposed_by_id', 'created_at')
-    )
-    latest_offer_map = {}
-    for o in _offers:
-        if o.booking_id not in latest_offer_map:
-            latest_offer_map[o.booking_id] = o
-
     AVATAR_CLASSES = ['c1', 'c2', 'c3', 'c4', 'c5']
     now = timezone.now()
-    my_blocks = set(UserBlock.objects.filter(blocker=user).values_list('blocked_id', flat=True))
 
     conversations = []
-    for i, booking in enumerate(unique_bookings):
-        ride = booking.ride
-        passenger = booking.passenger
-
-        last_msg     = last_msg_map.get((ride.id, passenger.id))
-        unread_count = unread_map.get((ride.id, passenger.id), 0)
-        latest_offer = latest_offer_map.get(booking.id)
-
-        if booking.status == RideBooking.STATUS_DRAFT and last_msg is None and latest_offer is None:
-            continue
-
-        if booking.status == RideBooking.STATUS_CONFIRMED and booking.agreed_price_cents:
-            nego_status = 'agreed'
-            nego_label = f"Agreed ${booking.agreed_price_cents / 100:.2f}"
-        elif latest_offer and latest_offer.status == PriceOffer.STATUS_PENDING:
-            nego_status = 'pending'
-            if latest_offer.proposed_by_id == passenger.id:
-                nego_label = f"Offer ${latest_offer.price_cents / 100:.2f}"
-            else:
-                nego_label = f"Counter ${latest_offer.price_cents / 100:.2f}"
+    for row in booking_rules.inbox(user, as_driver=True):
+        booking, ride, passenger = row['booking'], row['ride'], row['other']
+        last_msg, unread_count, latest_offer = row['last_msg'], row['unread_count'], row['latest_offer']
+        nego_status = row['nego_status']
+        if nego_status == 'agreed':
+            nego_label = f"Agreed ${row['nego_cents'] / 100:.2f}"
+        elif nego_status == 'pending':
+            nego_label = f"{'Offer' if row['nego_by_other'] else 'Counter'} ${row['nego_cents'] / 100:.2f}"
         else:
-            nego_status = 'none'
             nego_label = ''
-
-        if ride.status == 'completed' or booking.status == RideBooking.STATUS_COMPLETED:
-            ui_status = 'completed'
-        elif booking.status == RideBooking.STATUS_CONFIRMED:
-            ui_status = 'active'
-        else:
-            ui_status = 'upcoming'
+        ui_status = row['status']
 
         ref_dt = last_msg.created_at if last_msg else booking.booked_at
         delta = now - ref_dt
@@ -3196,9 +1924,9 @@ def driver_inbox_view(request):
             'booking_status':     booking.status,
             'chat_token':         make_chat_token(booking.id),
             'passenger_name':     name or _UNNAMED_USER,
-            'blocked_by_me':      passenger.id in my_blocks,
+            'blocked_by_me':      row['blocked_by_me'],
             'initials':           initials,
-            'avatar_class':       AVATAR_CLASSES[i % 5],
+            'avatar_class':       AVATAR_CLASSES[row['index'] % 5],
             'is_online':          is_online,
             'status':             ui_status,
             'is_unread':          unread_count > 0,
@@ -3246,92 +1974,21 @@ def rider_inbox_view(request):
 
     from .chat_tokens import make_chat_token
 
-    bookings_qs = (
-        RideBooking.objects
-        .filter(passenger=user)
-        .exclude(status__in=['cancelled', 'rejected', 'draft'])
-        .select_related('ride', 'ride__driver')
-        .order_by('-booked_at')
-    )
-
-    # Deduplicate: one conversation per (ride, driver) — keep the latest booking
-    seen = {}
-    for b in bookings_qs:
-        key = (b.ride_id, b.ride.driver_id)
-        if key not in seen:
-            seen[key] = b
-    unique_bookings = list(seen.values())
-    booking_ids = [b.id for b in unique_bookings]
-    ride_ids    = [b.ride_id for b in unique_bookings]
-
-    # 1 query: last message per (ride_id, other_user_id)
-    _msgs = (
-        Message.objects
-        .filter(ride_id__in=ride_ids)
-        .filter(Q(sender=user) | Q(receiver=user))
-        .order_by('-created_at')
-        .only('id', 'ride_id', 'sender_id', 'receiver_id', 'body', 'created_at')
-    )
-    last_msg_map = {}
-    for m in _msgs:
-        other_id = m.receiver_id if m.sender_id == user.id else m.sender_id
-        key = (m.ride_id, other_id)
-        if key not in last_msg_map:
-            last_msg_map[key] = m
-
-    # 1 query: unread count per (ride_id, driver_id)
-    _unread = (
-        Message.objects
-        .filter(ride_id__in=ride_ids, receiver=user, read_at__isnull=True)
-        .values('ride_id', 'sender_id')
-        .annotate(cnt=Count('id'))
-    )
-    unread_map = {(r['ride_id'], r['sender_id']): r['cnt'] for r in _unread}
-
-    # 1 query: latest offer per booking_id
-    _offers = (
-        PriceOffer.objects
-        .filter(booking_id__in=booking_ids)
-        .order_by('-created_at')
-        .only('id', 'booking_id', 'status', 'price_cents', 'proposed_by_id', 'created_at')
-    )
-    latest_offer_map = {}
-    for o in _offers:
-        if o.booking_id not in latest_offer_map:
-            latest_offer_map[o.booking_id] = o
-
     AVATAR_CLASSES = ['c1', 'c2', 'c3', 'c4', 'c5']
     now = timezone.now()
-    my_blocks = set(UserBlock.objects.filter(blocker=user).values_list('blocked_id', flat=True))
 
     conversations = []
-    for i, booking in enumerate(unique_bookings):
-        ride = booking.ride
-        driver = ride.driver
-
-        last_msg     = last_msg_map.get((ride.id, driver.id))
-        unread_count = unread_map.get((ride.id, driver.id), 0)
-        latest_offer = latest_offer_map.get(booking.id)
-
-        if booking.status == RideBooking.STATUS_CONFIRMED and booking.agreed_price_cents:
-            nego_status = 'agreed'
-            nego_label = f"Agreed ${booking.agreed_price_cents / 100:.2f}"
-        elif latest_offer and latest_offer.status == PriceOffer.STATUS_PENDING:
-            nego_status = 'pending'
-            if latest_offer.proposed_by_id == driver.id:
-                nego_label = f"Offer ${latest_offer.price_cents / 100:.2f}"
-            else:
-                nego_label = f"Counter ${latest_offer.price_cents / 100:.2f}"
+    for row in booking_rules.inbox(user, as_driver=False):
+        booking, ride, driver = row['booking'], row['ride'], row['other']
+        last_msg, unread_count, latest_offer = row['last_msg'], row['unread_count'], row['latest_offer']
+        nego_status = row['nego_status']
+        if nego_status == 'agreed':
+            nego_label = f"Agreed ${row['nego_cents'] / 100:.2f}"
+        elif nego_status == 'pending':
+            nego_label = f"{'Offer' if row['nego_by_other'] else 'Counter'} ${row['nego_cents'] / 100:.2f}"
         else:
-            nego_status = 'none'
             nego_label = ''
-
-        if ride.status == 'completed' or booking.status == RideBooking.STATUS_COMPLETED:
-            ui_status = 'completed'
-        elif booking.status == RideBooking.STATUS_CONFIRMED:
-            ui_status = 'active'
-        else:
-            ui_status = 'upcoming'
+        ui_status = row['status']
 
         ref_dt = last_msg.created_at if last_msg else booking.booked_at
         delta = now - ref_dt
@@ -3378,9 +2035,9 @@ def rider_inbox_view(request):
             'chat_token':         make_chat_token(booking.id),
             'driver_name':        name or _UNNAMED_USER,
             'driver_verified':    driver.driver_verified,
-            'blocked_by_me':      driver.id in my_blocks,
+            'blocked_by_me':      row['blocked_by_me'],
             'initials':           initials,
-            'avatar_class':       AVATAR_CLASSES[i % 5],
+            'avatar_class':       AVATAR_CLASSES[row['index'] % 5],
             'is_online':          is_online,
             'status':             ui_status,
             'is_unread':          unread_count > 0,
@@ -3508,19 +2165,11 @@ def change_password_view(request):
     if _rate_limited(request, 'change-password', extra_key=str(request.user.id), per_ip=False):
         return JsonResponse({'error': _TOO_MANY_ATTEMPTS_MSG}, status=429)
 
-    if not request.user.check_password(current):
-        return JsonResponse({'error': 'Current password is incorrect.'}, status=400)
-
-    if new_pwd != confirm:
-        return JsonResponse({'error': 'New passwords do not match.'}, status=400)
-
     try:
-        validate_password(new_pwd, user=request.user)
-    except ValidationError as e:
-        return JsonResponse({'error': ' '.join(e.messages)}, status=400)
+        accounts.change_password(request.user, current, new_pwd, confirm)
+    except accounts.AccountError as e:
+        return JsonResponse({'error': e.message}, status=400)
 
-    request.user.set_password(new_pwd)
-    request.user.save()
     update_session_auth_hash(request, request.user)
     return JsonResponse({'ok': True})
 
@@ -3537,38 +2186,10 @@ def create_price_offer_view(request, booking_id):
         id=real_booking_id,
     )
 
-    if request.user not in (booking.ride.driver, booking.passenger):
-        return JsonResponse({'error': 'Forbidden.'}, status=403)
-
-    if booking.status not in (RideBooking.STATUS_REQUESTED, RideBooking.STATUS_CONFIRMED):
-        return JsonResponse({'error': 'Negotiation is closed for this booking.'}, status=400)
-
-    if UserBlock.objects.between(booking.ride.driver_id, booking.passenger_id):
-        return JsonResponse({'error': BLOCKED_CHAT_MESSAGE}, status=403)
-
     try:
-        price_cents = int(round(float(request.POST.get('price_cents', 0))))
-    except (ValueError, TypeError, OverflowError):
-        return JsonResponse({'error': 'Invalid price.'}, status=400)
-
-    if price_cents <= 0:
-        return JsonResponse({'error': 'Price must be greater than 0.'}, status=400)
-
-    if price_cents > 100_000:
-        return JsonResponse({'error': 'Offer cannot exceed $1,000.'}, status=400)
-
-    # Expire any pending offers from the same user
-    PriceOffer.objects.filter(
-        booking=booking,
-        proposed_by=request.user,
-        status=PriceOffer.STATUS_PENDING,
-    ).update(status=PriceOffer.STATUS_DECLINED, responded_at=timezone.now())
-
-    offer = PriceOffer.objects.create(
-        booking=booking,
-        proposed_by=request.user,
-        price_cents=price_cents,
-    )
+        offer = booking_rules.create_offer(booking, request.user, request.POST.get('price_cents', 0))
+    except booking_rules.BookingError as e:
+        return JsonResponse({'error': e.message}, status=e.status)
 
     return JsonResponse({
         'id': offer.id,
@@ -3590,72 +2211,22 @@ def respond_price_offer_view(request, offer_id):
         PriceOffer.objects.select_related('booking__ride__driver', 'booking__passenger'),
         id=real_offer_id,
     )
-    booking = offer.booking
-
-    if request.user == offer.proposed_by:
-        return JsonResponse({'error': 'You cannot respond to your own offer.'}, status=403)
-
-    if request.user not in (booking.ride.driver, booking.passenger):
-        return JsonResponse({'error': 'Forbidden.'}, status=403)
-
-    if booking.status not in (RideBooking.STATUS_REQUESTED, RideBooking.STATUS_CONFIRMED):
-        return JsonResponse({'error': f'This booking is no longer active ({booking.status}).'}, status=400)
-
-    if UserBlock.objects.between(booking.ride.driver_id, booking.passenger_id):
-        return JsonResponse({'error': BLOCKED_CHAT_MESSAGE}, status=403)
-
-    if offer.status != PriceOffer.STATUS_PENDING:
-        return JsonResponse({'error': 'This offer is no longer pending.'}, status=400)
-
     action = request.POST.get('action', '').strip()
+    try:
+        result = booking_rules.respond_offer(offer, request.user, action, request.POST.get('price_cents', 0))
+    except booking_rules.BookingError as e:
+        return JsonResponse({'error': e.message}, status=e.status)
 
     if action == 'accept':
-        offer.status = PriceOffer.STATUS_ACCEPTED
-        offer.responded_at = timezone.now()
-        offer.save(update_fields=['status', 'responded_at'])
-
-        booking.agreed_price_cents = offer.price_cents * booking.seats + settings.SERVICE_FEE_CENTS
-        booking.save(update_fields=['agreed_price_cents'])
-
-        return JsonResponse({'ok': True, 'status': offer.status, 'price_cents': offer.price_cents})
-
-    elif action == 'decline':
-        offer.status = PriceOffer.STATUS_DECLINED
-        offer.responded_at = timezone.now()
-        offer.save(update_fields=['status', 'responded_at'])
-
-        return JsonResponse({'ok': True, 'status': offer.status})
-
-    elif action == 'counter':
-        try:
-            counter_cents = int(round(float(request.POST.get('price_cents', 0))))
-        except (ValueError, TypeError, OverflowError):
-            return JsonResponse({'error': 'Invalid counter price.'}, status=400)
-
-        if counter_cents <= 0:
-            return JsonResponse({'error': 'Counter price must be greater than 0.'}, status=400)
-
-        if counter_cents > 100_000:
-            return JsonResponse({'error': 'Counter offer cannot exceed $1,000.'}, status=400)
-
-        offer.status = PriceOffer.STATUS_COUNTERED
-        offer.responded_at = timezone.now()
-        offer.save(update_fields=['status', 'responded_at'])
-
-        new_offer = PriceOffer.objects.create(
-            booking=booking,
-            proposed_by=request.user,
-            price_cents=counter_cents,
-        )
-
-        return JsonResponse({
-            'ok': True,
-            'offer_id': new_offer.id,
-            'price_cents': new_offer.price_cents,
-            'status': new_offer.status,
-        }, status=201)
-
-    return JsonResponse({'error': 'Invalid action. Use accept, decline, or counter.'}, status=400)
+        return JsonResponse({'ok': True, 'status': result.status, 'price_cents': result.price_cents})
+    if action == 'decline':
+        return JsonResponse({'ok': True, 'status': result.status})
+    return JsonResponse({
+        'ok': True,
+        'offer_id': result.id,
+        'price_cents': result.price_cents,
+        'status': result.status,
+    }, status=201)
 
 
 @login_required
@@ -3664,42 +2235,16 @@ def send_verification_email(request):
     try:
         user = request.user
 
-        if EmailAddress.objects.filter(user=user, verified=True).exists():
+        if accounts.is_email_address_verified(user):
             return JsonResponse({"message": "Already verified"})
 
-        # If an email change is pending, the EmailAddress row already on
-        # file for this user is the pending one (change_email_view creates
-        # it and deletes any other row for this user) -- target that, not
-        # user.email, or get_or_create's create() collides with it on the
-        # unique_primary_email constraint (one primary=True row per user)
-        # and raises IntegrityError.
-        target_email = user.pending_email or user.email
+        target_email = accounts.verification_target(user)
 
         if (_rate_limited(request, 'send-verification', extra_key=str(user.id), per_ip=False)
                 or _rate_limited(request, 'email-confirm-target', extra_key=target_email.lower(), per_ip=False)):
             return JsonResponse({"error": _TOO_MANY_ATTEMPTS_MSG}, status=429)
 
-        email_address, _ = EmailAddress.objects.get_or_create(
-            user=user,
-            email=target_email,
-            defaults={"verified": False, "primary": True}
-        )
-
-        confirmation = EmailConfirmationHMAC(email_address)
-        activate_url = request.build_absolute_uri(
-            reverse('account_confirm_email', args=[confirmation.key])
-        )
-        ctx = {'user': user, 'activate_url': activate_url}
-        subject = render_to_string('account/email/email_confirmation_subject.txt', ctx).strip()
-        text_body = render_to_string('account/email/email_confirmation_message.txt', ctx)
-        html_body = render_to_string('account/email/email_confirmation_message.html', ctx)
-
-        msg = EmailMultiAlternatives(
-            subject, text_body, settings.DEFAULT_FROM_EMAIL, [target_email],
-            reply_to=[settings.REPLY_TO_EMAIL_ACCOUNT_VERIFICATION],
-        )
-        msg.attach_alternative(html_body, 'text/html')
-        msg.send()
+        accounts.send_verification_email(request, user)
 
         return JsonResponse({"message": "Verification email sent successfully"})
     except Exception:
@@ -3724,58 +2269,16 @@ def change_email_view(request):
         return JsonResponse({'error': _TOO_MANY_ATTEMPTS_MSG}, status=429)
 
     try:
-        validate_email(new_email)
-    except ValidationError:
-        return JsonResponse({'error': 'Enter a valid email address.'}, status=400)
-
-    if not user.check_password(password):
-        return JsonResponse({'error': 'Incorrect password.'}, status=400)
-
-    if new_email == user.email.lower():
-        return JsonResponse({'error': 'This is already your current email.'}, status=400)
-
-    if User.objects.filter(email=new_email).exclude(pk=user.pk).exists():
-        return JsonResponse({'error': 'This email is already in use.'}, status=400)
+        accounts.check_email_change(user, new_email, password)
+    except accounts.AccountError as e:
+        return JsonResponse({'error': e.message}, status=400)
 
     # Caps mail to one address however many accounts send it.
     if _rate_limited(request, 'email-confirm-target', extra_key=new_email, per_ip=False):
         return JsonResponse({'error': _TOO_MANY_ATTEMPTS_MSG}, status=429)
 
     try:
-        # Replace existing EmailAddress records for this user
-        EmailAddress.objects.filter(user=user).delete()
-        email_address = EmailAddress.objects.create(
-            user=user, email=new_email, verified=False, primary=True
-        )
-        # Store as pending — user.email updates when confirmed via allauth signal
-        user.pending_email  = new_email
-        user.email_verified = False
-        user.save(update_fields=['pending_email', 'email_verified'])
-
-        # Build the confirmation URL using allauth's HMAC key so the
-        # confirm link still works through allauth's existing confirm view.
-        confirmation = EmailConfirmationHMAC(email_address)
-        activate_url = request.build_absolute_uri(
-            reverse('account_confirm_email', args=[confirmation.key])
-        )
-        context = {
-            'user': user,
-            'new_email': new_email,
-            'activate_url': activate_url,
-        }
-        subject = '[Komüte] Confirm your new email address'
-        text_body = render_to_string(
-            'account/email/email_change_confirmation_message.txt', context
-        )
-        html_body = render_to_string(
-            'account/email/email_change_confirmation_message.html', context
-        )
-        msg = EmailMultiAlternatives(
-            subject, text_body, settings.DEFAULT_FROM_EMAIL, [new_email],
-            reply_to=[settings.REPLY_TO_EMAIL_ACCOUNT_EMAIL_CHANGE],
-        )
-        msg.attach_alternative(html_body, 'text/html')
-        msg.send()
+        accounts.start_email_change(request, user, new_email)
 
         return JsonResponse({'message': f'Verification email sent to {new_email}'})
     except Exception:
@@ -3801,76 +2304,8 @@ class CustomConfirmEmailView(AllauthConfirmEmailView):
 # ACCOUNT_DELETION_GRACE_DAYS later.
 # ──────────────────────────────────────────────────────────────────
 
-_DEACTIVATE_SALT = 'komute-deactivate-v1'
-_DEACTIVATE_LINK_MAX_AGE_SECONDS = 24 * 3600
-
-
-def _deactivate_state_hash(user):
-    # Bound to the user's password hash, so a token issued before a password
-    # change (e.g. because an old email got forwarded, or SECRET_KEY leaked
-    # and someone minted a token straight from a user ID) stops verifying
-    # the moment the password changes, without needing a DB column.
-    return salted_hmac(_DEACTIVATE_SALT + '-state', user.password).hexdigest()
-
-
-def _make_deactivate_token(user):
-    """Return a signed, URL-safe token encoding the user ID and a hash of
-    their current password, verified by _decode_deactivate_token."""
-    return signing.dumps(
-        {'uid': user.id, 'h': _deactivate_state_hash(user)},
-        salt=_DEACTIVATE_SALT,
-    )
-
-
-def _decode_deactivate_token(token):
-    """Decode and verify a token produced by _make_deactivate_token.
-    Raises signing.SignatureExpired if older than 24h, signing.BadSignature if
-    tampered, expired, or if the user's password has changed since issuance."""
-    data = signing.loads(
-        token,
-        salt=_DEACTIVATE_SALT,
-        max_age=_DEACTIVATE_LINK_MAX_AGE_SECONDS,
-    )
-    user = User.objects.filter(id=data['uid']).first()
-    if user is None or not constant_time_compare(data['h'], _deactivate_state_hash(user)):
-        raise signing.BadSignature('stale deactivate token')
-    return user.id
-
-
-def _account_deletion_message():
-    days = settings.ACCOUNT_DELETION_GRACE_DAYS
-    return (
-        f'Your account is closed now and permanently deleted after {days} days. '
-        f'Contact support within that time if you change your mind. Some records '
-        f'(e.g. completed ride history) are kept for the periods in our privacy policy.'
-    )
-
-
-def _send_delete_account_email(request, user):
-    """Email `user` the signed link that closes their account. Raises if the
-    email can't be sent."""
-    token = _make_deactivate_token(user)
-    confirm_url = request.build_absolute_uri(
-        reverse('confirm-delete-account', args=[token])
-    )
-    ctx = {
-        'user': user,
-        'confirm_url': confirm_url,
-        'grace_days': settings.ACCOUNT_DELETION_GRACE_DAYS,
-        'delete_account_url': request.build_absolute_uri(reverse('delete-account')),
-    }
-    text_body = render_to_string('account/email/delete_account_confirmation.txt', ctx)
-    html_body = render_to_string('account/email/delete_account_confirmation.html', ctx)
-    msg = EmailMultiAlternatives(
-        subject='[Komüte] Confirm account deletion',
-        body=text_body,
-        from_email=settings.DEFAULT_FROM_EMAIL,
-        to=[user.mail_to],
-        cc=[settings.ADMIN_EMAIL],
-        reply_to=[settings.REPLY_TO_EMAIL_ACCOUNT_DEACTIVATION],
-    )
-    msg.attach_alternative(html_body, 'text/html')
-    msg.send()
+# Tokens, the email and the data export live in komute.services.accounts
+# (imported at the top under their old names).
 
 
 @login_required
@@ -3889,150 +2324,6 @@ def request_delete_account_view(request):
     return JsonResponse({'message': f'A confirmation link has been sent to {user.mail_to}. Click it to delete your account.'})
 
 
-def _iso(value):
-    return value.isoformat() if value else None
-
-
-def _ride_summary(ride):
-    return {'ride_id': encode_id(ride.id), 'from': ride.origin, 'to': ride.destination,
-            'departs_at': _iso(ride.depart_at), 'status': ride.status}
-
-
-def _build_data_export(user):
-    """Everything Komüte holds about `user`, for "Download my data" (audit P-9).
-    Other people appear only by the display name the app already shows. Left
-    out: the password hash, staff notes, and reports made about the user (the
-    policy promises reporters stay anonymous)."""
-    other = _display_name
-
-    rides = (Rides.objects.filter(driver=user).select_related('vehicle')
-             .prefetch_related('stops', 'bookings__passenger').order_by('depart_at'))
-    bookings = (RideBooking.objects.filter(passenger=user)
-                .select_related('ride__driver').order_by('booked_at'))
-    messages_qs = (Message.objects.filter(Q(sender=user) | Q(receiver=user))
-                   .select_related('sender', 'receiver').order_by('created_at'))
-
-    return {
-        'exported_at': timezone.now().isoformat(),
-        'account': {
-            'full_name': user.full_name, 'email': user.email, 'email_verified': user.email_verified,
-            'pending_email': user.pending_email,
-            'communication_email': user.contact_email,
-            'communication_email_confirmed': user.contact_email_confirmed,
-            'phone': user.phone, 'role': user.role,
-            'date_of_birth': _iso(user.dob), 'gender': user.gender, 'bio': user.bio,
-            'has_profile_photo': bool(user.avatar_url),
-            'driver_verified': user.driver_verified, 'driver_verified_at': _iso(user.driver_verified_at),
-            'licence_number': user.license_number, 'licence_province': user.license_province,
-            'licence_expiry': _iso(user.license_expiry), 'face_match_score': user.face_match_score,
-            'average_rating': user.avg_rating, 'total_rides': user.total_rides,
-            'created_at': _iso(user.created_at), 'updated_at': _iso(user.updated_at),
-        },
-        # Google/Apple sign-in links (komute/social.py), with what we kept
-        # from the provider.
-        'sign_in_with': [
-            {'provider': a.provider, 'account_id': a.uid, 'details': a.extra_data,
-             'linked_at': _iso(a.date_joined), 'last_used_at': _iso(a.last_login)}
-            for a in SocialAccount.objects.filter(user=user).order_by('date_joined')
-        ],
-        'vehicles': [
-            {'make': v.make, 'model': v.model, 'year': v.year, 'color': v.color, 'plate': v.plate,
-             'seat_capacity': v.seat_capacity, 'has_photo': bool(v.photo_url),
-             'verified': v.vehicle_verified, 'added_at': _iso(v.created_at)}
-            for v in user.vehicles.order_by('created_at')
-        ],
-        'rides_as_driver': [
-            {**_ride_summary(r), 'arrives_at': _iso(r.arrive_at),
-             'origin_coordinates': [r.origin_lat, r.origin_lng],
-             'destination_coordinates': [r.dest_lat, r.dest_lng],
-             'stops': [{'location': s.location, 'coordinates': [s.lat, s.lng]} for s in r.stops.all()],
-             'seats_total': r.seats_total, 'price_per_seat_cents': r.price_cents, 'currency': r.currency,
-             'passenger_preference': r.passenger_gender_pref, 'preferences': r.preferences_json,
-             'notes': r.notes, 'vehicle': f'{r.vehicle.make} {r.vehicle.model}' if r.vehicle else None,
-             'created_at': _iso(r.created_at), 'cancelled_at': _iso(r.cancelled_at),
-             'bookings': [{'passenger': other(b.passenger), 'seats': b.seats, 'status': b.status,
-                           'price_cents': b.agreed_price_cents, 'booked_at': _iso(b.booked_at)}
-                          for b in r.bookings.all()]}
-            for r in rides
-        ],
-        'bookings_as_passenger': [
-            {**_ride_summary(b.ride), 'driver': other(b.ride.driver), 'seats': b.seats,
-             'status': b.status, 'price_cents': b.agreed_price_cents, 'booked_at': _iso(b.booked_at),
-             'confirmed_at': _iso(b.confirmed_at), 'cancelled_at': _iso(b.cancelled_at),
-             'rejected_at': _iso(b.rejected_at), 'cancellation_reason': b.cancellation_reason}
-            for b in bookings
-        ],
-        'price_offers': [
-            {'ride_id': encode_id(o.booking.ride_id), 'price_cents': o.price_cents, 'status': o.status,
-             'made_by_you': o.proposed_by_id == user.id, 'created_at': _iso(o.created_at),
-             'responded_at': _iso(o.responded_at)}
-            for o in PriceOffer.objects.filter(Q(booking__passenger=user) | Q(booking__ride__driver=user))
-                                       .select_related('booking').order_by('created_at')
-        ],
-        'messages': [
-            {'ride_id': encode_id(m.ride_id), 'direction': 'sent' if m.sender_id == user.id else 'received',
-             'with': other(m.receiver if m.sender_id == user.id else m.sender),
-             'text': m.body, 'sent_at': _iso(m.created_at), 'read_at': _iso(m.read_at)}
-            for m in messages_qs
-        ],
-        'reviews_written': [
-            {'about': other(r.reviewee), 'rating': r.rating, 'text': r.body, 'tags': r.tags_json,
-             'subratings': r.subratings_json, 'anonymous': r.is_anonymous, 'created_at': _iso(r.created_at)}
-            for r in Review.objects.filter(reviewer=user).select_related('reviewee').order_by('created_at')
-        ],
-        'reviews_received': [
-            {'from': 'Anonymous' if r.is_anonymous or not r.reviewer else other(r.reviewer),
-             'rating': r.rating, 'text': r.body, 'tags': r.tags_json, 'subratings': r.subratings_json,
-             'created_at': _iso(r.created_at)}
-            for r in Review.objects.filter(reviewee=user).select_related('reviewer').order_by('created_at')
-        ],
-        'reports_you_made': [
-            {'about': other(r.reported), 'reason': r.reason, 'details': r.details, 'status': r.status,
-             'created_at': _iso(r.created_at)}
-            for r in UserReport.objects.filter(reporter=user).select_related('reported').order_by('created_at')
-        ],
-        'users_you_blocked': [
-            {'name': other(b.blocked), 'since': _iso(b.created_at)}
-            for b in UserBlock.objects.filter(blocker=user).select_related('blocked').order_by('created_at')
-        ],
-        'ride_searches': [
-            {'from': s.origin, 'to': s.destination, 'origin_coordinates': [s.origin_lat, s.origin_lng],
-             'destination_coordinates': [s.dest_lat, s.dest_lng], 'date': _iso(s.search_date),
-             'passengers': s.passenger_count, 'searched_at': _iso(s.created_at)}
-            for s in RideSearch.objects.filter(user=user).order_by('created_at')
-        ],
-        'ride_invites': [
-            {**_ride_summary(i.ride), 'direction': 'sent' if i.driver_id == user.id else 'received',
-             'with': other(i.passenger if i.driver_id == user.id else i.driver), 'status': i.status,
-             'sent_at': _iso(i.sent_at), 'responded_at': _iso(i.responded_at)}
-            for i in RideInvite.objects.filter(Q(driver=user) | Q(passenger=user))
-                                       .select_related('ride', 'driver', 'passenger').order_by('sent_at')
-        ],
-        'terms_acceptances': [
-            {'terms_version': a.terms_version, 'privacy_version': a.privacy_version, 'source': a.source,
-             'ip_address': a.ip_address, 'browser': a.user_agent, 'accepted_at': _iso(a.accepted_at)}
-            for a in LegalAcceptance.objects.filter(user=user).order_by('accepted_at')
-        ],
-        'biometric_consents': [
-            {'notice_version': c.notice_version, 'ip_address': c.ip_address, 'browser': c.user_agent,
-             'accepted_at': _iso(c.accepted_at)}
-            for c in BiometricConsent.objects.filter(user=user).order_by('accepted_at')
-        ],
-        'driver_verifications': [
-            {'result': v.result, 'checks': v.stage_results, 'reasons': v.reason_codes,
-             'face_score': v.face_score, 'created_at': _iso(v.created_at),
-             'review': v.review_status, 'review_requested_at': _iso(v.review_requested_at),
-             'your_review_comment': v.driver_comment, 'reviewed_at': _iso(v.reviewed_at)}
-            for v in VerificationLog.objects.filter(user=user).order_by('created_at')
-        ],
-        'emails_sent_to_you': [
-            {'kind': e.kind, 'subject': e.subject, 'status': e.status, 'queued_at': _iso(e.created_at),
-             'sent_at': _iso(e.sent_at)}
-            for e in EmailLog.objects.filter(user=user).order_by('created_at')
-        ],
-    }
-
-
 @login_required
 @never_cache
 def download_my_data_view(request):
@@ -4047,10 +2338,7 @@ def download_my_data_view(request):
     return resp
 
 
-_DELETE_ACCOUNT_SENT_MESSAGE = (
-    "If an account exists for that email, we've sent it a link to confirm the deletion. "
-    "Nothing happens until the link is clicked."
-)
+_DELETE_ACCOUNT_SENT_MESSAGE = accounts.DELETE_ACCOUNT_SENT_MESSAGE
 
 
 def delete_account_request_view(request):
@@ -4102,13 +2390,7 @@ def confirm_delete_account_view(request, token):
         messages.info(request, 'This account is already closed and scheduled for deletion.')
         return redirect('login')
 
-    user.is_active = False
-    user.deactivated_at = timezone.now()
-    user.save(update_fields=['is_active', 'deactivated_at'])
-    # The privacy policy promises search logs go at once, not with the rest
-    # of the account at the 45-day purge (audit P-14). It also takes the
-    # user off drivers' Route Demand lists, which are built from searches.
-    RideSearch.objects.filter(user=user).delete()
+    accounts.close_account(user)
 
     if request.user.is_authenticated and request.user.id == user.id:
         logout(request)
@@ -4121,41 +2403,7 @@ def confirm_delete_account_view(request, token):
 # PASSWORD RESET
 # ──────────────────────────────────────────────────────────────────
 
-_PASSWORD_RESET_SALT = 'komute-password-reset-v1'
-_PASSWORD_RESET_LINK_MAX_AGE_SECONDS = settings.PASSWORD_RESET_LINK_MINUTES * 60
-
-
-def _password_reset_state_hash(user):
-    # Bound to the current password hash, so a reset link — issued by email,
-    # forgeable by anyone holding SECRET_KEY (Finding 1), or simply left
-    # sitting in an inbox — stops working the instant the password actually
-    # changes, instead of staying valid for its full max-age regardless.
-    return salted_hmac(_PASSWORD_RESET_SALT + '-state', user.password).hexdigest()
-
-
-def _make_password_reset_token(user):
-    """Return a signed, URL-safe token encoding the user ID and a hash of
-    their current password, verified by _decode_password_reset_token."""
-    return signing.dumps(
-        {'uid': user.id, 'h': _password_reset_state_hash(user)},
-        salt=_PASSWORD_RESET_SALT,
-    )
-
-
-def _decode_password_reset_token(token):
-    """Decode and verify a token produced by _make_password_reset_token.
-    Raises signing.SignatureExpired if older than PASSWORD_RESET_LINK_MINUTES,
-    signing.BadSignature if
-    tampered, expired, or if the user's password has changed since issuance."""
-    data = signing.loads(
-        token,
-        salt=_PASSWORD_RESET_SALT,
-        max_age=_PASSWORD_RESET_LINK_MAX_AGE_SECONDS,
-    )
-    user = User.objects.filter(id=data['uid']).first()
-    if user is None or not constant_time_compare(data['h'], _password_reset_state_hash(user)):
-        raise signing.BadSignature('stale password reset token')
-    return user.id
+# Reset tokens and the email live in komute.services.accounts.
 
 
 def forgot_password_view(request):
@@ -4178,32 +2426,7 @@ def forgot_password_view(request):
             )
             return redirect('forgot-password')
 
-        user = User.objects.filter(email__iexact=email).first() if email else None
-
-        if user:
-            token = _make_password_reset_token(user)
-            reset_url = request.build_absolute_uri(
-                reverse('reset-password', args=[token])
-            )
-            ctx = {
-                'user': user,
-                'reset_url': reset_url,
-                'expiry_minutes': settings.PASSWORD_RESET_LINK_MINUTES,
-            }
-            try:
-                text_body = render_to_string('account/email/password_reset_email.txt', ctx)
-                html_body = render_to_string('account/email/password_reset_email.html', ctx)
-                msg = EmailMultiAlternatives(
-                    subject='[Komüte] Reset your password',
-                    body=text_body,
-                    from_email=settings.DEFAULT_FROM_EMAIL,
-                    to=[user.email],
-                    reply_to=[settings.REPLY_TO_EMAIL_ACCOUNT_PASSWORD],
-                )
-                msg.attach_alternative(html_body, 'text/html')
-                msg.send()
-            except Exception:
-                pass
+        accounts.send_password_reset_email(request, email)
 
         # Always show the same message, whether or not the email exists,
         # so the form can't be used to enumerate registered accounts.
@@ -4247,18 +2470,11 @@ def reset_password_view(request, token):
         new_pwd = request.POST.get('new_password', '')
         confirm = request.POST.get('confirm_password', '')
 
-        if new_pwd != confirm:
-            messages.error(request, 'Passwords do not match.')
-            return render(request, 'reset-password.html', {'token': token})
-
         try:
-            validate_password(new_pwd, user=user)
-        except ValidationError as e:
-            messages.error(request, ' '.join(e.messages))
+            accounts.reset_password(user, new_pwd, confirm)
+        except accounts.AccountError as e:
+            messages.error(request, e.message)
             return render(request, 'reset-password.html', {'token': token})
-
-        user.set_password(new_pwd)
-        user.save(update_fields=['password'])
 
         messages.success(request, 'Your password has been reset. Please sign in with your new password.')
         return redirect('login')
@@ -4272,218 +2488,12 @@ def ride_receipt_pdf_view(request, ride_id):
     real_ride_id = decode_id(ride_id)
     if not real_ride_id:
         raise Http404
-    from reportlab.lib.pagesizes import A4
-    from reportlab.lib import colors
-    from reportlab.lib.units import mm
-    from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, HRFlowable
-    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-    from reportlab.lib.enums import TA_CENTER, TA_RIGHT
-    # Paragraph parses its text as markup (and fetches <img> sources), so
-    # user-typed names and places must be escaped before they go in.
-    from xml.sax.saxutils import escape as _pdf_escape
-
     ride = get_object_or_404(
-        Rides.objects.prefetch_related('stops', 'bookings__passenger', 'bookings__pickup_stop').filter(
-            Q(driver=request.user) |
-            Q(bookings__passenger=request.user, bookings__status__in=('confirmed', 'completed'))
-        ).distinct(),
+        ride_rules.receipt_rides(request.user).prefetch_related('stops', 'bookings__passenger', 'bookings__pickup_stop'),
         id=real_ride_id,
     )
-
-    # ── build context (same logic as ride_summary_view) ──────────
-    origin_city = ride.origin.split(',')[0].strip()
-    distance_km = round(_haversine_km(ride.origin_lat, ride.origin_lng, ride.dest_lat, ride.dest_lng))
-
-    duration = ''
-    if ride.arrive_at and ride.depart_at:
-        delta   = ride.arrive_at - ride.depart_at
-        hours   = int(delta.total_seconds() // 3600)
-        minutes = int((delta.total_seconds() % 3600) // 60)
-        duration = f"{hours}h {minutes}m" if hours else f"{minutes}m"
-
-    active_bookings = [b for b in ride.bookings.all() if b.status not in ('cancelled', 'rejected')]
-    passenger_count = sum(b.seats for b in active_bookings)
-
-    CO2_PER_KM_KG = 0.12
-    co2_saved_kg  = round(passenger_count * distance_km * CO2_PER_KM_KG, 1)
-
-    total_cents = 0
-    enriched_bookings = []
-    for b in active_bookings:
-        name  = _display_name(b.passenger)
-        pickup_name = b.pickup_stop.location.split(',')[0].strip() if b.pickup_stop else origin_city
-        total_cents += b.agreed_price_cents
-        enriched_bookings.append({
-            'name':         name,
-            'seats':        b.seats,
-            'pickup':       pickup_name,
-            'contribution': f"${b.agreed_price_cents / 100:.2f}",
-        })
-
-    ride_ref = f"KMT-{ride.depart_at.year}-{ride.id:04d}"
-    driver_name = _display_name(ride.driver)
-
-    # Convert to ride's local timezone for display in the PDF
-    _depart_local = _local_dt(ride, ride.depart_at)
-    _arrive_local = _local_dt(ride, ride.arrive_at) if ride.arrive_at else None
-    _tz_suffix    = (' ' + _depart_local.tzname()) if ride.tz and _depart_local.tzname() else ' UTC'
-
-    # ── PDF generation ────────────────────────────────────────────
-    buffer = io.BytesIO()
-    doc = SimpleDocTemplate(
-        buffer, pagesize=A4,
-        leftMargin=20*mm, rightMargin=20*mm,
-        topMargin=18*mm, bottomMargin=18*mm,
-        title='Komute Ride Receipt',
-        author='Komute',
-    )
-
-    GREEN  = colors.HexColor('#0D7810')
-    DARK   = colors.HexColor('#121212')
-    MUTED  = colors.HexColor('#5a7060')
-    LIGHT  = colors.HexColor('#E9F7EE')
-    WHITE  = colors.white
-
-    styles = getSampleStyleSheet()
-    def _s(name, **kw):
-        base = styles[name] if name in styles else styles['Normal']
-        return ParagraphStyle(name + '_custom', parent=base, **kw)
-
-    title_style   = _s('Normal', fontName='Helvetica-Bold', fontSize=22, textColor=GREEN, spaceAfter=2)
-    sub_style     = _s('Normal', fontName='Helvetica',      fontSize=10, textColor=MUTED, spaceAfter=6)
-    head_style    = _s('Normal', fontName='Helvetica-Bold', fontSize=11, textColor=DARK,  spaceAfter=4)
-    body_style    = _s('Normal', fontName='Helvetica',      fontSize=10, textColor=DARK)
-    muted_style   = _s('Normal', fontName='Helvetica',      fontSize=9,  textColor=MUTED)
-    right_style   = _s('Normal', fontName='Helvetica',      fontSize=10, textColor=DARK, alignment=TA_RIGHT)
-    total_style   = _s('Normal', fontName='Helvetica-Bold', fontSize=11, textColor=GREEN, alignment=TA_RIGHT)
-    center_style  = _s('Normal', fontName='Helvetica',      fontSize=9,  textColor=MUTED, alignment=TA_CENTER)
-    green_bold    = _s('Normal', fontName='Helvetica-Bold', fontSize=10, textColor=GREEN)
-
-    W = A4[0] - 40*mm  # usable width
-
-    story = []
-
-    # ── Header ──
-    header_data = [[
-        Paragraph('KOMÜTE', title_style),
-        Paragraph(f'Ride Receipt<br/><font size="9" color="#5a7060">{ride_ref}</font>', _s('Normal', fontName='Helvetica-Bold', fontSize=14, textColor=DARK, alignment=TA_RIGHT)),
-    ]]
-    header_tbl = Table(header_data, colWidths=[W * 0.5, W * 0.5])
-    header_tbl.setStyle(TableStyle([
-        ('VALIGN',      (0,0), (-1,-1), 'MIDDLE'),
-        ('BACKGROUND',  (0,0), (-1,-1), LIGHT),
-        ('TOPPADDING',  (0,0), (-1,-1), 10),
-        ('BOTTOMPADDING',(0,0),(-1,-1), 10),
-        ('LEFTPADDING', (0,0), (-1,-1), 14),
-        ('RIGHTPADDING',(0,0), (-1,-1), 14),
-        ('ROUNDEDCORNERS', (0,0), (-1,-1), [8, 8, 8, 8]),
-    ]))
-    story.append(header_tbl)
-    story.append(Spacer(1, 5*mm))
-    story.append(Paragraph(f'Issued on {timezone.now().strftime("%B %d, %Y")}  ·  Driver: {_pdf_escape(driver_name)}', sub_style))
-    story.append(HRFlowable(width=W, color=colors.HexColor('#c2dfc8'), thickness=1, spaceAfter=5*mm))
-
-    # ── Trip Overview ──
-    story.append(Paragraph('Trip Overview', head_style))
-    trip_data = [
-        ['Route',      f'{ride.origin}  →  {ride.destination}'],
-        ['Date',       _depart_local.strftime('%A, %B %d, %Y').replace(' 0', ' ')],
-        ['Departed',   _depart_local.strftime('%I:%M %p').lstrip('0') + _tz_suffix],
-        ['Arrived',    _arrive_local.strftime('%I:%M %p').lstrip('0') + _tz_suffix if _arrive_local else '—'],
-        ['Duration',   duration or '—'],
-        ['Distance',   f'{distance_km} km'],
-        ['Driver',     driver_name],
-        ['Status',     ride.get_status_display()],
-        ['Passengers', f'{passenger_count} passenger{"s" if passenger_count != 1 else ""}'],
-    ]
-    trip_tbl = Table(trip_data, colWidths=[W * 0.28, W * 0.72])
-    trip_tbl.setStyle(TableStyle([
-        ('FONTNAME',    (0,0), (0,-1), 'Helvetica-Bold'),
-        ('FONTNAME',    (1,0), (1,-1), 'Helvetica'),
-        ('FONTSIZE',    (0,0), (-1,-1), 10),
-        ('TEXTCOLOR',   (0,0), (0,-1), MUTED),
-        ('TEXTCOLOR',   (1,0), (1,-1), DARK),
-        ('ROWBACKGROUNDS', (0,0), (-1,-1), [WHITE, LIGHT]),
-        ('TOPPADDING',  (0,0), (-1,-1), 6),
-        ('BOTTOMPADDING',(0,0),(-1,-1), 6),
-        ('LEFTPADDING', (0,0), (-1,-1), 10),
-        ('RIGHTPADDING',(0,0),(-1,-1), 10),
-        ('GRID',        (0,0), (-1,-1), 0.5, colors.HexColor('#e0ede3')),
-        ('ROUNDEDCORNERS', (0,0), (-1,-1), [6, 6, 6, 6]),
-    ]))
-    story.append(trip_tbl)
-    story.append(Spacer(1, 5*mm))
-
-    # ── Passenger & Cost Breakdown ──
-    story.append(Paragraph('Cost-Share Breakdown', head_style))
-    cost_header = [
-        Paragraph('Passenger', _s('Normal', fontName='Helvetica-Bold', fontSize=10, textColor=WHITE)),
-        Paragraph('Seats',     _s('Normal', fontName='Helvetica-Bold', fontSize=10, textColor=WHITE, alignment=TA_CENTER)),
-        Paragraph('Pickup',    _s('Normal', fontName='Helvetica-Bold', fontSize=10, textColor=WHITE)),
-        Paragraph('Amount',    _s('Normal', fontName='Helvetica-Bold', fontSize=10, textColor=WHITE, alignment=TA_RIGHT)),
-    ]
-    cost_rows = [cost_header]
-    for b in enriched_bookings:
-        cost_rows.append([
-            Paragraph(_pdf_escape(b['name']), body_style),
-            Paragraph(str(b['seats']),   _s('Normal', fontName='Helvetica', fontSize=10, textColor=DARK, alignment=TA_CENTER)),
-            Paragraph(_pdf_escape(b['pickup']), muted_style),
-            Paragraph(b['contribution'], right_style),
-        ])
-    cost_rows.append([
-        Paragraph('Total received', green_bold),
-        '', '',
-        Paragraph(f"${total_cents / 100:.2f}", total_style),
-    ])
-
-    cost_tbl = Table(cost_rows, colWidths=[W*0.38, W*0.12, W*0.32, W*0.18])
-    cost_style_cmds = [
-        ('BACKGROUND',   (0,0), (-1,0),  GREEN),
-        ('ROWBACKGROUNDS',(0,1), (-1,-2), [WHITE, LIGHT]),
-        ('BACKGROUND',   (0,-1),(-1,-1), colors.HexColor('#E9F7EE')),
-        ('TOPPADDING',   (0,0), (-1,-1), 7),
-        ('BOTTOMPADDING',(0,0), (-1,-1), 7),
-        ('LEFTPADDING',  (0,0), (-1,-1), 10),
-        ('RIGHTPADDING', (0,0), (-1,-1), 10),
-        ('GRID',         (0,0), (-1,-1), 0.5, colors.HexColor('#e0ede3')),
-        ('SPAN',         (1,-1),(2,-1)),
-        ('LINEABOVE',    (0,-1),(-1,-1), 1.5, GREEN),
-    ]
-    cost_tbl.setStyle(TableStyle(cost_style_cmds))
-    story.append(cost_tbl)
-    story.append(Spacer(1, 5*mm))
-
-    # ── Eco Impact ──
-    story.append(Paragraph('Eco Impact', head_style))
-    eco_data = [[
-        Paragraph(f'<b>{co2_saved_kg} kg</b><br/><font size="8" color="#5a7060">CO₂ Saved</font>', _s('Normal', fontName='Helvetica', fontSize=11, textColor=GREEN, alignment=TA_CENTER)),
-        Paragraph(f'<b>{passenger_count}</b><br/><font size="8" color="#5a7060">Passengers</font>', _s('Normal', fontName='Helvetica', fontSize=11, textColor=DARK, alignment=TA_CENTER)),
-        Paragraph(f'<b>{distance_km} km</b><br/><font size="8" color="#5a7060">Distance</font>', _s('Normal', fontName='Helvetica', fontSize=11, textColor=DARK, alignment=TA_CENTER)),
-    ]]
-    eco_tbl = Table(eco_data, colWidths=[W/3, W/3, W/3])
-    eco_tbl.setStyle(TableStyle([
-        ('BACKGROUND',    (0,0), (-1,-1), LIGHT),
-        ('TOPPADDING',    (0,0), (-1,-1), 10),
-        ('BOTTOMPADDING', (0,0), (-1,-1), 10),
-        ('INNERGRID',     (0,0), (-1,-1), 0.5, colors.HexColor('#c2dfc8')),
-        ('BOX',           (0,0), (-1,-1), 0.5, colors.HexColor('#c2dfc8')),
-    ]))
-    story.append(eco_tbl)
-    story.append(Spacer(1, 6*mm))
-
-    # ── Footer note ──
-    story.append(HRFlowable(width=W, color=colors.HexColor('#c2dfc8'), thickness=1, spaceAfter=4*mm))
-    story.append(Paragraph(
-        'Komüte is free to use. Amounts above were paid directly between driver and passengers. '
-        'Komüte did not process or hold any funds — it simply connected the parties.',
-        _s('Normal', fontName='Helvetica-Oblique', fontSize=8, textColor=MUTED),
-    ))
-    story.append(Spacer(1, 2*mm))
-    story.append(Paragraph(f'© {timezone.now().year} Komüte by Indus Network LLC  ·  {ride_ref}', center_style))
-
-    doc.build(story)
-    buffer.seek(0)
-    response = HttpResponse(buffer, content_type='application/pdf')
+    pdf, ride_ref = build_receipt_pdf(ride)
+    response = HttpResponse(pdf, content_type='application/pdf')
     response['Content-Disposition'] = f'attachment; filename="Komute-Receipt-{ride_ref}.pdf"'
     return response
 
@@ -4497,83 +2507,10 @@ def private_media_view(request, path):
     if rel_path is None or not private_media.user_can_access(request.user, rel_path):
         raise Http404
 
-    storage = private_media.private_storage()
-    if not storage.exists(rel_path):
+    response = private_media.file_response(rel_path)
+    if response is None:
         raise Http404
-
-    content_type = private_media.content_type_for(rel_path)
-    if settings.PRIVATE_MEDIA_USE_ACCEL:
-        # Nginx streams the file from its `internal` location.
-        response = HttpResponse(content_type=content_type)
-        response["X-Accel-Redirect"] = f"{settings.PRIVATE_MEDIA_ACCEL_PREFIX}{rel_path}"
-    else:
-        response = FileResponse(storage.open(rel_path, "rb"), content_type=content_type)
-    response["Cache-Control"] = "private, no-store"
-    response["X-Content-Type-Options"] = "nosniff"
     return response
-
-
-def _norm_name(value):
-    """A name as DL-Verification compares it: case, hyphens and extra
-    spaces ignored."""
-    return " ".join((value or "").replace("-", " ").split()).casefold()
-
-
-def _norm_code(value):
-    """A license or plate number with case, spaces and hyphens ignored."""
-    return re.sub(r"[\s\-]", "", value or "").upper()
-
-
-# Keyword -> category for DL-Verification's free-text rejection_reasons. The
-# service can't send codes, and its text may quote licence values, which the
-# privacy policy (s.9/s.13) doesn't let us keep -- so only the category is
-# stored. First match wins: image quality before the field checks, and vehicle
-# before licence number so "licence plate number" isn't read as the DL number.
-_REASON_PATTERNS = [
-    (VerificationLog.REASON_IMAGE_QUALITY, re.compile(r"blur|unreadable|illegible|quality|glare|too dark|retry", re.I)),
-    (VerificationLog.REASON_FACE_MISMATCH, re.compile(r"face|facial|biometric|selfie", re.I)),
-    (VerificationLog.REASON_VEHICLE_MISMATCH, re.compile(r"vehicle|plate|colou?r|alpr", re.I)),
-    (VerificationLog.REASON_EXPIRY_MISMATCH, re.compile(r"expir", re.I)),
-    (VerificationLog.REASON_DOB_MISMATCH, re.compile(r"birth|\bdob\b", re.I)),
-    (VerificationLog.REASON_LICENSE_NUMBER_MISMATCH, re.compile(r"licen[cs]e\s*(number|no\b|#)|\bdl\s*(number|no\b)", re.I)),
-    (VerificationLog.REASON_NAME_MISMATCH, re.compile(r"\bname\b", re.I)),
-]
-
-
-# Shown when a check failed but the service gave no reason for it.
-_STAGE_FAILED_REASONS = {
-    "license_ocr": "The licence check didn't pass: the details read from your licence photo didn't match your profile.",
-    "face_biometrics": "The face check didn't pass: your selfie didn't match the photo on your licence.",
-    "vehicle_verification": "The vehicle check didn't pass: your vehicle photo didn't match your vehicle details.",
-}
-
-
-def _reason_codes(reasons):
-    """Categories for the service's rejection reasons, deduplicated in order."""
-    codes = []
-    for reason in reasons:
-        code = next((c for c, pat in _REASON_PATTERNS if pat.search(reason)), VerificationLog.REASON_OTHER)
-        if code not in codes:
-            codes.append(code)
-    return codes
-
-
-def _record_biometric_consent(request, user):
-    """Stores proof that `user` accepted the current biometric notice."""
-    BiometricConsent.objects.create(
-        user=user,
-        notice_version=settings.BIOMETRIC_NOTICE_VERSION,
-        **_consent_request_details(request),
-    )
-
-
-class _InMemoryUploadHandler(MemoryFileUploadHandler):
-    """Keeps every uploaded file in memory whatever its size. Django's default
-    writes files over FILE_UPLOAD_MAX_MEMORY_SIZE to a temp file on disk; the
-    licence photo must never touch disk (audit P-5/P-13). Nginx's
-    client_max_body_size still caps the request."""
-    def handle_raw_input(self, *args, **kwargs):
-        self.activated = True
 
 
 @csrf_exempt
@@ -4588,7 +2525,7 @@ def verify_driver_view(request):
 def _verify_driver_view(request):
     """POST /profile/verify-driver/ - calls DL-Verification Node API and updates driver_verified."""
     try:
-        import requests as http_client
+        import requests as http_client  # noqa: F401  (500 early if it is missing)
     except ImportError:
         return JsonResponse({"error": "requests library not installed on this server."}, status=500)
 
@@ -4609,219 +2546,29 @@ def _verify_driver_view(request):
     # current notice on this attempt, before any image is read or sent. An
     # old version means the page predates a wording change, so the driver
     # hasn't seen the text now in force.
-    if request.POST.get("biometric_consent") != "1":
-        return JsonResponse({"error": "Please read the biometric notice and tick the box to agree before verifying."}, status=400)
-    if request.POST.get("notice_version") != settings.BIOMETRIC_NOTICE_VERSION:
-        return JsonResponse({"error": "The biometric notice has changed. Please reload the page and review it again."}, status=400)
+    refused = verification.consent_error(request.POST.get("biometric_consent") == "1",
+                                         request.POST.get("notice_version"))
+    if refused:
+        return JsonResponse({"error": refused[0]}, status=400)
 
-    # The licence photo comes with this request and is never written to
-    # storage: it is resized in memory, sent to DL-Verification and dropped
-    # with the request (audit P-5/P-13).
-    license_file = request.FILES.get("license_image")
-    if not license_file:
-        return JsonResponse({"error": "Please add a photo of your driving license."}, status=400)
+    # The licence photo and selfie are resized in memory, sent to
+    # DL-Verification and dropped (audit P-5/P-13; komute.services.verification).
     try:
-        license_bytes = _resize_image(license_file, label=f"user={user.id} verify-license").read()
-    except ValidationError as e:
-        return JsonResponse({"error": f"License photo: {e.messages[0]} Please choose another photo."}, status=400)
-
-    # Only the selfie captured for this attempt counts. The profile photo is
-    # never used: it may legitimately show the driver's vehicle instead of
-    # their face, and it isn't proof that the person is present now.
-    selfie_file = request.FILES.get("selfie")
-    if not selfie_file:
-        return JsonResponse({"error": "Please take a selfie using the camera when prompted."}, status=400)
-    # Same size as the stored photos, not the full-resolution original.
-    try:
-        selfie_bytes = _resize_image(selfie_file, label=f"user={user.id} verify-selfie").read()
-    except ValidationError as e:
-        return JsonResponse({"error": f"Selfie: {e.messages[0]} Please take the selfie again."}, status=400)
-
-    # The verification pipeline scores DL OCR, face biometrics, and vehicle
-    # ALPR as one composite decision -- a missing vehicle photo makes the
-    # whole pipeline reject the driver (not just the vehicle), so a vehicle
-    # with a photo is required before calling out to the service at all.
-    user_vehicle = user.vehicles.filter(is_primary=True).first() or user.vehicles.first()
-    if not user_vehicle or not user_vehicle.photo_url:
-        return JsonResponse({"error": "Please add a vehicle with a photo to your profile before verifying."}, status=400)
-
-    try:
-        with open_stored_file(user_vehicle.photo_url) as f:
-            vehicle_bytes = f.read()
-    except Exception:
-        logger.exception("verify_driver_view: could not read vehicle image for user %s", user.id)
-        return JsonResponse({"error": "Could not read vehicle image. Please try again later."}, status=500)
-
-    payload = {
-        "request_id": f"req_{uuid.uuid4().hex[:8]}",
-        "driver_id": f"usr_{user.id}",
-        "personal_info": {
-            "full_name": user.full_name or "",
-            "date_of_birth": user.dob.strftime("%Y-%m-%d") if user.dob else "",
-        },
-        "license_details": {
-            "license_number": user.license_number or "",
-            "issuing_province": user.license_province or "",
-            "expiry_date": user.license_expiry.strftime("%Y-%m-%d") if user.license_expiry else "",
-        },
-        "vehicle_details": {
-            "make": user_vehicle.make,
-            "model": user_vehicle.model,
-            "year": user_vehicle.year,
-            "color": user_vehicle.color,
-            "plate_number": user_vehicle.plate,
-        },
-        "images": {
-            "selfie_base64": base64.b64encode(selfie_bytes).decode("utf-8"),
-            "license_image_base64": base64.b64encode(license_bytes).decode("utf-8"),
-            "vehicle_photo_base64": base64.b64encode(vehicle_bytes).decode("utf-8"),
-        },
-    }
-
-    # The consent record is written before the images leave the server.
-    _record_biometric_consent(request, user)
-
-    resp = None
-    try:
-        resp = http_client.post(
-            settings.DL_VERIFICATION_API_URL,
-            headers={"X-API-Key": settings.DL_VERIFICATION_API_KEY},
-            json=payload,
-            timeout=120,
-        )
-        resp.raise_for_status()
-        result = resp.json()
-    except http_client.exceptions.ConnectionError:
-        return JsonResponse({"error": "Verification service is offline. Make sure DL-Verification is running."}, status=503)
-    except Exception:
-        logger.exception("verify_driver_view: verification service call failed for user %s", user.id)
-        upload_logger.warning("verification failed: user=%s service error (HTTP %s)",
-                              user.id, getattr(resp, "status_code", "-"))
-        return JsonResponse({"error": "Verification service error. Please try again later."}, status=503)
-
-    decision = result.get("decision")
-    stages = result.get("stages", {})
-    stage_results = {
-        name: bool((stages.get(name) or {}).get("passed", False))
-        for name in ("license_ocr", "face_biometrics", "vehicle_verification")
-    }
-    # The service approves on one combined score (licence OCR + face +
-    # vehicle, > 85%), which can carry a failed check. A driver passes only
-    # if every check passed as well; a missing check counts as failed.
-    verified = decision == "APPROVED" and all(stage_results.values())
-    stage2 = stages.get("face_biometrics", {})
-    try:
-        similarity = float(stage2.get("vlm_confidence", 0.0))
-    except (TypeError, ValueError):
-        similarity = 0.0
-
-    user.driver_verified  = verified
-    user.face_match_score = similarity
-    update_fields = ["driver_verified", "face_match_score"]
-    if verified:
-        # Starts a new DRIVER_REVERIFY_DAYS period.
-        user.driver_verified_at        = timezone.now()
-        user.reverify_reminder_sent_at = None
-        update_fields += ["driver_verified_at", "reverify_reminder_sent_at"]
-    user.save(update_fields=update_fields)
-
-    if stage_results["vehicle_verification"]:
-        user_vehicle.vehicle_verified = True
-        user_vehicle.save(update_fields=["vehicle_verified"])
-
-    rejection_reasons = result.get("rejection_reasons") or []
-    if not isinstance(rejection_reasons, list):
-        rejection_reasons = [str(rejection_reasons)]
-    rejection_reasons = [str(r) for r in rejection_reasons]
-    # An approval with a failed check comes with no reasons; name the checks.
-    if not verified and not rejection_reasons:
-        rejection_reasons = [_STAGE_FAILED_REASONS[name] for name, ok in stage_results.items() if not ok]
-
-    # Privacy policy s.9/s.13: keep the outcome and minimum details only. The
-    # OCR output and the reason text (which can quote licence values) are not
-    # stored; the driver sees the reasons in this response.
-    reason_codes = _reason_codes(rejection_reasons)
-
-    # No clear decision from the service: a person decides (audit P-10) and
-    # the driver waits, unverified.
-    if decision not in ("APPROVED", "REJECTED"):
-        log_result = VerificationLog.RESULT_MANUAL_REVIEW
-    else:
-        log_result = VerificationLog.RESULT_APPROVED if verified else VerificationLog.RESULT_REJECTED
-    borderline = log_result == VerificationLog.RESULT_MANUAL_REVIEW
-    log = VerificationLog.objects.create(
-        user=user,
-        stage_results=stage_results,
-        reason_codes=reason_codes or None,
-        face_score=similarity,
-        result=log_result,
-        **({"review_status": VerificationLog.REVIEW_PENDING,
-            "review_source": VerificationLog.REVIEW_SOURCE_BORDERLINE,
-            "review_requested_at": timezone.now()} if borderline else {}),
-    )
-    if borderline:
-        _send_review_admin_email(request, log)
-    # Reason codes only, never the reason text (see above).
-    upload_logger.info(
-        "verification result: user=%s decision=%s stages=%s reasons=%s image_bytes=selfie:%d,license:%d,vehicle:%d",
-        user.id, decision, stage_results, reason_codes,
-        len(selfie_bytes), len(license_bytes), len(vehicle_bytes),
-    )
-
-    details = "; ".join(rejection_reasons)
+        result = verification.verify(request, user, request.FILES.get("license_image"),
+                                     request.FILES.get("selfie"), _consent_request_details(request))
+    except verification.VerificationError as e:
+        return JsonResponse({"error": e.message}, status=e.status)
 
     return JsonResponse({
-        "verified":   verified,
-        "similarity": round(similarity * 100, 1),
-        "face_match": stage2,
-        "decision":   {"status": decision, "details": details},
+        "verified":   result["verified"],
+        "similarity": round(result["similarity"] * 100, 1),
+        "face_match": result["face_match"],
+        "decision":   {"status": result["decision"], "details": "; ".join(result["reasons"])},
         # A person will look at this result anyway (borderline).
-        "review_pending": borderline,
+        "review_pending": result["review_pending"],
         # Law 25 s.12.1: a rejection can be sent to a person for review.
-        "can_request_review": log_result == VerificationLog.RESULT_REJECTED,
+        "can_request_review": result["can_request_review"],
     })
-
-
-VERIFICATION_REVIEW_COMMENT_MAX_CHARS = 2000
-
-
-def _latest_verification(user):
-    return VerificationLog.objects.filter(user=user).order_by('-created_at', '-id').first()
-
-
-def _verification_review_state(user):
-    log = _latest_verification(user)
-    if not log:
-        return ""
-    if log.review_status == VerificationLog.REVIEW_PENDING:
-        return "pending"
-    if log.result == VerificationLog.RESULT_REJECTED and not log.review_status:
-        return "available"
-    return ""
-
-
-def _send_review_admin_email(request, log):
-    """Tell staff a verification attempt is waiting in the review queue."""
-    admin_url = request.build_absolute_uri(reverse('admin:komute_verificationlog_change', args=[log.id]))
-    user = log.user
-    lines = [
-        f"Verification #{log.id} needs a review ({log.get_review_source_display()})",
-        '─' * 45,
-        '',
-        f"Driver:    {user.full_name} <{user.email}> (user {user.id})",
-        f"Result:    {log.get_result_display()}",
-        f"Checks:    {log.stage_results}",
-        f"Reasons:   {', '.join(log.reason_codes or []) or '(none)'}",
-    ]
-    if log.driver_comment:
-        lines += ['', "Driver's comment:", log.driver_comment]
-    lines += ['', f"Review it in the admin: {admin_url}"]
-    send_later(EmailMultiAlternatives(
-        subject=f"[Komüte Verification] Review needed — #{log.id}",
-        body='\n'.join(lines),
-        from_email=settings.DEFAULT_FROM_EMAIL,
-        to=[settings.ADMIN_EMAIL],
-    ), EmailLog.KIND_REVIEW_ADMIN)
 
 
 @login_required
@@ -4830,20 +2577,10 @@ def request_verification_review_view(request):
     """POST /profile/verify-driver/review/ - the driver asks a person to
     review their latest rejected verification (Quebec Law 25 s.12.1, GDPR
     Art. 22). Puts it in the admin's review queue with their comment."""
-    comment = request.POST.get('comment', '').strip()
-    if len(comment) > VERIFICATION_REVIEW_COMMENT_MAX_CHARS:
-        return JsonResponse({'error': f'Please keep your comment under {VERIFICATION_REVIEW_COMMENT_MAX_CHARS} characters.'}, status=400)
-    log = _latest_verification(request.user)
-    if log and log.review_status == VerificationLog.REVIEW_PENDING:
-        return JsonResponse({'error': 'A review of your verification is already under way.'}, status=409)
-    if not log or log.result != VerificationLog.RESULT_REJECTED or log.review_status:
-        return JsonResponse({'error': 'There is no rejected verification to review.'}, status=400)
-    log.review_status = VerificationLog.REVIEW_PENDING
-    log.review_source = VerificationLog.REVIEW_SOURCE_DRIVER
-    log.driver_comment = comment or None
-    log.review_requested_at = timezone.now()
-    log.save(update_fields=['review_status', 'review_source', 'driver_comment', 'review_requested_at'])
-    _send_review_admin_email(request, log)
+    try:
+        verification.request_review(request, request.user, request.POST.get('comment', '').strip())
+    except verification.VerificationError as e:
+        return JsonResponse({'error': e.message}, status=e.status)
     return JsonResponse({'ok': True})
 
 
@@ -4852,294 +2589,12 @@ def route_demand_view(request):
     if request.user.role != 'driver':
         return redirect('profile')
 
-    from collections import Counter
-    from django.utils.timesince import timesince as _timesince
-
-    driver   = request.user
-    now      = timezone.now()
-    today    = now.date()
-    week_ago = now - timedelta(days=7)
-
-    # Start from the driver's posted rides — always the anchor
-    driver_rides = list(
-        Rides.objects
-        .filter(driver=driver, status__in=['posted', 'full'])
-        .prefetch_related('bookings')
-        .order_by('depart_at')
-    )
-
-    # Searches by logged-in users in the past 7 days, narrowed in SQL to the
-    # boxes around the driver's routes (audit F-3). Recurring rides share a
-    # route, so each distinct route adds one box pair.
-    radius = settings.SEARCH_RADIUS_KM
-    routes = {(r.origin_lat, r.origin_lng, r.dest_lat, r.dest_lng) for r in driver_rides}
-    near_routes = Q(pk__in=[])
-    for o_lat, o_lng, d_lat, d_lng in routes:
-        near_routes |= (_geo_box_q(o_lat, o_lng, radius, 'origin_lat', 'origin_lng')
-                        & _geo_box_q(d_lat, d_lng, radius, 'dest_lat', 'dest_lng'))
-    recent_searches = list(
-        RideSearch.objects
-        .filter(near_routes, created_at__gte=week_ago, user__isnull=False, user__is_active=True)
-        .exclude(user=driver)
-        # Blocked riders can't be invited, so don't list them (ISSUES.md A1).
-        .exclude(user_id__in=UserBlock.objects.hidden_ids(driver.id))
-        .select_related('user')
-        .order_by('-created_at')
-    ) if routes else []
-
-    # Riders who searched within the radius of a route's origin AND
-    # destination, computed once per route (newest first).
-    route_matches = {
-        key: [
-            s for s in recent_searches
-            if _haversine_km(key[0], key[1], s.origin_lat, s.origin_lng) <= radius
-            and _haversine_km(key[2], key[3], s.dest_lat, s.dest_lng) <= radius
-        ]
-        for key in routes
-    }
-
-    AVATAR_COLORS = [
-        'linear-gradient(135deg,#7c3aed,#a78bfa)',
-        'linear-gradient(135deg,#0C63B4,#38bdf8)',
-        'linear-gradient(135deg,#dc2626,#f87171)',
-        'linear-gradient(135deg,#047857,#34d399)',
-        'linear-gradient(135deg,#d97706,#fbbf24)',
-        'linear-gradient(135deg,#be185d,#f472b6)',
-        'linear-gradient(135deg,#0C63B4,#0CB439)',
-        'linear-gradient(135deg,#0e7490,#22d3ee)',
-    ]
-
-    route_demands = []
-    for ride in driver_rides:
-        matching_searches = route_matches[
-            (ride.origin_lat, ride.origin_lng, ride.dest_lat, ride.dest_lng)]
-
-        count  = len(matching_searches)
-        is_new = any(s.created_at.date() == today for s in matching_searches)
-
-        if count >= 6:
-            heat, demand_label = 'hot',  'High demand 🔥'
-            demand_percent = min(100, count * 8)
-        elif count >= 4:
-            heat, demand_label = 'warm', 'Moderate demand'
-            demand_percent = min(100, count * 10)
-        elif count > 0:
-            heat, demand_label = 'cool', 'Low demand'
-            demand_percent = min(100, count * 12)
-        else:
-            heat, demand_label = 'cool', 'No searches yet'
-            demand_percent = 0
-
-        if matching_searches:
-            weekdays = Counter(s.search_date.strftime('%a') for s in matching_searches)
-            top_days = [d for d, _ in weekdays.most_common(2)]
-            most_searched_days = '–'.join(top_days) if top_days else None
-            avg_raw    = sum(s.passenger_count for s in matching_searches) / count
-            avg_seats_n = round(avg_raw)
-            avg_seats  = (
-                f'{avg_raw:.0f}–{avg_seats_n + 1} seats'
-                if avg_raw != avg_seats_n
-                else f'{avg_seats_n} seat{"s" if avg_seats_n != 1 else ""}'
-            )
-            latest_search = matching_searches[0]
-        else:
-            most_searched_days = None
-            avg_seats          = None
-            latest_search      = None
-
-        # Build per-rider rows (one per unique user). Searches are newest
-        # first, so a user's first one here is their latest.
-        seen_users = set()
-        riders = []
-        for s in matching_searches:
-            uid = s.user_id
-            if uid in seen_users:
-                continue
-            seen_users.add(uid)
-            u    = s.user
-            # Not invitable under the ride's gender preference (audit L-8).
-            if not _gender_pref_allows(ride, u):
-                continue
-            name = _display_name(u)
-            initials = ''.join(w[0].upper() for w in name.split()[:2])
-            avatar_color = AVATAR_COLORS[uid % len(AVATAR_COLORS)]
-            # avg_rating is 0 iff the rider has never received a review --
-            # real ratings are 1-5 (Review.rating's MinValueValidator), so a
-            # real average can never land on 0.
-            rating_label = f'⭐ {round(u.avg_rating, 1)} rider rating' if u.avg_rating else 'Not yet rated'
-            riders.append({
-                'id':              uid,
-                'initials':        initials,
-                'avatar_color':    avatar_color,
-                'name':            name,
-                'searching_since': _timesince(s.created_at),
-                'rating_label':    rating_label,
-                'seats_needed':    s.passenger_count,
-            })
-
-        booked_seats = ride.seats_total - ride.seats_available
-        open_seats   = ride.seats_available
-        ride_date    = None
-        if ride.depart_at.date() != today:
-            _d = ride.depart_at
-            ride_date = f"{_d.strftime('%b')} {_d.day}"
-
-        route_demands.append({
-            'heat':              heat,
-            'is_my_route':       True,
-            'is_new':            is_new,
-            'has_my_ride':       True,
-            'ride_id':           encode_id(ride.id),
-            'from_location':     ride.origin,
-            'to_location':       ride.destination,
-            'search_count':      count,
-            'demand_label':      demand_label,
-            'demand_percent':    demand_percent,
-            'match_label':       'Your posted ride',
-            'most_searched_days': most_searched_days,
-            'specific_date':     None,
-            'peak_time':         None,
-            'departure_range':   None,
-            'avg_seats':         avg_seats,
-            'last_updated':      _timesince(latest_search.created_at) if latest_search else None,
-            'available_seats':   open_seats,
-            'ride_date':         ride_date,
-            'booked_seats':      booked_seats,
-            'open_seats':        open_seats,
-            'riders':            riders,
-        })
-
-    # Most-demand rides first
-    route_demands.sort(key=lambda d: d['search_count'], reverse=True)
-
-    hot_count       = sum(1 for d in route_demands if d['heat'] == 'hot')
-    new_today_count = sum(1 for d in route_demands if d['is_new'])
-
-    stats = {
-        'riders_searching':   RideSearch.objects.filter(
-                                created_at__gte=week_ago, user__isnull=False
-                              ).values('user').distinct().count(),
-        'hot_routes':         hot_count,
-        'invites_sent_today': RideInvite.objects.filter(
-                                driver=driver, sent_at__date=today
-                              ).count(),
-        'invites_accepted':   RideInvite.objects.filter(
-                                driver=driver, status=RideInvite.STATUS_ACCEPTED
-                              ).count(),
-        'total_count':        len(route_demands),
-        'hot_count':          hot_count,
-        'my_routes_count':    len(route_demands),
-        'new_today_count':    new_today_count,
-    }
-
-    has_active_rides = len(driver_rides) > 0
-
-    return render(request, 'route-demand-ride_available.html', {
-        'route_demands':   route_demands,
-        'stats':           stats,
-        'has_active_rides': has_active_rides,
-    })
+    return render(request, 'route-demand-ride_available.html', route_demand.build(request.user))
 
 
 # ──────────────────────────────────────────────────────────────────
 # INVITE HELPERS
 # ──────────────────────────────────────────────────────────────────
-
-_INVITE_SALT = 'komute-invite-v1'
-
-
-def _make_invite_token(invite_id):
-    """Return a signed, URL-safe token encoding the invite ID.
-    The token is verified and decoded by _decode_invite_token.
-    Signing uses Django's SECRET_KEY + a salt so changing either
-    the ID or the salt (e.g. after a key rotation) invalidates it."""
-    return signing.dumps(invite_id, salt=_INVITE_SALT)
-
-
-def _decode_invite_token(token):
-    """Decode and verify a token produced by _make_invite_token.
-    Returns the invite_id integer.
-    Raises signing.SignatureExpired if older than settings.INVITE_EXPIRY_HOURS.
-    Raises signing.BadSignature if tampered or invalid."""
-    return signing.loads(
-        token,
-        salt=_INVITE_SALT,
-        max_age=settings.INVITE_EXPIRY_HOURS * 3600,
-    )
-
-
-def _invite_is_expired(invite):
-    return (timezone.now() - invite.sent_at).total_seconds() > settings.INVITE_EXPIRY_HOURS * 3600
-
-
-def _send_invite_email(request, invite):
-    try:
-        ride   = invite.ride
-        driver = invite.driver
-        rider  = invite.passenger
-
-        token = _make_invite_token(invite.id)
-        invite_url  = request.build_absolute_uri(
-            reverse('invite-detail', args=[token])
-        )
-        accept_url  = invite_url
-        decline_url = invite_url
-
-        ctx = {
-            'rider_name':    (rider.full_name  or rider.email).title(),
-            'driver_name':   _display_name(driver),
-            'origin':        ride.origin,
-            'destination':   ride.destination,
-            'depart_display': _fmt_ride_local(ride),
-            'price':         f"${ride.price_cents / 100:.2f}",
-            'seats_total':   ride.seats_total,
-            'accept_url':    accept_url,
-            'decline_url':   decline_url,
-        }
-
-        html = render_to_string('account/email/ride_invite.html', ctx)
-        dest = ride.destination.split(',')[0].strip()
-
-        msg = EmailMultiAlternatives(
-            subject=f"{ctx['driver_name']} invited you to their ride to {dest} 🚗",
-            body=(
-                f"Hi {ctx['rider_name']}, you've been invited to a ride "
-                f"from {ride.origin} to {ride.destination}. "
-                f"Accept: {accept_url}  Decline: {decline_url}"
-            ),
-            from_email=settings.DEFAULT_FROM_EMAIL,
-            to=[rider.mail_to],
-            reply_to=[settings.REPLY_TO_EMAIL_RIDE_INVITE],
-        )
-        msg.attach_alternative(html, 'text/html')
-        send_later(msg, EmailLog.KIND_INVITE, rider)
-    except Exception:
-        logger.exception('_send_invite_email could not build or queue an email')
-
-
-# ──────────────────────────────────────────────────────────────────
-# INVITE VIEWS
-# ──────────────────────────────────────────────────────────────────
-
-_INVITE_DISCOVERY_WINDOW_DAYS = 7  # matches route_demand_view's own window
-
-
-def _rider_is_inviteable(driver, ride, rider):
-    """A driver may only invite a rider they could legitimately have found
-    through the app: someone who recently searched for a route matching this
-    ride (same geo-matching used by route_demand_view), or someone who has
-    booked with this driver before. Blocks inviting via an arbitrary/
-    enumerated user ID that the driver has no real connection to."""
-    since = timezone.now() - timedelta(days=_INVITE_DISCOVERY_WINDOW_DAYS)
-    matched_search = any(
-        _haversine_km(ride.origin_lat, ride.origin_lng, s.origin_lat, s.origin_lng) <= settings.SEARCH_RADIUS_KM
-        and _haversine_km(ride.dest_lat, ride.dest_lng, s.dest_lat, s.dest_lng) <= settings.SEARCH_RADIUS_KM
-        for s in RideSearch.objects.filter(user=rider, created_at__gte=since)
-    )
-    if matched_search:
-        return True
-    return RideBooking.objects.filter(passenger=rider, ride__driver=driver).exists()
-
 
 @login_required
 @require_POST
@@ -5162,51 +2617,12 @@ def send_invite_view(request):
     driver = request.user
     ride   = get_object_or_404(Rides, id=ride_id, driver=driver, status__in=['posted', 'full'])
 
-    if not driver.driver_verification_current:
-        return JsonResponse({'error': 'Please verify your identity on your profile page before inviting riders.'}, status=403)
-
-    # Closed accounts can't be invited (audit P-14): they stay in the
-    # database until the 45-day purge, and a prior booking would still
-    # make them inviteable below.
-    rider  = User.objects.filter(id=rider_id, is_active=True).first()
-
-    if rider and rider == driver:
-        return JsonResponse({'error': 'Cannot invite yourself.'}, status=400)
-
-    # Identical response whether rider_id doesn't exist at all or exists but
-    # isn't a legitimate invite target for this ride — otherwise the status
-    # code/message becomes an oracle for enumerating real user IDs. The same
-    # goes for a block either way (ISSUES.md A1): the driver isn't told.
-    if (rider is None or UserBlock.objects.between(driver.id, rider.id)
-            or not _gender_pref_allows(ride, rider)
-            or not _rider_is_inviteable(driver, ride, rider)):
-        return JsonResponse({'error': 'This rider is not eligible to be invited to this ride.'}, status=400)
-
-    if ride.seats_available <= 0:
-        return JsonResponse({'error': 'Ride is full.'}, status=400)
-
-    already = RideInvite.objects.filter(
-        ride=ride, passenger=rider,
-        status__in=[RideInvite.STATUS_SENT, RideInvite.STATUS_VIEWED],
-    ).exists()
-    if already:
-        return JsonResponse({'error': 'Invite already sent to this rider.'}, status=400)
-
-    invite = RideInvite.objects.create(driver=driver, passenger=rider, ride=ride)
-    _send_invite_email(request, invite)
+    try:
+        invite = invites.send_invite(request, driver, ride, rider_id)
+    except invites.InviteError as e:
+        return JsonResponse({'error': e.message}, status=e.status)
 
     return JsonResponse({'ok': True, 'invite_id': invite.id})
-
-
-def _resolve_invite_token(token):
-    """Decode token → invite_id, or return (None, error_string)."""
-    try:
-        invite_id = _decode_invite_token(token)
-        return invite_id, None
-    except signing.SignatureExpired:
-        return None, 'expired_token'
-    except signing.BadSignature:
-        return None, 'invalid_token'
 
 
 @login_required
@@ -5225,19 +2641,7 @@ def invite_detail_view(request, token):
             'error':  'This invite was not sent to your account.',
         })
 
-    expired = _invite_is_expired(invite)
-
-    if invite.status == RideInvite.STATUS_SENT and not expired:
-        invite.status = RideInvite.STATUS_VIEWED
-        invite.save(update_fields=['status'])
-
-    if expired and invite.status not in [
-        RideInvite.STATUS_ACCEPTED,
-        RideInvite.STATUS_DECLINED,
-        RideInvite.STATUS_EXPIRED,
-    ]:
-        invite.status = RideInvite.STATUS_EXPIRED
-        invite.save(update_fields=['status'])
+    expired = invites.open_invite(invite)
 
     return render(request, 'invite-detail.html', {
         'invite':  invite,
@@ -5264,123 +2668,14 @@ def accept_invite_view(request, token):
             'error':  'This invite was not sent to your account.',
         })
 
-    if invite.status not in (RideInvite.STATUS_SENT, RideInvite.STATUS_VIEWED):
-        return render(request, 'invite-detail.html', {
-            'invite': invite, 'token': token,
-            'error':  'This invite has already been responded to.',
-        })
-
-    if _invite_is_expired(invite):
-        invite.status = RideInvite.STATUS_EXPIRED
-        invite.save(update_fields=['status'])
+    try:
+        invites.accept_invite(invite, request.user)
+    except invites.InviteExpired:
         return render(request, 'invite-detail.html', {'invite': invite, 'token': token, 'expired': True})
+    except invites.InviteError as e:
+        return render(request, 'invite-detail.html', {'invite': invite, 'token': token, 'error': e.message})
 
-    ride = invite.ride
-
-    if (ride.status in ['cancelled', 'completed'] or ride.depart_at <= timezone.now()
-            or UserBlock.objects.between(ride.driver_id, request.user.id)):
-        return render(request, 'invite-detail.html', {
-            'invite': invite, 'token': token,
-            'error':  'This ride is no longer available.',
-        })
-
-    if not request.user.email_verified:
-        return render(request, 'invite-detail.html', {
-            'invite': invite, 'token': token, 'error': _EMAIL_UNVERIFIED_MSG,
-        })
-
-    if not request.user.dob:
-        return render(request, 'invite-detail.html', {
-            'invite': invite, 'token': token, 'error': _DOB_MISSING_MSG,
-        })
-
-    # The rules a normal booking follows (audit L-7/L-8): the gender
-    # preference, and one active booking per rider per ride.
-    if not _gender_pref_allows(ride, request.user):
-        return render(request, 'invite-detail.html', {
-            'invite': invite, 'token': token, 'error': _GENDER_PREF_MSG,
-        })
-    existing = RideBooking.objects.filter(
-        ride=ride,
-        passenger=request.user,
-        status__in=[RideBooking.STATUS_DRAFT, RideBooking.STATUS_REQUESTED, RideBooking.STATUS_CONFIRMED],
-    ).first()
-    if existing and existing.status != RideBooking.STATUS_DRAFT:
-        return render(request, 'invite-detail.html', {
-            'invite': invite, 'token': token,
-            'error':  'You already have a booking on this ride.',
-        })
-    seats = existing.seats if existing else 1
-
-    # Accepting an invite confirms a booking, so the driver's verification
-    # must be current (same rule as accept_booking_view).
-    if not ride.driver.driver_verification_current:
-        return render(request, 'invite-detail.html', {
-            'invite': invite, 'token': token,
-            'error':  "This invite can't be accepted right now because the driver needs to re-verify their identity. Please try again later.",
-        })
-
-    # Atomically claim the invite first so a replayed/concurrent accept
-    # (double-click, resubmit) can't pass this check twice.
-    prior_status = invite.status
-    claimed = RideInvite.objects.filter(
-        id=invite.id, status__in=(RideInvite.STATUS_SENT, RideInvite.STATUS_VIEWED),
-    ).update(status=RideInvite.STATUS_ACCEPTED, responded_at=timezone.now())
-    if not claimed:
-        return render(request, 'invite-detail.html', {
-            'invite': invite, 'token': token,
-            'error':  'This invite has already been responded to.',
-        })
-
-    updated = Rides.objects.filter(
-        id=ride.id, seats_available__gte=seats
-    ).update(seats_available=F('seats_available') - seats)
-    if not updated:
-        # Couldn't complete the acceptance — release the claim so the invite
-        # stays actionable instead of being stuck "accepted" with no booking.
-        RideInvite.objects.filter(id=invite.id).update(status=prior_status, responded_at=None)
-        return render(request, 'invite-detail.html', {
-            'invite': invite, 'token': token,
-            'error':  'Sorry, this ride is now full.' if seats == 1
-                      else 'Sorry, this ride no longer has enough seats.',
-        })
-    Rides.objects.filter(id=ride.id, seats_available=0).update(status='full')
-
-    if existing:
-        # Confirm the rider's draft in place, as create_ride_booking promotes
-        # it: keeps its chat history, seat count and any price agreed there.
-        # Conditional, so a draft booked or dropped meanwhile isn't overwritten.
-        confirmed_at = timezone.now()
-        promoted = RideBooking.objects.filter(
-            id=existing.id, status=RideBooking.STATUS_DRAFT,
-        ).update(status=RideBooking.STATUS_CONFIRMED, confirmed_at=confirmed_at)
-        if not promoted:
-            Rides.objects.filter(id=ride.id).update(
-                seats_available=Least(F('seats_available') + seats, ride.seats_total))
-            Rides.objects.filter(id=ride.id, status='full').update(status='posted')
-            RideInvite.objects.filter(id=invite.id).update(status=prior_status, responded_at=None)
-            return render(request, 'invite-detail.html', {
-                'invite': invite, 'token': token,
-                'error':  'Your booking on this ride changed meanwhile. Please reload and try again.',
-            })
-        booking = existing
-        booking.status       = RideBooking.STATUS_CONFIRMED
-        booking.confirmed_at = confirmed_at
-        _notify_booking_status(booking)
-    else:
-        booking = RideBooking.objects.create(
-            ride=ride,
-            passenger=invite.passenger,
-            seats=seats,
-            agreed_price_cents=ride.price_cents * seats + settings.SERVICE_FEE_CENTS,
-            status=RideBooking.STATUS_CONFIRMED,
-            confirmed_at=timezone.now(),
-        )
-    notify_bookings_changed([ride.driver_id], 'A passenger accepted your ride invite.')
-
-    _send_booking_confirmation_emails(booking)
-
-    return redirect('ride-summary', ride_id=encode_id(ride.id))
+    return redirect('ride-summary', ride_id=encode_id(invite.ride_id))
 
 
 @login_required
@@ -5401,15 +2696,10 @@ def decline_invite_view(request, token):
             'error':  'This invite was not sent to your account.',
         })
 
-    updated = RideInvite.objects.filter(
-        id=invite.id, status__in=(RideInvite.STATUS_SENT, RideInvite.STATUS_VIEWED),
-    ).update(status=RideInvite.STATUS_DECLINED, responded_at=timezone.now())
-    if not updated:
-        return render(request, 'invite-detail.html', {
-            'invite': invite, 'token': token,
-            'error':  'This invite has already been responded to.',
-        })
-    invite.status = RideInvite.STATUS_DECLINED
+    try:
+        invites.decline_invite(invite)
+    except invites.InviteError as e:
+        return render(request, 'invite-detail.html', {'invite': invite, 'token': token, 'error': e.message})
 
     return render(request, 'invite-declined.html', {'invite': invite})
 
@@ -5418,60 +2708,13 @@ def decline_invite_view(request, token):
 # REPORT AND BLOCK (ISSUES.md A1)
 # ──────────────────────────────────────────────────────────────────
 
-REPORT_DETAILS_MAX_CHARS = 2000
+REPORT_DETAILS_MAX_CHARS = safety.REPORT_DETAILS_MAX_CHARS
 
 
 def _safety_target(request):
-    """The other user a report or block is about, and the booking it came
-    from. Named by a booking the signed-in user is part of (`booking`), or by
-    a ride they can view (`ride`, meaning its driver), never by a raw user
-    ID. Returns (None, None) if neither names someone else."""
-    me = request.user
-    booking_key = request.POST.get('booking', '').strip()
-    ride_key = request.POST.get('ride', '').strip()
-    if booking_key:
-        booking_id = decode_id(booking_key)
-        booking = booking_id and (
-            RideBooking.objects.select_related('ride__driver', 'passenger').filter(id=booking_id).first()
-        )
-        if not booking:
-            return None, None
-        if me == booking.passenger:
-            return booking.ride.driver, booking
-        if me == booking.ride.driver:
-            return booking.passenger, booking
-        return None, None
-    if ride_key:
-        ride_id = decode_id(ride_key)
-        ride = ride_id and Rides.objects.select_related('driver').filter(id=ride_id).first()
-        if not ride or ride.driver == me:
-            return None, None
-        booking = RideBooking.objects.filter(ride=ride, passenger=me).order_by('-booked_at').first()
-        return ride.driver, booking
-    return None, None
-
-
-def _send_report_admin_email(request, report):
-    """Tell staff a report came in. The report is saved either way."""
-    admin_url = request.build_absolute_uri(reverse('admin:komute_userreport_change', args=[report.id]))
-    booking = report.booking
-    lines = [
-        f"New user report #{report.id}",
-        '─' * 45,
-        '',
-        f"Reported:  {report.reported.full_name} <{report.reported.email}> (user {report.reported_id})",
-        f"Reporter:  {report.reporter.full_name} <{report.reporter.email}> (user {report.reporter_id})",
-        f"Reason:    {report.get_reason_display()}",
-    ]
-    if booking:
-        lines.append(f"Booking:   #{booking.id} ({booking.status}), ride {booking.ride.origin} → {booking.ride.destination}")
-    lines += ['', 'Details:', report.details or '(none)', '', f"Review it in the admin: {admin_url}"]
-    send_later(EmailMultiAlternatives(
-        subject=f"[Komüte Report] {report.get_reason_display()} — report #{report.id}",
-        body='\n'.join(lines),
-        from_email=settings.DEFAULT_FROM_EMAIL,
-        to=[settings.ADMIN_EMAIL],
-    ), EmailLog.KIND_REPORT_ADMIN)
+    """The other user a report or block names (komute.services.safety)."""
+    return safety.safety_target(request.user, request.POST.get('booking', '').strip(),
+                                request.POST.get('ride', '').strip())
 
 
 @login_required
@@ -5484,36 +2727,12 @@ def report_user_view(request):
     if reported is None:
         return JsonResponse({'error': 'User not found.'}, status=404)
 
-    reason = request.POST.get('reason', '').strip()
-    if reason not in dict(UserReport.REASON_CHOICES):
-        return JsonResponse({'error': 'Please choose a reason.'}, status=400)
-    details = request.POST.get('details', '').strip()
-    if len(details) > REPORT_DETAILS_MAX_CHARS:
-        return JsonResponse({'error': f'Please keep the details under {REPORT_DETAILS_MAX_CHARS} characters.'}, status=400)
-    if reason == UserReport.REASON_OTHER and not details:
-        return JsonResponse({'error': 'Please tell us what happened.'}, status=400)
-
-    report = UserReport.objects.create(
-        reporter=request.user,
-        reported=reported,
-        booking=booking,
-        reason=reason,
-        details=details,
-    )
-    _send_report_admin_email(request, report)
+    try:
+        safety.report_user(request, request.user, reported, booking,
+                           request.POST.get('reason', '').strip(), request.POST.get('details', '').strip())
+    except safety.SafetyError as e:
+        return JsonResponse({'error': e.message}, status=e.status)
     return JsonResponse({'ok': True})
-
-
-def _close_chats_between(user_a, user_b):
-    """Lock any open chat page between two users who are now blocked."""
-    bookings = (
-        RideBooking.objects
-        .filter(Q(ride__driver=user_a, passenger=user_b) | Q(ride__driver=user_b, passenger=user_a))
-        .filter(status__in=(RideBooking.STATUS_DRAFT, RideBooking.STATUS_REQUESTED, RideBooking.STATUS_CONFIRMED))
-        .select_related('ride')
-    )
-    for booking in bookings:
-        _notify_booking_status(booking)
 
 
 @login_required
@@ -5523,9 +2742,7 @@ def block_user_view(request):
     if target is None:
         return JsonResponse({'error': 'User not found.'}, status=404)
 
-    _, created = UserBlock.objects.get_or_create(blocker=request.user, blocked=target)
-    if created:
-        _close_chats_between(request.user, target)
+    safety.block(request.user, target)
     return JsonResponse({'ok': True})
 
 
@@ -5533,9 +2750,6 @@ def block_user_view(request):
 @require_POST
 def unblock_user_view(request, user_id):
     real_id = decode_id(user_id)
-    deleted = 0
-    if real_id:
-        deleted, _ = UserBlock.objects.filter(blocker=request.user, blocked_id=real_id).delete()
-    if deleted:
+    if real_id and safety.unblock(request.user, real_id):
         messages.success(request, "User unblocked.")
     return redirect('profile')

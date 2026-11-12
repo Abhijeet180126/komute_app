@@ -2936,7 +2936,7 @@ class VerifyDriverViewGateTests(TestCase):
     def test_no_vehicle_rejected(self):
         c = Client()
         c.login(username='vd_driver@example.com', password='TestPass123')
-        with patch('komute.views.open_stored_file', mock_open(read_data=b'fake-bytes')):
+        with patch('komute.services.verification.open_stored_file', mock_open(read_data=b'fake-bytes')):
             resp = c.post(reverse('verify-driver'), self._selfie_file())
         self.assertEqual(resp.status_code, 400)
         self.assertIn('vehicle', json.loads(resp.content)['error'].lower())
@@ -2948,7 +2948,7 @@ class VerifyDriverViewGateTests(TestCase):
         )
         c = Client()
         c.login(username='vd_driver@example.com', password='TestPass123')
-        with patch('komute.views.open_stored_file', mock_open(read_data=b'fake-bytes')):
+        with patch('komute.services.verification.open_stored_file', mock_open(read_data=b'fake-bytes')):
             resp = c.post(reverse('verify-driver'), self._selfie_file())
         self.assertEqual(resp.status_code, 400)
         self.assertIn('vehicle', json.loads(resp.content)['error'].lower())
@@ -2968,7 +2968,7 @@ class VerifyDriverViewGateTests(TestCase):
         }
         c = Client()
         c.login(username='vd_driver@example.com', password='TestPass123')
-        with patch('komute.views.open_stored_file', mock_open(read_data=b'fake-bytes')), \
+        with patch('komute.services.verification.open_stored_file', mock_open(read_data=b'fake-bytes')), \
              patch('requests.post', return_value=mock_resp) as mock_post:
             resp = c.post(reverse('verify-driver'), self._selfie_file())
 
@@ -3008,7 +3008,7 @@ class VerifyDriverViewGateTests(TestCase):
         self.driver.save(update_fields=['selfie_url'])
         c = Client()
         c.login(username='vd_driver@example.com', password='TestPass123')
-        with patch('komute.views.open_stored_file', mock_open(read_data=b'fake-bytes')), \
+        with patch('komute.services.verification.open_stored_file', mock_open(read_data=b'fake-bytes')), \
              patch('requests.post') as mock_post:
             resp = c.post(reverse('verify-driver'), {**_licence_image(), **_consent_fields()})
         self.assertEqual(resp.status_code, 400)
@@ -3030,7 +3030,7 @@ class VerifyDriverViewGateTests(TestCase):
         }
         c = Client()
         c.login(username='vd_driver@example.com', password='TestPass123')
-        with patch('komute.views.open_stored_file', mock_open(read_data=b'fake-bytes')), \
+        with patch('komute.services.verification.open_stored_file', mock_open(read_data=b'fake-bytes')), \
              patch('requests.post', return_value=mock_resp):
             resp = c.post(reverse('verify-driver'), self._selfie_file())
 
@@ -3335,7 +3335,7 @@ class ImageUploadTests(TestCase):
             "rejection_reasons": ["Facial biometrics mismatch for JOHN SMITH"],
         }
         selfie = SimpleUploadedFile('s.jpg', self._big_jpeg(), content_type='image/jpeg')
-        with patch('komute.views.open_stored_file', mock_open(read_data=b'fake-bytes')), \
+        with patch('komute.services.verification.open_stored_file', mock_open(read_data=b'fake-bytes')), \
              patch('requests.post', return_value=mock_resp) as mock_post, \
              self.assertLogs('komute.uploads', 'INFO') as logs:
             resp = self.client.post(reverse('verify-driver'), {'selfie': selfie, **_licence_image(), **_consent_fields()})
@@ -3350,7 +3350,7 @@ class ImageUploadTests(TestCase):
 
     def test_unreadable_verification_selfie_rejected_before_call(self):
         self._verifiable()
-        with patch('komute.views.open_stored_file', mock_open(read_data=b'fake-bytes')), \
+        with patch('komute.services.verification.open_stored_file', mock_open(read_data=b'fake-bytes')), \
              patch('requests.post') as mock_post:
             resp = self.client.post(reverse('verify-driver'), {
                 'selfie': SimpleUploadedFile('s.jpg', b'garbage', content_type='image/jpeg'),
@@ -3362,7 +3362,7 @@ class ImageUploadTests(TestCase):
     def _verify(self, licence):
         mock_resp = MagicMock()
         mock_resp.json.return_value = {"decision": "REJECTED", "stages": {}, "rejection_reasons": []}
-        with patch('komute.views.open_stored_file', mock_open(read_data=b'fake-bytes')), \
+        with patch('komute.services.verification.open_stored_file', mock_open(read_data=b'fake-bytes')), \
              patch('requests.post', return_value=mock_resp) as mock_post:
             resp = self.client.post(reverse('verify-driver'), {
                 'selfie': SimpleUploadedFile('s.jpg', _jpeg_bytes(), content_type='image/jpeg'),
@@ -3394,7 +3394,7 @@ class ImageUploadTests(TestCase):
         def spy(file_obj, *args, **kwargs):
             seen.append(type(file_obj))
             return real_resize(file_obj, *args, **kwargs)
-        with patch('komute.views._resize_image', side_effect=spy):
+        with patch('komute.services.verification.resize_image', side_effect=spy):
             resp, _ = self._verify(SimpleUploadedFile('l.jpg', self._big_jpeg(), content_type='image/jpeg'))
         self.assertEqual(resp.status_code, 200)
         self.assertEqual(seen, [InMemoryUploadedFile, InMemoryUploadedFile])
@@ -3908,7 +3908,7 @@ class BiometricConsentTests(TestCase):
                 on_call()
             return mock_resp
 
-        with patch('komute.views.open_stored_file', mock_open(read_data=b'fake-bytes')) as mock_file, \
+        with patch('komute.services.verification.open_stored_file', mock_open(read_data=b'fake-bytes')) as mock_file, \
              patch('requests.post', side_effect=fake_post) as mock_post:
             resp = self._client().post(reverse('verify-driver'), data, REMOTE_ADDR='203.0.113.7')
         return resp, mock_post, mock_file
@@ -4009,7 +4009,7 @@ class VerificationResultStorageTests(TestCase):
         mock_resp.json.return_value = body
         c = Client()
         c.login(username='vd_driver@example.com', password='TestPass123')
-        with patch('komute.views.open_stored_file', mock_open(read_data=b'fake-bytes')), \
+        with patch('komute.services.verification.open_stored_file', mock_open(read_data=b'fake-bytes')), \
              patch('requests.post', return_value=mock_resp):
             return c.post(reverse('verify-driver'), self._selfie_file())
 
@@ -5800,3 +5800,365 @@ class AppleContactEmailTests(TestCase):
         call_command('purge_deactivated_accounts')
         user.refresh_from_db()
         self.assertIsNone(user.contact_email)
+
+
+class ProfileInputLimitTests(TestCase):
+    """The profile page refuses a gender outside the dropdown's choices
+    (ride gender preferences match on those exact values) and vehicle values
+    that don't fit their database columns, which used to end in a server
+    error. The same rules apply in the API (komute.services)."""
+
+    def setUp(self):
+        self.driver = make_user('limits_driver@example.com', role='driver')
+        self.client.login(username='limits_driver@example.com', password='TestPass123')
+
+    def _post(self, **overrides):
+        payload = {'full_name': 'Limits Driver', 'dob': '1990-01-01', 'role': 'driver',
+                   'vehicle_make': ['Toyota'], 'vehicle_model': ['Corolla'], 'vehicle_year': ['2020'],
+                   'vehicle_color': ['Blue'], 'vehicle_plate': ['LIM001']}
+        payload.update(overrides)
+        return self.client.post(reverse('profile'), payload)
+
+    def test_gender_must_be_a_dropdown_choice(self):
+        resp = self._post(gender='robot')
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.context['errors']['gender'], 'Please select a valid gender.')
+        self.assertContains(resp, 'Please select a valid gender.')
+        self.driver.refresh_from_db()
+        self.assertIsNone(self.driver.gender)
+        for ok in ('female', 'male', 'other', ''):
+            self.assertRedirects(self._post(gender=ok), reverse('profile'))
+            self.driver.refresh_from_db()
+            self.assertEqual(self.driver.gender, ok or None)
+
+    def test_vehicle_text_must_fit(self):
+        cases = [
+            ({'vehicle_make': ['M' * 101]}, 'Vehicle 1: Make can be at most 100 characters.'),
+            ({'vehicle_model': ['M' * 101]}, 'Vehicle 1: Model can be at most 100 characters.'),
+            ({'vehicle_color': ['C' * 51]}, 'Vehicle 1: Color can be at most 50 characters.'),
+            ({'vehicle_plate': ['P' * 21]}, 'Vehicle 1: Plate can be at most 20 characters.'),
+        ]
+        for overrides, message in cases:
+            resp = self._post(**overrides)
+            self.assertEqual(resp.status_code, 200, overrides)
+            self.assertEqual(resp.context['errors']['vehicles'], message)
+        self.assertFalse(Vehicle.objects.filter(owner=self.driver).exists())
+
+    def test_vehicle_year_range(self):
+        next_year = timezone.localdate().year + 1
+        for bad in ('99999999999', '1899', str(next_year + 1)):
+            resp = self._post(vehicle_year=[bad])
+            self.assertEqual(resp.context['errors']['vehicles'],
+                             f'Vehicle 1: Year must be between 1900 and {next_year}.', bad)
+        self.assertFalse(Vehicle.objects.filter(owner=self.driver).exists())
+        self.assertRedirects(self._post(vehicle_year=[str(next_year)]), reverse('profile'))
+        self.assertEqual(Vehicle.objects.get(owner=self.driver).year, next_year)
+
+    def test_error_names_the_row(self):
+        resp = self._post(vehicle_make=['Toyota', 'Honda'], vehicle_model=['Corolla', 'Civic'],
+                          vehicle_year=['2020', '2019'], vehicle_color=['Blue', 'R' * 51],
+                          vehicle_plate=['LIM001', 'LIM002'])
+        self.assertEqual(resp.context['errors']['vehicles'], 'Vehicle 2: Color can be at most 50 characters.')
+
+    def test_unchanged_for_valid_rows(self):
+        self.assertRedirects(self._post(), reverse('profile'))
+        vehicle = Vehicle.objects.get(owner=self.driver)
+        self.assertEqual((vehicle.make, vehicle.plate, vehicle.year), ('Toyota', 'LIM001', 2020))
+
+    def test_bio_limit_matches_the_box(self):
+        resp = self._post(bio='b' * 281)
+        self.assertEqual(resp.context['errors']['bio'], 'Self description can be at most 280 characters.')
+        self.assertContains(resp, 'Self description can be at most 280 characters.')
+        # The box counts a line break as one character; the form sends two.
+        with_breaks = ('a' * 69 + '\r\n') * 4  # 280 as the box counts it, 284 as sent
+        self.assertRedirects(self._post(bio=with_breaks), reverse('profile'))
+        self.driver.refresh_from_db()
+        self.assertEqual(self.driver.bio, with_breaks.strip())
+
+
+class ReviewFixesTests(TestCase):
+    """Review page and submit fixes (2026-11-10): the page opens only for a
+    trip that happened, a malformed request is refused instead of a 500, the
+    rating is whole stars, tags, detailed ratings and the comment are what
+    the page offers, and the page carries the opaque id."""
+
+    def setUp(self):
+        self.driver = make_driver_with_vehicle('rf_driver@example.com')
+        self.rider = make_user('rf_rider@example.com')
+        self.ride = make_ride(self.driver)
+        Rides.objects.filter(pk=self.ride.pk).update(status='completed')
+        self.booking = RideBooking.objects.create(ride=self.ride, passenger=self.rider, seats=1,
+                                                  agreed_price_cents=2500, status=RideBooking.STATUS_CONFIRMED)
+        self.client.login(username='rf_rider@example.com', password='TestPass123')
+
+    def _submit(self, **overrides):
+        payload = {'booking_id': encode_id(self.booking.id), 'reviewee_id': encode_id(self.driver.id), 'rating': 5}
+        payload.update(overrides)
+        return self.client.post(reverse('submit-review'), data=json.dumps(payload),
+                                content_type='application/json')
+
+    def test_page_only_for_a_trip_that_happened(self):
+        self.assertEqual(self.client.get(reverse('leave-review', args=[encode_id(self.booking.id)])).status_code,
+                         200)
+        for status in (RideBooking.STATUS_CANCELLED, RideBooking.STATUS_REJECTED, RideBooking.STATUS_DRAFT,
+                       RideBooking.STATUS_REQUESTED):
+            RideBooking.objects.filter(pk=self.booking.pk).update(status=status)
+            resp = self.client.get(reverse('leave-review', args=[encode_id(self.booking.id)]))
+            self.assertRedirects(resp, reverse('my-rides'), fetch_redirect_response=False)
+
+    def test_page_carries_the_opaque_id_and_submit_takes_it(self):
+        resp = self.client.get(reverse('leave-review', args=[encode_id(self.booking.id)]))
+        self.assertEqual(resp.context['reviewee_id'], encode_id(self.driver.id))
+        self.assertNotIn(f'revieweeId: "{self.driver.id}"', resp.content.decode())
+        self.assertEqual(self._submit().status_code, 200)
+        self.assertEqual(Review.objects.get().reviewee, self.driver)
+
+    def test_old_pages_with_the_database_id_still_work(self):
+        self.assertEqual(self._submit(reviewee_id=self.driver.id).status_code, 200)
+        self.assertEqual(self._submit(reviewee_id=str(self.driver.id)).status_code, 400)  # already reviewed
+
+    def test_malformed_requests_are_refused_not_500(self):
+        for body in ('[]', '5', '"text"', 'null'):
+            resp = self.client.post(reverse('submit-review'), data=body, content_type='application/json')
+            self.assertEqual(resp.status_code, 400, body)
+        self.assertEqual(self._submit(comment=42).json()['error'], 'Your comment must be text.')
+        self.assertEqual(self._submit(booking_id=123).status_code, 400)
+        self.assertFalse(Review.objects.exists())
+
+    def test_whole_stars_only(self):
+        for bad in (4.7, 6, True, 'five', '4.5'):
+            self.assertEqual(self._submit(rating=bad).json()['error'], 'Rating must be between 1 and 5.', bad)
+        # 0 counts as missing, as before.
+        self.assertEqual(self._submit(rating=0).json()['error'], 'booking_id, reviewee_id, and rating are required.')
+        self.assertEqual(self._submit(rating='4').status_code, 200)
+        self.assertEqual(Review.objects.get().rating, 4)
+
+    def test_tags_detailed_ratings_and_comment_as_the_page_offers(self):
+        self.assertEqual(self._submit(tags=['<b>evil</b>']).json()['error'], 'Please choose tags from the list.')
+        self.assertEqual(self._submit(tags='punctual').status_code, 400)
+        self.assertEqual(self._submit(subratings={'vibes': 5}).status_code, 400)
+        self.assertEqual(self._submit(subratings={'punctuality': 9}).status_code, 400)
+        self.assertEqual(self._submit(comment='c' * 501).json()['error'],
+                         'Please keep your comment under 500 characters.')
+        self.assertFalse(Review.objects.exists())
+        resp = self._submit(comment='  ' + 'c' * 500 + '  ', tags=['punctual', 'punctual', 'safe-driver'],
+                            subratings={'punctuality': 5, 'cleanliness': '4'})
+        self.assertEqual(resp.status_code, 200)
+        review = Review.objects.get()
+        self.assertEqual((len(review.body), review.tags_json, review.subratings_json),
+                         (500, ['punctual', 'safe-driver'], {'punctuality': 5, 'cleanliness': 4}))
+
+
+class CarriedPassengersTests(TestCase):
+    """Fix (2026-11-10): a completed ride's summary, receipt and My Rides
+    earnings count only the riders the trip carried. A pre-request chat or
+    an unanswered request stays as it was when the ride completes, and used
+    to be counted as a passenger and in "Total received"."""
+
+    def setUp(self):
+        self.driver = make_driver_with_vehicle('cp_driver@example.com')
+        self.ride = make_ride(self.driver)
+        Rides.objects.filter(pk=self.ride.pk).update(status='completed', seats_total=4, seats_available=1,
+                                                     price_cents=2500)
+        self.ride.refresh_from_db()
+        self.carried = make_user('cp_carried@example.com', full_name='Carried Rider')
+        RideBooking.objects.create(ride=self.ride, passenger=self.carried, seats=2, agreed_price_cents=5000,
+                                   status=RideBooking.STATUS_COMPLETED)
+        RideBooking.objects.create(ride=self.ride, passenger=make_user('cp_draft@example.com', full_name='Draft Chat'),
+                                   seats=1, agreed_price_cents=2500, status=RideBooking.STATUS_DRAFT)
+        RideBooking.objects.create(ride=self.ride, passenger=make_user('cp_req@example.com', full_name='Never Answered'),
+                                   seats=1, agreed_price_cents=2500, status=RideBooking.STATUS_REQUESTED)
+        self.client.login(username='cp_driver@example.com', password='TestPass123')
+
+    def test_summary(self):
+        resp = self.client.get(reverse('ride-summary', args=[encode_id(self.ride.id)]))
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.context['passenger_count'], 2)
+        self.assertEqual(resp.context['total_contributions'], '$50.00')
+        self.assertEqual([b['passenger_name'] for b in resp.context['bookings']], ['Carried Rider'])
+
+    def test_receipt(self):
+        from komute.services.receipts import build_receipt_pdf
+        from komute.services.rides import summary_stats
+        ride = Rides.objects.prefetch_related('stops', 'bookings__passenger', 'bookings__pickup_stop').get(
+            pk=self.ride.pk)
+        stats = summary_stats(ride)
+        self.assertEqual((stats['passenger_count'], stats['total_cents']), (2, 5000))
+        pdf, _ = build_receipt_pdf(ride)
+        self.assertTrue(pdf.startswith(b'%PDF'))
+        resp = self.client.get(reverse('ride-receipt-pdf', args=[encode_id(self.ride.id)]))
+        self.assertEqual(resp.status_code, 200)
+
+    def test_my_rides_earnings(self):
+        resp = self.client.get(reverse('my-rides'))
+        self.assertEqual(resp.context['passengers_helped'], 2)
+        self.assertEqual(resp.context['total_earned'], '$50.00')
+
+
+class OldNegotiationEndpointLockTests(TestCase):
+    """Fix (2026-11-10): /negotiations/ follows the chat's lock while a
+    request waits for the driver."""
+
+    def setUp(self):
+        self.driver = make_driver_with_vehicle('ol_driver@example.com')
+        self.rider = make_user('ol_rider@example.com')
+        self.booking = RideBooking.objects.create(ride=make_ride(self.driver), passenger=self.rider, seats=1,
+                                                  agreed_price_cents=2500, status=RideBooking.STATUS_REQUESTED)
+        self.client.login(username='ol_rider@example.com', password='TestPass123')
+
+    def test_locked_while_requested(self):
+        resp = self.client.post(reverse('create-price-offer', args=[encode_id(self.booking.id)]),
+                                {'price_cents': '2000'})
+        self.assertEqual((resp.status_code, resp.json()['error']),
+                         (400, 'Price negotiation opens once the driver accepts the booking request.'))
+        offer = PriceOffer.objects.create(booking=self.booking, proposed_by=self.driver, price_cents=2000)
+        resp = self.client.post(reverse('respond-price-offer', args=[encode_id(offer.id)]), {'action': 'accept'})
+        self.assertEqual(resp.status_code, 400)
+        self.booking.refresh_from_db()
+        self.assertEqual(self.booking.agreed_price_cents, 2500)
+
+    def test_open_once_confirmed(self):
+        RideBooking.objects.filter(pk=self.booking.pk).update(status=RideBooking.STATUS_CONFIRMED)
+        resp = self.client.post(reverse('create-price-offer', args=[encode_id(self.booking.id)]),
+                                {'price_cents': '2000'})
+        self.assertEqual(resp.status_code, 201)
+
+
+class ChatSocketBadFrameTests(TransactionTestCase):
+    """Fix (2026-11-10): frames the page wouldn't send are answered with an
+    error and the socket stays open (they used to drop it)."""
+
+    def setUp(self):
+        self.driver = make_driver_with_vehicle('sb_driver@example.com')
+        self.rider = make_user('sb_rider@example.com')
+        self.booking = RideBooking.objects.create(ride=make_ride(self.driver), passenger=self.rider, seats=1,
+                                                  agreed_price_cents=2500, status=RideBooking.STATUS_CONFIRMED)
+
+    def test_bad_frames(self):
+        token = make_chat_token(self.booking.id)
+
+        async def run():
+            comm = WebsocketCommunicator(ChatConsumer.as_asgi(), f'/ws/chat/{token}/')
+            comm.scope['user'] = self.rider
+            comm.scope['url_route'] = {'kwargs': {'token': token}}
+            connected, _ = await comm.connect()
+            self.assertTrue(connected)
+            replies = []
+            for frame in ('not json', '[1, 2]', json.dumps({'type': 'message', 'body': 5}),
+                          json.dumps({'type': 'price_accepted', 'offer_id': 'abc'}),
+                          json.dumps({'type': 'price_accepted', 'price': 'free'}),
+                          json.dumps({'type': 'ping'})):
+                await comm.send_to(text_data=frame)
+                replies.append(await comm.receive_json_from(timeout=5))
+            await comm.disconnect()
+            return replies
+
+        with self.assertLogs('komute.chat', 'INFO'):
+            replies = async_to_sync(run)()
+        self.assertEqual([r.get('code', r['type']) for r in replies],
+                         ['bad_request', 'bad_request', 'bad_request', 'offer_stale', 'offer_stale', 'pong'])
+
+    def test_rider_still_chats_before_the_driver_answers(self):
+        """Unchanged behaviour: a rider messages the driver in a pre-request
+        chat and while the request waits for the driver."""
+        for status in (RideBooking.STATUS_DRAFT, RideBooking.STATUS_REQUESTED):
+            Message.objects.all().delete()
+            RideBooking.objects.filter(pk=self.booking.pk).update(status=status)
+            token = make_chat_token(self.booking.id)
+
+            async def run():
+                rider = WebsocketCommunicator(ChatConsumer.as_asgi(), f'/ws/chat/{token}/')
+                rider.scope['user'] = self.rider
+                rider.scope['url_route'] = {'kwargs': {'token': token}}
+                driver = WebsocketCommunicator(ChatConsumer.as_asgi(), f'/ws/chat/{token}/')
+                driver.scope['user'] = self.driver
+                driver.scope['url_route'] = {'kwargs': {'token': token}}
+                await rider.connect()
+                await driver.connect()
+                await rider.send_json_to({'type': 'message', 'body': 'Is the seat still free?'})
+                seen_by_driver = await driver.receive_json_from(timeout=5)
+                await rider.disconnect()
+                await driver.disconnect()
+                return seen_by_driver
+
+            with self.assertLogs('komute.chat', 'INFO'):
+                seen = async_to_sync(run)()
+            self.assertEqual((seen['type'], seen['body']), ('message', 'Is the seat still free?'), status)
+            self.assertEqual(Message.objects.get().sender, self.rider, status)
+
+
+class ContactFormTests(TestCase):
+    """The Contact Us form (contact_view): the behaviour the app's contact
+    endpoint shares (komute/services/contact.py)."""
+    FORM = {'name': 'Jordan Lee', 'email': 'jordan@example.com', 'role': 'Driver',
+            'topic': 'Help with a booking', 'subject': 'Seat count', 'message': 'Hello there.'}
+
+    def setUp(self):
+        cache.clear()
+        mail.outbox.clear()
+
+    def post(self, **changes):
+        return self.client.post(reverse('contact-us'), {**self.FORM, **changes})
+
+    def test_page_renders(self):
+        self.assertEqual(self.client.get(reverse('contact-us')).status_code, 200)
+
+    def test_sends_to_the_contact_inbox(self):
+        response = self.post()
+        self.assertEqual((response.status_code, response.json()), (200, {'success': True}))
+        sent = mail.outbox[-1]
+        self.assertEqual(sent.subject, '[Komüte Contact] Help with a booking: Seat count')
+        self.assertEqual(sent.to, [settings.CONTACT_EMAIL])
+        self.assertEqual(sent.from_email, settings.DEFAULT_FROM_EMAIL)
+        self.assertEqual(sent.reply_to, ['Jordan Lee <jordan@example.com>'])
+        for line in ('Name:     Jordan Lee', 'Email:    jordan@example.com', 'Role:     Driver',
+                     'Topic:    Help with a booking', 'Subject:  Seat count', 'Message:\nHello there.'):
+            self.assertIn(line, sent.body)
+
+    def test_role_is_optional(self):
+        self.post(role='')
+        self.assertIn('Role:     —', mail.outbox[-1].body)
+
+    def test_required_fields(self):
+        for field in ('name', 'email', 'topic', 'subject', 'message'):
+            response = self.post(**{field: '   '})
+            self.assertEqual((response.status_code, response.json()),
+                             (400, {'error': 'Please fill in all required fields.'}), field)
+        self.assertEqual(mail.outbox, [])
+
+    def test_bad_email(self):
+        response = self.post(email='not-an-email')
+        self.assertEqual(response.json(), {'error': 'Please enter a valid email address.'})
+
+    def test_name_is_cleaned(self):
+        response = self.post(name='\x07\x08')
+        self.assertEqual((response.status_code, response.json()), (400, {'error': 'Please enter your name.'}))
+        self.post(name='Jo\x00rdan ' + 'x' * 200)
+        self.assertEqual(mail.outbox[-1].reply_to[0].split(' <')[0], 'Jordan ' + 'x' * 92)
+
+    def test_line_breaks_in_the_subject_still_send(self):
+        """Were a 500 "Could not send message" (the Subject header refuses
+        line breaks); now they become spaces."""
+        response = self.post(subject='Seat\r\ncount\x0b please', topic='Help with\na booking')
+        self.assertEqual(response.status_code, 200)
+        sent = mail.outbox[-1]
+        self.assertEqual(sent.subject, '[Komüte Contact] Help with a booking: Seat count please')
+        self.assertIn('Subject:  Seat count please\n', sent.body)
+        response = self.post(subject='\x07\x0b')
+        self.assertEqual(response.json(), {'error': 'Please fill in all required fields.'})
+        self.assertEqual(len(mail.outbox), 1)
+
+    def test_mail_failure(self):
+        with patch('django.core.mail.EmailMultiAlternatives.send', side_effect=OSError('down')), \
+                self.assertLogs('komute', 'ERROR'):
+            response = self.post()
+        self.assertEqual((response.status_code, response.json()),
+                         (500, {'error': 'Could not send message. Please try again later.'}))
+
+    @override_settings(RATE_LIMITS={**settings.RATE_LIMITS, 'contact': (1, 3600)})
+    def test_rate_limit(self):
+        self.post()
+        response = self.post()
+        self.assertEqual((response.status_code, response.json()),
+                         (429, {'error': 'Too many messages sent. Please try again later.'}))
+        self.assertEqual(len(mail.outbox), 1)

@@ -79,6 +79,42 @@ def send_confirmation(request, user):
     msg.send()
 
 
+# Shared with the mobile app API (api/v1/users). Callers check, in this
+# order: relay_only_error(), blank -> remove(), check_new_address(), their
+# rate limits, then start(). The messages are the profile page's.
+
+NOT_RELAY_MSG = 'Only accounts that hide their email from Apple have a separate communication email.'
+REMOVED_MSG = 'Communication email removed. We will email you through Apple instead.'
+NOT_SENT_MSG = 'Saved, but the confirmation email could not be sent. Please try again later.'
+
+
+def sent_msg(address):
+    return f'We sent a confirmation link to {address}. We will start using it once you click the link.'
+
+
+def remove(user):
+    user.contact_email = None
+    user.contact_email_confirmed = False
+    user.save(update_fields=['contact_email', 'contact_email_confirmed'])
+
+
+def check_new_address(user, raw):
+    """The normalized address, or raises ValidationError with the message to show."""
+    address = clean_contact_email(raw)
+    if address == (user.contact_email or '').lower() and user.contact_email_confirmed:
+        raise ValidationError('This is already your communication email.')
+    return address
+
+
+def start(request, user, address):
+    """Saves `address` as unconfirmed and emails its link. Raises if the
+    email can't be sent (the address stays saved)."""
+    user.contact_email = address
+    user.contact_email_confirmed = False
+    user.save(update_fields=['contact_email', 'contact_email_confirmed'])
+    send_confirmation(request, user)
+
+
 @login_required
 @require_POST
 def set_contact_email_view(request):
@@ -88,40 +124,28 @@ def set_contact_email_view(request):
 
     user = request.user
     if not user.uses_private_relay:
-        return JsonResponse({'error': 'Only accounts that hide their email from Apple have a '
-                                      'separate communication email.'}, status=400)
+        return JsonResponse({'error': NOT_RELAY_MSG}, status=400)
 
     raw = request.POST.get('contact_email', '').strip()
     if not raw:
-        user.contact_email = None
-        user.contact_email_confirmed = False
-        user.save(update_fields=['contact_email', 'contact_email_confirmed'])
-        return JsonResponse({'message': 'Communication email removed. We will email you '
-                                        'through Apple instead.'})
+        remove(user)
+        return JsonResponse({'message': REMOVED_MSG})
 
     try:
-        address = clean_contact_email(raw)
+        address = check_new_address(user, raw)
     except ValidationError as e:
         return JsonResponse({'error': e.messages[0]}, status=400)
-
-    if address == (user.contact_email or '').lower() and user.contact_email_confirmed:
-        return JsonResponse({'error': 'This is already your communication email.'}, status=400)
 
     if (_rate_limited(request, 'change-email', extra_key=str(user.pk), per_ip=False)
             or _rate_limited(request, 'email-confirm-target', extra_key=address, per_ip=False)):
         return JsonResponse({'error': _TOO_MANY_ATTEMPTS_MSG}, status=429)
 
-    user.contact_email = address
-    user.contact_email_confirmed = False
-    user.save(update_fields=['contact_email', 'contact_email_confirmed'])
     try:
-        send_confirmation(request, user)
+        start(request, user, address)
     except Exception:
         logger.exception('set_contact_email_view could not send for user %s', user.pk)
-        return JsonResponse({'error': 'Saved, but the confirmation email could not be sent. '
-                                      'Please try again later.'}, status=400)
-    return JsonResponse({'message': f'We sent a confirmation link to {address}. We will start '
-                                    'using it once you click the link.'})
+        return JsonResponse({'error': NOT_SENT_MSG}, status=400)
+    return JsonResponse({'message': sent_msg(address)})
 
 
 def confirm_contact_email_view(request, token):
