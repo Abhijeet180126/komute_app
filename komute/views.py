@@ -1523,12 +1523,16 @@ def edit_ride_view(request, ride_id):
         if not errors:
             duration_seconds = _parse_duration_seconds(request.POST.get('duration_seconds'))
 
-            ride_rules.update_ride(
-                ride, origin=origin, origin_lat=origin_lat, origin_lng=origin_lng, destination=destination,
-                dest_lat=dest_lat, dest_lng=dest_lng, depart_at=depart_at, tz_name=tz_name,
-                duration_seconds=duration_seconds, seats=seats, price_cents=price_cents, notes=notes,
-                preferences_json=preferences_json, passenger_gender_pref=passenger_gender_pref,
-                stops=clean_stops)
+            try:
+                ride_rules.update_ride(
+                    ride, origin=origin, origin_lat=origin_lat, origin_lng=origin_lng, destination=destination,
+                    dest_lat=dest_lat, dest_lng=dest_lng, depart_at=depart_at, tz_name=tz_name,
+                    duration_seconds=duration_seconds, seats=seats, price_cents=price_cents, notes=notes,
+                    preferences_json=preferences_json, passenger_gender_pref=passenger_gender_pref,
+                    stops=clean_stops)
+            except ride_rules.EditBlocked as e:
+                messages.error(request, e.reason)
+                return redirect('my-rides')
 
             messages.success(request, 'Ride updated successfully.')
             return redirect('my-rides')

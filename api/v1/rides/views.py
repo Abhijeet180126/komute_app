@@ -249,13 +249,16 @@ class RideDetailView(APIView):
                                            too_far_msg=ride_rules.EDIT_TOO_FAR_MSG)
         _raise(errors)
         origin, destination = data['origin'], data['destination']
-        ride_rules.update_ride(
-            ride, origin=origin['name'].strip(), origin_lat=origin['lat'], origin_lng=origin['lng'],
-            destination=destination['name'].strip(), dest_lat=destination['lat'], dest_lng=destination['lng'],
-            depart_at=clean['depart_at'], tz_name=tz_name, duration_seconds=_duration(data),
-            seats=clean['seats'], price_cents=clean['price_cents'], notes=(data.get('notes') or '').strip(),
-            preferences_json=data.get('preferences') or None,
-            passenger_gender_pref=data.get('passenger_gender_pref') or 'any', stops=clean['clean_stops'])
+        try:
+            ride_rules.update_ride(
+                ride, origin=origin['name'].strip(), origin_lat=origin['lat'], origin_lng=origin['lng'],
+                destination=destination['name'].strip(), dest_lat=destination['lat'], dest_lng=destination['lng'],
+                depart_at=clean['depart_at'], tz_name=tz_name, duration_seconds=_duration(data),
+                seats=clean['seats'], price_cents=clean['price_cents'], notes=(data.get('notes') or '').strip(),
+                preferences_json=data.get('preferences') or None,
+                passenger_gender_pref=data.get('passenger_gender_pref') or 'any', stops=clean['clean_stops'])
+        except ride_rules.EditBlocked as e:
+            raise FieldError(None, e.reason, code='cannot_edit')
         return Response(s.RideSerializer(_ride_qs().get(pk=ride.pk), context={'request': request}).data)
 
 
