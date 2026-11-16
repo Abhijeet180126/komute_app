@@ -1781,7 +1781,7 @@ body.role-rider .driver-only { display: none; }
       <div class="danger-zone-row">
         <div>
           <h4>Delete Account</h4>
-          <p>We'll email a confirmation link first — nothing happens until you click it. Your account is closed now and permanently deleted after {{ account_deletion_grace_days }} days. Contact support within that time if you change your mind. Some records (e.g. completed ride history) are kept for the periods in our <a href="{% url 'privacy-policy' %}" target="_blank" rel="noopener">Privacy Policy</a>.</p>
+          <p>We'll email a confirmation link first — nothing happens until you click it. Your account is closed now and permanently deleted after {{ account_deletion_grace_days }} days, and your upcoming rides and bookings are cancelled. Contact support within that time if you change your mind. Some records (e.g. completed ride history) are kept for the periods in our <a href="{% url 'privacy-policy' %}" target="_blank" rel="noopener">Privacy Policy</a>.</p>
         </div>
         <button type="button" class="btn-danger" onclick="openDeleteAccountModal()">Delete Account</button>
       </div>
@@ -3256,7 +3256,7 @@ body.role-rider .driver-only { display: none; }
 <div class="modal-backdrop" id="deleteAccountModal" data-dialog role="dialog" aria-modal="true" aria-labelledby="deleteAccountTitle" onclick="if(event.target===this) closeDeleteAccountModal()">
   <div class="modal">
     <h3 id="deleteAccountTitle">Delete Account</h3>
-    <p class="modal-sub">We'll send a confirmation link to <strong>{{ mail_to }}</strong>. Nothing happens until you click it. Once you do, your account is closed and you're signed out. It is permanently deleted after {{ account_deletion_grace_days }} days. Contact support within that time if you change your mind. Some records (e.g. completed ride history) are kept for the periods in our <a href="{% url 'privacy-policy' %}" target="_blank" rel="noopener">Privacy Policy</a>.</p>
+    <p class="modal-sub">We'll send a confirmation link to <strong>{{ mail_to }}</strong>. Nothing happens until you click it. Once you do, your account is closed, your upcoming rides and bookings are cancelled, and you're signed out. It is permanently deleted after {{ account_deletion_grace_days }} days. Contact support within that time if you change your mind. Some records (e.g. completed ride history) are kept for the periods in our <a href="{% url 'privacy-policy' %}" target="_blank" rel="noopener">Privacy Policy</a>.</p>
 
     <div class="modal-actions">
       <button class="btn-modal btn-modal-secondary" data-dialog-close data-dialog-initial onclick="closeDeleteAccountModal()">Cancel</button>

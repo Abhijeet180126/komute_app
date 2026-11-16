@@ -12,16 +12,17 @@ from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.core import signing
 from django.core.mail import EmailMultiAlternatives
-from django.db.models import F
-from django.db.models.functions import Least
+from django.db import transaction
 from django.template.loader import render_to_string
 from django.urls import reverse
 from django.utils import timezone
 
-from komute.models import EmailLog, RideBooking, RideInvite, Rides, RideSearch, UserBlock
+from komute.models import EmailLog, RideBooking, RideInvite, RideSearch, UserBlock
 from komute.notifications import notify_bookings_changed
 from komute.services.booking_status import notify_booking_status
-from komute.services.bookings import send_booking_confirmation_emails
+from komute.services.bookings import (
+    ACTIVE as ACTIVE_BOOKING, lock_ride, reserve_seats, send_booking_confirmation_emails,
+)
 from komute.services.common import DOB_MISSING_MSG, EMAIL_UNVERIFIED_MSG, display_name
 from komute.services.geo import haversine_km
 from komute.services.rides import GENDER_PREF_MSG, fmt_ride_local, gender_pref_allows
@@ -236,6 +237,7 @@ def accept_invite(invite, user):
     ride = invite.ride
 
     if (ride.status in ['cancelled', 'completed'] or ride.depart_at <= timezone.now()
+            or not ride.driver.is_active
             or UserBlock.objects.between(ride.driver_id, user.id)):
         raise InviteError('This ride is no longer available.', code='ride_unavailable')
 
@@ -264,54 +266,54 @@ def accept_invite(invite, user):
         raise InviteError("This invite can't be accepted right now because the driver needs to re-verify "
                           "their identity. Please try again later.", code='driver_not_verified')
 
-    # Atomically claim the invite first so a replayed/concurrent accept
-    # (double-click, resubmit) can't pass this check twice.
-    prior_status = invite.status
-    claimed = RideInvite.objects.filter(
-        id=invite.id, status__in=(RideInvite.STATUS_SENT, RideInvite.STATUS_VIEWED),
-    ).update(status=RideInvite.STATUS_ACCEPTED, responded_at=timezone.now())
-    if not claimed:
-        raise InviteError(ALREADY_RESPONDED_MSG, code='already_responded')
+    # One transaction under the ride lock (see komute.services.bookings):
+    # any failure below undoes the invite claim and the seats together, and
+    # a booking or cancel by the same rider on this ride waits its turn, so
+    # the rider's booking is re-read here rather than trusted from above.
+    with transaction.atomic():
+        lock_ride(ride.id)
+        # Claim the invite first so a replayed/concurrent accept
+        # (double-click, resubmit) can't pass this check twice.
+        claimed = RideInvite.objects.filter(
+            id=invite.id, status__in=(RideInvite.STATUS_SENT, RideInvite.STATUS_VIEWED),
+        ).update(status=RideInvite.STATUS_ACCEPTED, responded_at=timezone.now())
+        if not claimed:
+            raise InviteError(ALREADY_RESPONDED_MSG, code='already_responded')
 
-    updated = Rides.objects.filter(
-        id=ride.id, seats_available__gte=seats
-    ).update(seats_available=F('seats_available') - seats)
-    if not updated:
-        # Couldn't complete the acceptance — release the claim so the invite
-        # stays actionable instead of being stuck "accepted" with no booking.
-        RideInvite.objects.filter(id=invite.id).update(status=prior_status, responded_at=None)
-        raise InviteError('Sorry, this ride is now full.' if seats == 1
-                          else 'Sorry, this ride no longer has enough seats.', code='ride_full')
-    Rides.objects.filter(id=ride.id, seats_available=0).update(status='full')
-
-    if existing:
-        # Confirm the rider's draft in place, as booking promotes it: keeps
-        # its chat history, seat count and any price agreed there.
-        # Conditional, so a draft booked or dropped meanwhile isn't overwritten.
-        confirmed_at = timezone.now()
-        promoted = RideBooking.objects.filter(
-            id=existing.id, status=RideBooking.STATUS_DRAFT,
-        ).update(status=RideBooking.STATUS_CONFIRMED, confirmed_at=confirmed_at)
-        if not promoted:
-            Rides.objects.filter(id=ride.id).update(
-                seats_available=Least(F('seats_available') + seats, ride.seats_total))
-            Rides.objects.filter(id=ride.id, status='full').update(status='posted')
-            RideInvite.objects.filter(id=invite.id).update(status=prior_status, responded_at=None)
+        current = RideBooking.objects.filter(
+            ride=ride, passenger=user, status__in=ACTIVE_BOOKING,
+        ).first()
+        if (current and current.status != RideBooking.STATUS_DRAFT) or (existing and current is None):
             raise InviteError('Your booking on this ride changed meanwhile. Please reload and try again.',
                               status=409, code='booking_changed')
-        booking = existing
-        booking.status       = RideBooking.STATUS_CONFIRMED
-        booking.confirmed_at = confirmed_at
+        existing = current
+        seats = existing.seats if existing else 1
+
+        if not reserve_seats(ride.id, seats):
+            # The invite stays actionable rather than stuck "accepted" with no booking.
+            raise InviteError('Sorry, this ride is now full.' if seats == 1
+                              else 'Sorry, this ride no longer has enough seats.', code='ride_full')
+
+        if existing:
+            # Confirm the rider's draft in place, as booking promotes it: keeps
+            # its chat history, seat count and any price agreed there.
+            confirmed_at = timezone.now()
+            RideBooking.objects.filter(id=existing.id).update(
+                status=RideBooking.STATUS_CONFIRMED, confirmed_at=confirmed_at)
+            booking = existing
+            booking.status       = RideBooking.STATUS_CONFIRMED
+            booking.confirmed_at = confirmed_at
+        else:
+            booking = RideBooking.objects.create(
+                ride=ride,
+                passenger=invite.passenger,
+                seats=seats,
+                agreed_price_cents=ride.price_cents * seats + settings.SERVICE_FEE_CENTS,
+                status=RideBooking.STATUS_CONFIRMED,
+                confirmed_at=timezone.now(),
+            )
+    if existing:
         notify_booking_status(booking)
-    else:
-        booking = RideBooking.objects.create(
-            ride=ride,
-            passenger=invite.passenger,
-            seats=seats,
-            agreed_price_cents=ride.price_cents * seats + settings.SERVICE_FEE_CENTS,
-            status=RideBooking.STATUS_CONFIRMED,
-            confirmed_at=timezone.now(),
-        )
     notify_bookings_changed([ride.driver_id], 'A passenger accepted your ride invite.')
 
     send_booking_confirmation_emails(booking)

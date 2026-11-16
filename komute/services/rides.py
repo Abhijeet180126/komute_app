@@ -11,6 +11,7 @@ from datetime import date, datetime, timedelta
 
 from django.conf import settings
 from django.core.mail import EmailMultiAlternatives
+from django.db import transaction
 from django.db.models import Q, Sum
 from django.db.models.functions import ExtractHour
 from django.template.loader import render_to_string
@@ -318,7 +319,34 @@ def create_rides(user, *, vehicle, origin, origin_lat, origin_lng, destination, 
 def update_ride(ride, *, origin, origin_lat, origin_lng, destination, dest_lat, dest_lng, depart_at,
                 tz_name, duration_seconds, seats, price_cents, notes, preferences_json,
                 passenger_gender_pref, stops):
-    """Saves an edited ride (edit_block_reason() was None) and replaces its stops."""
+    """Saves an edited ride (edit_block_reason() was None) and replaces its stops.
+    Raises EditBlocked if a booking or a cancel landed since that check."""
+    with transaction.atomic():
+        # Re-check under the ride lock that bookings take (komute.services
+        # .bookings.lock_ride): a request made after the caller's check would
+        # otherwise have its seats overwritten by the full-row save below,
+        # freeing them for someone else, and its ride changed under it.
+        locked = Rides.objects.select_for_update().get(id=ride.id)
+        ride.status = locked.status
+        reason = edit_block_reason(ride)
+        if reason:
+            raise EditBlocked(reason)
+        return _save_edited_ride(
+            ride, origin=origin, origin_lat=origin_lat, origin_lng=origin_lng, destination=destination,
+            dest_lat=dest_lat, dest_lng=dest_lng, depart_at=depart_at, tz_name=tz_name,
+            duration_seconds=duration_seconds, seats=seats, price_cents=price_cents, notes=notes,
+            preferences_json=preferences_json, passenger_gender_pref=passenger_gender_pref, stops=stops)
+
+
+class EditBlocked(Exception):
+    def __init__(self, reason):
+        super().__init__(reason)
+        self.reason = reason
+
+
+def _save_edited_ride(ride, *, origin, origin_lat, origin_lng, destination, dest_lat, dest_lng, depart_at,
+                      tz_name, duration_seconds, seats, price_cents, notes, preferences_json,
+                      passenger_gender_pref, stops):
     if duration_seconds > 0:
         arrive_at = depart_at + timedelta(seconds=duration_seconds)
     elif ride.arrive_at and ride.depart_at:
@@ -369,19 +397,24 @@ def cancel_error(ride):
 def cancel_ride(ride):
     """The driver cancels (cancel_error() was None): every active booking is
     cancelled, chats close, riders get a notification and an email."""
-    affected_bookings = list(
-        ride.bookings
-        .filter(status__in=(RideBooking.STATUS_REQUESTED, RideBooking.STATUS_CONFIRMED))
-        .select_related('passenger')
-    )
+    # Under the ride lock bookings take (komute.services.bookings.lock_ride),
+    # so a request made at the same moment is either in this list (and
+    # emailed) or refused because the ride is cancelled, never left active.
+    with transaction.atomic():
+        Rides.objects.select_for_update().filter(id=ride.id).first()
+        affected_bookings = list(
+            ride.bookings
+            .filter(status__in=(RideBooking.STATUS_REQUESTED, RideBooking.STATUS_CONFIRMED))
+            .select_related('passenger')
+        )
 
-    ride.bookings.filter(
-        status__in=(RideBooking.STATUS_REQUESTED, RideBooking.STATUS_CONFIRMED)
-    ).update(status=RideBooking.STATUS_CANCELLED, cancelled_at=timezone.now())
+        ride.bookings.filter(
+            id__in=[b.id for b in affected_bookings]
+        ).update(status=RideBooking.STATUS_CANCELLED, cancelled_at=timezone.now())
 
-    ride.status = 'cancelled'
-    ride.cancelled_at = timezone.now()
-    ride.save(update_fields=['status', 'cancelled_at'])
+        ride.status = 'cancelled'
+        ride.cancelled_at = timezone.now()
+        ride.save(update_fields=['status', 'cancelled_at'])
     for booking in affected_bookings:
         booking.status = RideBooking.STATUS_CANCELLED
         booking.ride = ride
@@ -489,6 +522,9 @@ def search_rides(user, *, search_from, search_to, parsed_date, rider_tz, seats_n
     qs = (
         Rides.objects
         .filter(status__in=['posted', 'full'], depart_at__gte=timezone.now())
+        # A closed account's rides are cancelled when it closes; this hides
+        # any left over (komute.services.accounts.end_upcoming_trips).
+        .filter(driver__is_active=True)
         # Blocked either way: neither sees the other's rides (ISSUES.md A1).
         .exclude(driver_id__in=UserBlock.objects.hidden_ids(user.id))
         .select_related('driver', 'vehicle')

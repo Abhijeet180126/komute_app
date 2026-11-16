@@ -42,6 +42,41 @@ class BookingError(Exception):
 
 
 # ──────────────────────────────────────────────────────────────────
+# Seats. Only a requested or confirmed booking holds seats; a draft
+# ("Chat with driver") never does. Every booking change that takes or
+# gives back seats runs in a transaction that first locks the ride row
+# with lock_ride(), so changes to one ride's bookings happen one at a
+# time. (The regression suite runs on SQLite, which can't show these
+# races; production is Postgres.)
+# ──────────────────────────────────────────────────────────────────
+
+def lock_ride(ride_id):
+    """Lock the ride row until the surrounding transaction ends."""
+    return Rides.objects.select_for_update().filter(id=ride_id).first()
+
+
+def reserve_seats(ride_id, seats):
+    """Take `seats` from a ride still open for booking. False if it has
+    fewer free, or was cancelled, completed or has left meanwhile, or its
+    driver's account is closed."""
+    taken = Rides.objects.filter(
+        id=ride_id, status__in=('posted', 'full'), depart_at__gt=timezone.now(),
+        driver__is_active=True, seats_available__gte=seats,
+    ).update(seats_available=F('seats_available') - seats)
+    if taken:
+        Rides.objects.filter(id=ride_id, seats_available=0).update(status='full')
+    return bool(taken)
+
+
+def release_seats(ride_id, seats):
+    """Give back `seats` held by a booking that is ending."""
+    Rides.objects.filter(id=ride_id).update(
+        seats_available=Least(F('seats_available') + seats, F('seats_total'))
+    )
+    Rides.objects.filter(id=ride_id, status='full').update(status='posted')
+
+
+# ──────────────────────────────────────────────────────────────────
 # Emails
 # ──────────────────────────────────────────────────────────────────
 
@@ -225,7 +260,7 @@ def book_ride(ride, user, *, intent, seats_raw, pickup_stop_id=None, dropoff_sto
     # Accounts from before DOB was asked at signup (audit L-5).
     if not user.dob:
         raise BookingError(DOB_MISSING_MSG, status=403, code='dob_missing')
-    if ride.status not in ('posted', 'full') or ride.depart_at <= timezone.now():
+    if ride.status not in ('posted', 'full') or ride.depart_at <= timezone.now() or not ride.driver.is_active:
         raise BookingError('This ride is no longer available.', code='ride_unavailable')
     if not gender_pref_allows(ride, user):
         raise BookingError(GENDER_PREF_MSG, status=403, code='gender_preference')
@@ -239,56 +274,58 @@ def book_ride(ride, user, *, intent, seats_raw, pickup_stop_id=None, dropoff_sto
     pickup_stop  = RideStop.objects.filter(id=pickup_stop_id,  ride=ride).first() if pickup_stop_id  else None
     dropoff_stop = RideStop.objects.filter(id=dropoff_stop_id, ride=ride).first() if dropoff_stop_id else None
 
-    existing = RideBooking.objects.filter(
-        ride=ride,
-        passenger=user,
-        status__in=[RideBooking.STATUS_DRAFT, RideBooking.STATUS_REQUESTED, RideBooking.STATUS_CONFIRMED],
-    ).first()
+    # The ride row is locked for the rest of this, so two clicks (or a
+    # click and a chat price-accept / invite accept / cancel) on the same
+    # ride run one after the other: a double click can't make two requests,
+    # and a draft can't be promoted while it is being confirmed or cancelled.
+    with transaction.atomic():
+        locked = lock_ride(ride.id)
+        if locked is None or locked.status not in ('posted', 'full'):
+            raise BookingError('This ride is no longer available.', code='ride_unavailable')
+        existing = RideBooking.objects.select_for_update().filter(
+            ride=ride, passenger=user, status__in=ACTIVE,
+        ).first()
 
-    if existing and existing.status in (RideBooking.STATUS_REQUESTED, RideBooking.STATUS_CONFIRMED):
-        raise BookingError('You have already requested this ride.', code='already_requested')
+        if existing and existing.status in (RideBooking.STATUS_REQUESTED, RideBooking.STATUS_CONFIRMED):
+            raise BookingError('You have already requested this ride.', code='already_requested')
 
-    if intent == "chat":
-        # Pre-request negotiation: open a chat without reserving a seat or notifying the driver.
-        if existing and existing.status == RideBooking.STATUS_DRAFT:
-            return existing
-        return RideBooking.objects.create(
-            ride=ride,
-            passenger=user,
-            pickup_stop=pickup_stop,
-            dropoff_stop=dropoff_stop,
-            seats=seats,
-            agreed_price_cents=ride.price_cents * seats + settings.SERVICE_FEE_CENTS,
-            status=RideBooking.STATUS_DRAFT,
-        )
+        if intent == "chat":
+            # Pre-request negotiation: open a chat without reserving a seat or notifying the driver.
+            if existing:
+                return existing
+            return RideBooking.objects.create(
+                ride=ride,
+                passenger=user,
+                pickup_stop=pickup_stop,
+                dropoff_stop=dropoff_stop,
+                seats=seats,
+                agreed_price_cents=ride.price_cents * seats + settings.SERVICE_FEE_CENTS,
+                status=RideBooking.STATUS_DRAFT,
+            )
 
-    updated = Rides.objects.filter(
-        id=ride.id, seats_available__gte=seats
-    ).update(seats_available=F('seats_available') - seats)
-    if not updated:
-        raise BookingError('Not enough seats available.', code='not_enough_seats')
-    Rides.objects.filter(id=ride.id, seats_available=0).update(status='full')
+        if not reserve_seats(ride.id, seats):
+            raise BookingError('Not enough seats available.', code='not_enough_seats')
 
-    if existing and existing.status == RideBooking.STATUS_DRAFT:
-        # Promote the draft in place — carries over its PriceOffer/Message history
-        # and keeps the chat token (which encodes only the booking id) still valid.
-        booking = existing
-        booking.pickup_stop  = pickup_stop
-        booking.dropoff_stop = dropoff_stop
-        booking.seats        = seats
-        booking.status       = RideBooking.STATUS_REQUESTED
-        booking.save(update_fields=['pickup_stop', 'dropoff_stop', 'seats', 'status'])
-    else:
-        booking = RideBooking.objects.create(
-            ride=ride,
-            passenger=user,
-            pickup_stop=pickup_stop,
-            dropoff_stop=dropoff_stop,
-            seats=seats,
-            agreed_price_cents=ride.price_cents * seats + settings.SERVICE_FEE_CENTS,
-            status=RideBooking.STATUS_REQUESTED,
-            confirmed_at=None,
-        )
+        if existing:
+            # Promote the draft in place — carries over its PriceOffer/Message history
+            # and keeps the chat token (which encodes only the booking id) still valid.
+            booking = existing
+            booking.pickup_stop  = pickup_stop
+            booking.dropoff_stop = dropoff_stop
+            booking.seats        = seats
+            booking.status       = RideBooking.STATUS_REQUESTED
+            booking.save(update_fields=['pickup_stop', 'dropoff_stop', 'seats', 'status'])
+        else:
+            booking = RideBooking.objects.create(
+                ride=ride,
+                passenger=user,
+                pickup_stop=pickup_stop,
+                dropoff_stop=dropoff_stop,
+                seats=seats,
+                agreed_price_cents=ride.price_cents * seats + settings.SERVICE_FEE_CENTS,
+                status=RideBooking.STATUS_REQUESTED,
+                confirmed_at=None,
+            )
 
     notify_bookings_changed([ride.driver_id], 'You have a new booking request.')
     send_booking_request_email(booking)
@@ -313,22 +350,36 @@ def cancel_booking(booking):
     ride = booking.ride
     cancelled_at = timezone.now()
 
-    updated = RideBooking.objects.filter(id=booking.id).exclude(
-        status__in=(RideBooking.STATUS_CANCELLED, RideBooking.STATUS_REJECTED, RideBooking.STATUS_COMPLETED),
-    ).update(status=RideBooking.STATUS_CANCELLED, cancelled_at=cancelled_at)
-    if not updated:
-        raise BookingError("Booking is already cancelled.", code='already_closed')
+    # Only a requested or confirmed booking holds seats. A draft ("Chat with
+    # driver") never reserved any, so cancelling one must not hand seats back
+    # (that let a full ride be oversold), and the driver, who never saw a
+    # request, gets no notice or email. The status and seats are read under
+    # the ride lock, not taken from the caller's copy, so a draft promoted
+    # to a request at the same moment is cancelled as a request, with its
+    # current seats released exactly once.
+    with transaction.atomic():
+        lock_ride(ride.id)
+        current = (
+            RideBooking.objects.select_for_update()
+            .filter(id=booking.id).values('status', 'seats').first()
+        )
+        if current is None or current['status'] not in ACTIVE:
+            raise BookingError("Booking is already cancelled.", code='already_closed')
+        held = current['status'] != RideBooking.STATUS_DRAFT
+        RideBooking.objects.filter(id=booking.id).update(
+            status=RideBooking.STATUS_CANCELLED, cancelled_at=cancelled_at,
+        )
+        if held:
+            release_seats(ride.id, current['seats'])
+    booking.seats = current['seats']
     booking.status = RideBooking.STATUS_CANCELLED
     booking.cancelled_at = cancelled_at
 
-    Rides.objects.filter(id=ride.id).update(
-        seats_available=Least(F('seats_available') + booking.seats, ride.seats_total)
-    )
-    Rides.objects.filter(id=ride.id, status='full').update(status='posted')
+    # Locks any open chat page, the driver's included (they may have replied).
     notify_booking_status(booking)
-    notify_bookings_changed([ride.driver_id], 'A passenger cancelled their booking.')
-
-    send_booking_cancelled_emails(booking)
+    if held:
+        notify_bookings_changed([ride.driver_id], 'A passenger cancelled their booking.')
+        send_booking_cancelled_emails(booking)
 
 
 def accept_booking(booking):
@@ -367,18 +418,16 @@ def reject_booking(booking):
     if booking.status != RideBooking.STATUS_REQUESTED:
         raise BookingError(f'Cannot reject a booking that is already {booking.status}.', code='not_pending')
 
-    updated = RideBooking.objects.filter(
-        id=booking.id, status=RideBooking.STATUS_REQUESTED,
-    ).update(status=RideBooking.STATUS_REJECTED, rejected_at=timezone.now())
-    if not updated:
-        raise BookingError(f'Cannot reject a booking that is already {booking.status}.', code='not_pending')
+    # A requested booking holds its seats and its seat count no longer
+    # changes, so the conditional write alone makes the release happen once.
+    with transaction.atomic():
+        updated = RideBooking.objects.filter(
+            id=booking.id, status=RideBooking.STATUS_REQUESTED,
+        ).update(status=RideBooking.STATUS_REJECTED, rejected_at=timezone.now())
+        if not updated:
+            raise BookingError(f'Cannot reject a booking that is already {booking.status}.', code='not_pending')
+        release_seats(booking.ride_id, booking.seats)
     booking.status = RideBooking.STATUS_REJECTED
-
-    ride = booking.ride
-    Rides.objects.filter(id=ride.id).update(
-        seats_available=Least(F('seats_available') + booking.seats, ride.seats_total)
-    )
-    Rides.objects.filter(id=ride.id, status='full').update(status='posted')
     notify_booking_status(booking)
     notify_bookings_changed([booking.passenger_id], 'Your booking request was declined.')
 
@@ -674,7 +723,8 @@ def chat_accept(user, booking_id, offer_id, price):
         return 'booking_inactive', None
     # Cancelling a ride leaves drafts in place, so a draft can outlive its
     # ride; agreeing a price must not confirm a seat on it.
-    if booking.ride.status not in ('posted', 'full') or booking.ride.depart_at <= timezone.now():
+    if (booking.ride.status not in ('posted', 'full') or booking.ride.depart_at <= timezone.now()
+            or not booking.ride.driver.is_active or not booking.passenger.is_active):
         return 'booking_inactive', None
 
     # Prefer the specific offer the client had on screen — matching by price
@@ -713,27 +763,36 @@ def chat_accept(user, booking_id, offer_id, price):
         return 'driver_unverified', None
 
     with transaction.atomic():
+        # Re-read under the ride lock: a double click, the other person
+        # accepting too, "Request to book" or a cancel may have changed the
+        # booking since it was loaded above, and acting on the old copy
+        # reserved its seats twice or confirmed a cancelled booking.
+        lock_ride(booking.ride_id)
+        status_now = RideBooking.objects.filter(id=booking_id).values_list('status', flat=True).first()
+        if status_now != booking.status:
+            return ('nego_locked' if status_now == RideBooking.STATUS_REQUESTED else
+                    'booking_inactive' if status_now not in ACTIVE else 'offer_stale'), None
+        responded = PriceOffer.objects.filter(id=offer.id, status=PriceOffer.STATUS_PENDING).update(
+            status=PriceOffer.STATUS_ACCEPTED, responded_at=timezone.now(),
+        )
+        if not responded:
+            return 'offer_stale', None
+
         if booking.status == RideBooking.STATUS_DRAFT:
             # A pre-request chat ("Chat with driver") never went through
             # "Request to book", so no seat was ever reserved — agreeing on
             # a price here IS the booking, so reserve the seat now.
-            reserved = Rides.objects.filter(
-                id=booking.ride_id, seats_available__gte=booking.seats,
-            ).update(seats_available=F('seats_available') - booking.seats)
-            if not reserved:
+            if not reserve_seats(booking.ride_id, booking.seats):
+                transaction.set_rollback(True)  # the offer stays pending
                 return 'no_seats', None
-            Rides.objects.filter(id=booking.ride_id, seats_available=0).update(status='full')
             booking.ride.seats_available -= booking.seats
-
-        offer.status = PriceOffer.STATUS_ACCEPTED
-        offer.responded_at = timezone.now()
-        offer.save(update_fields=['status', 'responded_at'])
 
         update_fields = {'agreed_price_cents': agreed_price_cents}
         if was_unconfirmed:
             update_fields['status'] = RideBooking.STATUS_CONFIRMED
             update_fields['confirmed_at'] = timezone.now()
         RideBooking.objects.filter(id=booking_id).update(**update_fields)
+        offer.status = PriceOffer.STATUS_ACCEPTED
 
     if was_unconfirmed:
         booking.agreed_price_cents = agreed_price_cents

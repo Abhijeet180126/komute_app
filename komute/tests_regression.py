@@ -36,6 +36,7 @@ from asgiref.sync import async_to_sync, sync_to_async
 from channels.testing import WebsocketCommunicator
 from django.test import TestCase, TransactionTestCase, Client, override_settings
 from django.urls import reverse
+from django.db.models import F
 from django.utils import timezone
 
 from komute.chat_tokens import make_chat_token
@@ -318,6 +319,74 @@ class DeleteAccountFlowTests(TestCase):
     def test_signed_in_user_sees_their_email_filled_in(self):
         resp = self.client.get(reverse('delete-account'))
         self.assertContains(resp, 'value="deact@example.com"')
+
+
+class AccountClosureTripsTests(TestCase):
+    """Closing an account cancels its upcoming rides and bookings, so no one
+    is left waiting on it, and its rides can't be found or booked."""
+
+    def setUp(self):
+        self.driver = make_driver_with_vehicle('close_driver@example.com')
+        self.rider = make_user('close_rider@example.com')
+        self.ride = make_ride(self.driver)
+        self.booking = RideBooking.objects.create(
+            ride=self.ride, passenger=self.rider, seats=2,
+            agreed_price_cents=5000, status=RideBooking.STATUS_CONFIRMED,
+        )
+        Rides.objects.filter(pk=self.ride.pk).update(seats_available=1)
+
+    def _close(self, user):
+        from komute.views import _make_deactivate_token
+        resp = Client().get(reverse('confirm-delete-account', args=[_make_deactivate_token(user)]), follow=True)
+        self.assertContains(resp, 'upcoming rides and bookings have been cancelled')
+
+    def test_closing_driver_cancels_upcoming_rides_and_tells_riders(self):
+        departed = make_ride(self.driver, depart_at=timezone.now() - timedelta(hours=1))
+        self._close(self.driver)
+        self.ride.refresh_from_db()
+        self.assertEqual(self.ride.status, 'cancelled')
+        self.booking.refresh_from_db()
+        self.assertEqual(self.booking.status, RideBooking.STATUS_CANCELLED)
+        self.assertEqual([m.to for m in mail.outbox], [[self.rider.mail_to]])
+        departed.refresh_from_db()
+        self.assertEqual(departed.status, 'posted')  # under way: left to finish
+
+    def test_closing_rider_cancels_bookings_and_declines_invites(self):
+        other_ride = make_ride(self.driver)
+        draft = RideBooking.objects.create(ride=other_ride, passenger=self.rider, seats=1,
+                                           agreed_price_cents=2500, status=RideBooking.STATUS_DRAFT)
+        invite = RideInvite.objects.create(driver=self.driver, passenger=self.rider, ride=make_ride(self.driver))
+        self._close(self.rider)
+        self.booking.refresh_from_db()
+        self.assertEqual(self.booking.status, RideBooking.STATUS_CANCELLED)
+        self.ride.refresh_from_db()
+        self.assertEqual(self.ride.seats_available, 3)
+        draft.refresh_from_db()
+        self.assertEqual(draft.status, RideBooking.STATUS_CANCELLED)
+        other_ride.refresh_from_db()
+        self.assertEqual(other_ride.seats_available, 3)  # the draft held none
+        invite.refresh_from_db()
+        self.assertEqual(invite.status, RideInvite.STATUS_DECLINED)
+        # Only the confirmed booking's driver email; none for the draft.
+        self.assertEqual([m.to for m in mail.outbox], [[self.driver.mail_to]])
+
+    def test_closed_drivers_leftover_ride_cannot_be_found_or_booked(self):
+        from komute.services import bookings as booking_rules
+        searcher = make_user('close_searcher@example.com')
+        c = Client()
+        c.login(username='close_searcher@example.com', password='TestPass123')
+        search = lambda: c.post(reverse('search-rides'), {
+            'from': 'Toronto, ON', 'to': 'Ottawa, ON', 'date': self.ride.depart_at.date().isoformat(),
+            'origin_lat': '43.65', 'origin_lng': '-79.38', 'dest_lat': '45.42', 'dest_lng': '-75.69',
+        }).context['total_count']
+        self.assertEqual(search(), 1)
+        CustomUser.objects.filter(pk=self.driver.pk).update(is_active=False)  # e.g. a cancel that failed
+        self.assertEqual(search(), 0)
+        ride = Rides.objects.select_related('driver').get(pk=self.ride.pk)
+        with self.assertRaises(booking_rules.BookingError) as ctx:
+            booking_rules.book_ride(ride, searcher, intent='book', seats_raw=1)
+        self.assertEqual(ctx.exception.code, 'ride_unavailable')
+        self.assertFalse(booking_rules.reserve_seats(ride.id, 1))
 
 
 class PasswordResetFlowTests(TestCase):
@@ -1396,6 +1465,48 @@ class CancelBookingAndRideTests(TestCase):
         self.ride.refresh_from_db()
         self.assertEqual(self.ride.seats_available, 3)
 
+    def test_cancelling_held_booking_emails_driver(self):
+        c = Client()
+        c.login(username='cxl_rider@example.com', password='TestPass123')
+        c.post(reverse('cancel-booking', args=[encode_id(self.booking.id)]))
+        self.assertEqual([m.to for m in mail.outbox], [[self.driver.mail_to]])
+
+    def test_cancelling_draft_releases_no_seats(self):
+        # A "Chat with driver" draft never held a seat: cancelling it on a
+        # full ride must leave the ride full (it let a 3-seat car take 6),
+        # and the driver, who never saw a request, gets no email.
+        Rides.objects.filter(pk=self.ride.pk).update(seats_available=0, status='full')
+        draft_rider = make_user('cxl_draft@example.com')
+        draft = RideBooking.objects.create(
+            ride=self.ride, passenger=draft_rider, seats=3,
+            agreed_price_cents=7500, status=RideBooking.STATUS_DRAFT,
+        )
+        c = Client()
+        c.login(username='cxl_draft@example.com', password='TestPass123')
+        resp = c.post(reverse('cancel-booking', args=[encode_id(draft.id)]))
+        self.assertEqual(resp.status_code, 200)
+        draft.refresh_from_db()
+        self.assertEqual(draft.status, RideBooking.STATUS_CANCELLED)
+        self.ride.refresh_from_db()
+        self.assertEqual(self.ride.seats_available, 0)
+        self.assertEqual(self.ride.status, 'full')
+        self.assertEqual(len(mail.outbox), 0)
+
+    def test_cancel_uses_stored_status_not_callers_copy(self):
+        # The caller loaded a draft, but it was promoted to a 2-seat request
+        # before the cancel ran: the 2 held seats go back, once.
+        from komute.services.bookings import cancel_booking
+        stale = RideBooking.objects.create(
+            ride=self.ride, passenger=make_user('cxl_stale@example.com'), seats=1,
+            agreed_price_cents=2500, status=RideBooking.STATUS_DRAFT,
+        )
+        RideBooking.objects.filter(pk=stale.pk).update(status=RideBooking.STATUS_REQUESTED, seats=2)
+        Rides.objects.filter(pk=self.ride.pk).update(seats_available=0, status='full')
+        cancel_booking(stale)
+        self.ride.refresh_from_db()
+        self.assertEqual(self.ride.seats_available, 2)
+        self.assertEqual(self.ride.status, 'posted')
+
     def test_other_user_cannot_cancel_booking(self):
         stranger = make_user('cxl_stranger@example.com')
         c = Client()
@@ -1435,6 +1546,125 @@ class CancelBookingAndRideTests(TestCase):
         c.login(username='cxl_rider@example.com', password='TestPass123')
         resp = c.post(reverse('cancel-ride', args=[encode_id(self.ride.id)]))
         self.assertEqual(resp.status_code, 404)
+
+
+class SeatRaceTests(TestCase):
+    """Two actions on one ride or booking at the same moment. SQLite runs
+    them one after the other, so each test makes the ride lock step itself
+    apply the other action, as Postgres would let it land just before."""
+
+    def setUp(self):
+        from komute.services import bookings as booking_rules
+        self.rules = booking_rules
+        self.real_lock = booking_rules.lock_ride
+        self.driver = make_driver_with_vehicle('race_driver@example.com')
+        self.rider = make_user('race_rider@example.com')
+        self.ride = make_ride(self.driver)
+        self.draft = RideBooking.objects.create(
+            ride=self.ride, passenger=self.rider, seats=2,
+            agreed_price_cents=5000, status=RideBooking.STATUS_DRAFT,
+        )
+
+    def _lock_then(self, change):
+        def lock(ride_id):
+            change()
+            return self.real_lock(ride_id)
+        return lock
+
+    def _seats(self):
+        self.ride.refresh_from_db()
+        return self.ride.seats_available
+
+    def _request_draft(self):
+        # What "Request to book" does to the draft: takes its seats.
+        RideBooking.objects.filter(pk=self.draft.pk).update(status=RideBooking.STATUS_REQUESTED)
+        Rides.objects.filter(pk=self.ride.pk).update(seats_available=F('seats_available') - 2)
+
+    def test_price_accept_on_draft_requested_meanwhile_takes_no_more_seats(self):
+        offer = PriceOffer.objects.create(booking=self.draft, proposed_by=self.driver, price_cents=2000)
+        with patch.object(self.rules, 'lock_ride', self._lock_then(self._request_draft)):
+            result = self.rules.chat_accept(self.rider, self.draft.id, offer.id, None)
+        self.assertEqual(result, ('nego_locked', None))
+        self.assertEqual(self._seats(), 1)  # 3 - the request's 2, not - 4
+        offer.refresh_from_db()
+        self.assertEqual(offer.status, PriceOffer.STATUS_PENDING)
+
+    def test_price_accept_on_draft_cancelled_meanwhile_does_not_revive_it(self):
+        offer = PriceOffer.objects.create(booking=self.draft, proposed_by=self.driver, price_cents=2000)
+        cancel = lambda: RideBooking.objects.filter(pk=self.draft.pk).update(status=RideBooking.STATUS_CANCELLED)
+        with patch.object(self.rules, 'lock_ride', self._lock_then(cancel)):
+            result = self.rules.chat_accept(self.rider, self.draft.id, offer.id, None)
+        self.assertEqual(result, ('booking_inactive', None))
+        self.draft.refresh_from_db()
+        self.assertEqual(self.draft.status, RideBooking.STATUS_CANCELLED)
+        self.assertEqual(self._seats(), 3)
+
+    def test_price_accept_with_no_seats_left_keeps_offer_pending(self):
+        offer = PriceOffer.objects.create(booking=self.draft, proposed_by=self.driver, price_cents=2000)
+        Rides.objects.filter(pk=self.ride.pk).update(seats_available=1)
+        self.assertEqual(self.rules.chat_accept(self.rider, self.draft.id, offer.id, None), ('no_seats', None))
+        offer.refresh_from_db()
+        self.assertEqual(offer.status, PriceOffer.STATUS_PENDING)
+
+    def test_book_on_ride_cancelled_meanwhile_is_refused(self):
+        other = make_user('race_other@example.com')
+        cancel = lambda: Rides.objects.filter(pk=self.ride.pk).update(status='cancelled')
+        with patch.object(self.rules, 'lock_ride', self._lock_then(cancel)):
+            with self.assertRaises(self.rules.BookingError) as ctx:
+                self.rules.book_ride(self.ride, other, intent='book', seats_raw=1)
+        self.assertEqual(ctx.exception.code, 'ride_unavailable')
+        self.assertFalse(RideBooking.objects.filter(passenger=other).exists())
+        self.assertEqual(self._seats(), 3)
+
+    def test_second_book_click_does_not_make_a_second_request(self):
+        other = make_user('race_other@example.com')
+        self.rules.book_ride(self.ride, other, intent='book', seats_raw=1)
+        with self.assertRaises(self.rules.BookingError):
+            self.rules.book_ride(self.ride, other, intent='book', seats_raw=1)
+        self.assertEqual(RideBooking.objects.filter(passenger=other).count(), 1)
+        self.assertEqual(self._seats(), 2)
+
+    def test_invite_accept_after_draft_requested_meanwhile_is_refused(self):
+        from komute.services import invites as invite_rules
+        invite = RideInvite.objects.create(driver=self.driver, passenger=self.rider, ride=self.ride)
+        with patch.object(invite_rules, 'lock_ride', self._lock_then(self._request_draft)):
+            with self.assertRaises(invite_rules.InviteError) as ctx:
+                invite_rules.accept_invite(invite, self.rider)
+        self.assertEqual(ctx.exception.code, 'booking_changed')
+        invite.refresh_from_db()
+        self.assertEqual(invite.status, RideInvite.STATUS_SENT)
+        # The refusal rolls back the whole transaction, which in this test
+        # includes the simulated request; the accept itself took nothing.
+        self.assertEqual(self._seats(), 3)
+
+    def test_invite_accept_when_full_leaves_invite_open(self):
+        from komute.services import invites as invite_rules
+        invite = RideInvite.objects.create(driver=self.driver, passenger=self.rider, ride=self.ride)
+        Rides.objects.filter(pk=self.ride.pk).update(seats_available=1)
+        with self.assertRaises(invite_rules.InviteError):
+            invite_rules.accept_invite(invite, self.rider)
+        invite.refresh_from_db()
+        self.assertEqual(invite.status, RideInvite.STATUS_SENT)
+        self.assertEqual(self._seats(), 1)
+
+    def test_edit_after_a_request_landed_is_refused_and_keeps_its_seats(self):
+        from komute.services import rides as ride_rules
+        self._request_draft()  # arrived after the edit page's own check
+        with self.assertRaises(ride_rules.EditBlocked):
+            ride_rules.update_ride(
+                self.ride, origin='Toronto, ON', origin_lat=43.65, origin_lng=-79.38,
+                destination='Ottawa, ON', dest_lat=45.42, dest_lng=-75.69,
+                depart_at=self.ride.depart_at, tz_name='', duration_seconds=0, seats=3,
+                price_cents=2500, notes='', preferences_json=None, passenger_gender_pref='any', stops=[])
+        self.assertEqual(self._seats(), 1)
+
+    def test_reject_gives_seats_back_once(self):
+        self._request_draft()
+        self.draft.refresh_from_db()
+        self.rules.reject_booking(self.draft)
+        with self.assertRaises(self.rules.BookingError):
+            self.rules.reject_booking(self.draft)
+        self.assertEqual(self._seats(), 3)
 
 
 class PriceNegotiationTests(TestCase):

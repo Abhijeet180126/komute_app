@@ -551,6 +551,7 @@ def account_deletion_message():
     days = settings.ACCOUNT_DELETION_GRACE_DAYS
     return (
         f'Your account is closed now and permanently deleted after {days} days. '
+        f'Your upcoming rides and bookings have been cancelled. '
         f'Contact support within that time if you change your mind. Some records '
         f'(e.g. completed ride history) are kept for the periods in our privacy policy.'
     )
@@ -592,6 +593,44 @@ def close_account(user):
     # of the account at the 45-day purge (audit P-14). It also takes the
     # user off drivers' Route Demand lists, which are built from searches.
     RideSearch.objects.filter(user=user).delete()
+    end_upcoming_trips(user)
+
+
+def end_upcoming_trips(user):
+    """A closed account must not leave other people waiting on it: its
+    rides not yet departed are cancelled and its bookings on them are
+    cancelled, through the same steps (seats, chats, emails) as doing it
+    by hand, so the others get the usual cancellation notices, which don't
+    say the account was closed. Rides already under way are left to finish.
+    Each one is tried on its own, so one failure doesn't stop the rest;
+    search and booking also skip closed drivers' rides as a backstop."""
+    from komute.services import bookings as booking_rules
+    from komute.services import rides as ride_rules
+
+    now = timezone.now()
+    upcoming = dict(status__in=('posted', 'full'), depart_at__gt=now)
+
+    for ride in Rides.objects.filter(driver=user, **upcoming):
+        try:
+            ride_rules.cancel_ride(ride)
+        except Exception:
+            logger.exception('Closing account %s: could not cancel ride %s', user.id, ride.id)
+
+    bookings = (RideBooking.objects
+                .filter(passenger=user, status__in=booking_rules.ACTIVE)
+                .filter(**{f'ride__{k}': v for k, v in upcoming.items()})
+                .select_related('ride__driver', 'passenger'))
+    for booking in bookings:
+        try:
+            booking_rules.cancel_booking(booking)
+        except booking_rules.BookingError:
+            pass  # closed meanwhile (e.g. the driver rejected it)
+        except Exception:
+            logger.exception('Closing account %s: could not cancel booking %s', user.id, booking.id)
+
+    RideInvite.objects.filter(
+        passenger=user, status__in=(RideInvite.STATUS_SENT, RideInvite.STATUS_VIEWED),
+    ).update(status=RideInvite.STATUS_DECLINED, responded_at=now)
 
 
 # ──────────────────────────────────────────────────────────────────
