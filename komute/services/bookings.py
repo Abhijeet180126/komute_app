@@ -57,10 +57,11 @@ def lock_ride(ride_id):
 
 def reserve_seats(ride_id, seats):
     """Take `seats` from a ride still open for booking. False if it has
-    fewer free, or was cancelled, completed or has left meanwhile."""
+    fewer free, or was cancelled, completed or has left meanwhile, or its
+    driver's account is closed."""
     taken = Rides.objects.filter(
         id=ride_id, status__in=('posted', 'full'), depart_at__gt=timezone.now(),
-        seats_available__gte=seats,
+        driver__is_active=True, seats_available__gte=seats,
     ).update(seats_available=F('seats_available') - seats)
     if taken:
         Rides.objects.filter(id=ride_id, seats_available=0).update(status='full')
@@ -259,7 +260,7 @@ def book_ride(ride, user, *, intent, seats_raw, pickup_stop_id=None, dropoff_sto
     # Accounts from before DOB was asked at signup (audit L-5).
     if not user.dob:
         raise BookingError(DOB_MISSING_MSG, status=403, code='dob_missing')
-    if ride.status not in ('posted', 'full') or ride.depart_at <= timezone.now():
+    if ride.status not in ('posted', 'full') or ride.depart_at <= timezone.now() or not ride.driver.is_active:
         raise BookingError('This ride is no longer available.', code='ride_unavailable')
     if not gender_pref_allows(ride, user):
         raise BookingError(GENDER_PREF_MSG, status=403, code='gender_preference')
@@ -722,7 +723,8 @@ def chat_accept(user, booking_id, offer_id, price):
         return 'booking_inactive', None
     # Cancelling a ride leaves drafts in place, so a draft can outlive its
     # ride; agreeing a price must not confirm a seat on it.
-    if booking.ride.status not in ('posted', 'full') or booking.ride.depart_at <= timezone.now():
+    if (booking.ride.status not in ('posted', 'full') or booking.ride.depart_at <= timezone.now()
+            or not booking.ride.driver.is_active or not booking.passenger.is_active):
         return 'booking_inactive', None
 
     # Prefer the specific offer the client had on screen — matching by price

@@ -237,6 +237,7 @@ def accept_invite(invite, user):
     ride = invite.ride
 
     if (ride.status in ['cancelled', 'completed'] or ride.depart_at <= timezone.now()
+            or not ride.driver.is_active
             or UserBlock.objects.between(ride.driver_id, user.id)):
         raise InviteError('This ride is no longer available.', code='ride_unavailable')
 

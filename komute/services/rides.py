@@ -522,6 +522,9 @@ def search_rides(user, *, search_from, search_to, parsed_date, rider_tz, seats_n
     qs = (
         Rides.objects
         .filter(status__in=['posted', 'full'], depart_at__gte=timezone.now())
+        # A closed account's rides are cancelled when it closes; this hides
+        # any left over (komute.services.accounts.end_upcoming_trips).
+        .filter(driver__is_active=True)
         # Blocked either way: neither sees the other's rides (ISSUES.md A1).
         .exclude(driver_id__in=UserBlock.objects.hidden_ids(user.id))
         .select_related('driver', 'vehicle')

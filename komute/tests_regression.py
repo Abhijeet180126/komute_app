@@ -321,6 +321,74 @@ class DeleteAccountFlowTests(TestCase):
         self.assertContains(resp, 'value="deact@example.com"')
 
 
+class AccountClosureTripsTests(TestCase):
+    """Closing an account cancels its upcoming rides and bookings, so no one
+    is left waiting on it, and its rides can't be found or booked."""
+
+    def setUp(self):
+        self.driver = make_driver_with_vehicle('close_driver@example.com')
+        self.rider = make_user('close_rider@example.com')
+        self.ride = make_ride(self.driver)
+        self.booking = RideBooking.objects.create(
+            ride=self.ride, passenger=self.rider, seats=2,
+            agreed_price_cents=5000, status=RideBooking.STATUS_CONFIRMED,
+        )
+        Rides.objects.filter(pk=self.ride.pk).update(seats_available=1)
+
+    def _close(self, user):
+        from komute.views import _make_deactivate_token
+        resp = Client().get(reverse('confirm-delete-account', args=[_make_deactivate_token(user)]), follow=True)
+        self.assertContains(resp, 'upcoming rides and bookings have been cancelled')
+
+    def test_closing_driver_cancels_upcoming_rides_and_tells_riders(self):
+        departed = make_ride(self.driver, depart_at=timezone.now() - timedelta(hours=1))
+        self._close(self.driver)
+        self.ride.refresh_from_db()
+        self.assertEqual(self.ride.status, 'cancelled')
+        self.booking.refresh_from_db()
+        self.assertEqual(self.booking.status, RideBooking.STATUS_CANCELLED)
+        self.assertEqual([m.to for m in mail.outbox], [[self.rider.mail_to]])
+        departed.refresh_from_db()
+        self.assertEqual(departed.status, 'posted')  # under way: left to finish
+
+    def test_closing_rider_cancels_bookings_and_declines_invites(self):
+        other_ride = make_ride(self.driver)
+        draft = RideBooking.objects.create(ride=other_ride, passenger=self.rider, seats=1,
+                                           agreed_price_cents=2500, status=RideBooking.STATUS_DRAFT)
+        invite = RideInvite.objects.create(driver=self.driver, passenger=self.rider, ride=make_ride(self.driver))
+        self._close(self.rider)
+        self.booking.refresh_from_db()
+        self.assertEqual(self.booking.status, RideBooking.STATUS_CANCELLED)
+        self.ride.refresh_from_db()
+        self.assertEqual(self.ride.seats_available, 3)
+        draft.refresh_from_db()
+        self.assertEqual(draft.status, RideBooking.STATUS_CANCELLED)
+        other_ride.refresh_from_db()
+        self.assertEqual(other_ride.seats_available, 3)  # the draft held none
+        invite.refresh_from_db()
+        self.assertEqual(invite.status, RideInvite.STATUS_DECLINED)
+        # Only the confirmed booking's driver email; none for the draft.
+        self.assertEqual([m.to for m in mail.outbox], [[self.driver.mail_to]])
+
+    def test_closed_drivers_leftover_ride_cannot_be_found_or_booked(self):
+        from komute.services import bookings as booking_rules
+        searcher = make_user('close_searcher@example.com')
+        c = Client()
+        c.login(username='close_searcher@example.com', password='TestPass123')
+        search = lambda: c.post(reverse('search-rides'), {
+            'from': 'Toronto, ON', 'to': 'Ottawa, ON', 'date': self.ride.depart_at.date().isoformat(),
+            'origin_lat': '43.65', 'origin_lng': '-79.38', 'dest_lat': '45.42', 'dest_lng': '-75.69',
+        }).context['total_count']
+        self.assertEqual(search(), 1)
+        CustomUser.objects.filter(pk=self.driver.pk).update(is_active=False)  # e.g. a cancel that failed
+        self.assertEqual(search(), 0)
+        ride = Rides.objects.select_related('driver').get(pk=self.ride.pk)
+        with self.assertRaises(booking_rules.BookingError) as ctx:
+            booking_rules.book_ride(ride, searcher, intent='book', seats_raw=1)
+        self.assertEqual(ctx.exception.code, 'ride_unavailable')
+        self.assertFalse(booking_rules.reserve_seats(ride.id, 1))
+
+
 class PasswordResetFlowTests(TestCase):
     def setUp(self):
         self.user = make_user('reset@example.com')
