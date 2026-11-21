@@ -1,0 +1,33 @@
+# systemd unit for the verification node inside the main Komute app (copy to /etc/systemd/system/).
+# The node is a second process of the same Python environment. It listens on 127.0.0.1:8080, which is where the
+# main app's DL_VERIFICATION_API_URL already points. Port 8000 is Daphne's.
+#
+# Settings: the node reads /var/www/komute/.env itself (the working directory below). Do NOT use EnvironmentFile:
+# systemd parses .env differently (no inline "#" comments, other quoting).
+# One verification at a time (--workers 1). One verification peaks near 1.2 GB RAM: use a server with 2 GB or more.
+#
+#   sudo cp verification_node/deploy/komute-verify.service /etc/systemd/system/
+#   sudo systemctl daemon-reload && sudo systemctl enable --now komute-verify
+#   curl http://127.0.0.1:8080/health          # {"status":"ok", ...}
+#   journalctl -u komute-verify -f
+[Unit]
+Description=Komute verification node
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=www-data
+Group=www-data
+WorkingDirectory=/var/www/komute
+Environment=PYTHONUNBUFFERED=1 PYTHONUTF8=1 MALLOC_ARENA_MAX=2
+ExecStart=/var/www/komute/venv/bin/python -m uvicorn backend.app.main:create_app --factory --app-dir verification_node --host 127.0.0.1 --port 8080 --workers 1
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=strict
+
+[Install]
+WantedBy=multi-user.target

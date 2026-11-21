@@ -312,7 +312,7 @@ REPLY_TO_EMAIL_RIDE_INVITE           = config('REPLY_TO_EMAIL_RIDE_INVITE',     
 REPLY_TO_EMAIL_SUPPORT_CONTACT       = config('REPLY_TO_EMAIL_SUPPORT_CONTACT',      default=CONTACT_EMAIL)
 
 
-# DL-Verification Node (external driver/vehicle verification microservice)
+# Verification node (verification_node/, run as its own process; see README). The setting names keep "DL_VERIFICATION".
 DL_VERIFICATION_API_URL = config('DL_VERIFICATION_API_URL', default='http://127.0.0.1:8080/api/v1/verify')
 DL_VERIFICATION_API_KEY = config('DL_VERIFICATION_API_KEY', default='')
 # Version of the biometric notice shown before the verification selfie

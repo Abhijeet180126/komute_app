@@ -2,7 +2,7 @@
 
 Rules from komute.services.verification, shared with the profile page's
 Verify Identity flow. The licence photo and the selfie are kept in memory,
-sent to DL-Verification and dropped: never written to disk or storage."""
+sent to the verification node and dropped: never written to disk or storage."""
 from django.conf import settings
 from django.template.loader import render_to_string
 from django.urls import reverse
@@ -95,17 +95,23 @@ def notice(request):
 
 @extend_schema(tags=TAG, summary='Verify my identity',
                request={'multipart/form-data': {'type': 'object', 'properties': {
-                   'license_image': {'type': 'string', 'format': 'binary'},
+                   'license_image': {'type': 'string', 'format': 'binary', 'description': 'Front of the licence.'},
+                   'license_back_image': {'type': 'string', 'format': 'binary',
+                                          'description': 'Back of the licence, with the barcode. Do not shrink it '
+                                                         'below 1200 px on the long side.'},
                    'selfie': {'type': 'string', 'format': 'binary', 'description': 'From the camera, now.'},
                    'biometric_consent': {'type': 'boolean', 'description': 'The driver ticked the notice box.'},
                    'notice_version': {'type': 'string', 'description': 'The version of the notice shown.'},
-               }, 'required': ['license_image', 'selfie', 'biometric_consent', 'notice_version']}},
+               }, 'required': ['license_image', 'license_back_image', 'selfie', 'biometric_consent',
+                               'notice_version']}},
                responses={200: ResultSerializer},
-               description='Same as the profile page: needs the current notice agreed, a licence photo, a selfie '
-                           'taken now, and a primary vehicle with a photo; licence details come from the profile. '
-                           'Takes up to two minutes. Photos are never stored. Error codes: consent_required, '
-                           'notice_changed, license_required, invalid_license_image, selfie_required, '
-                           'invalid_selfie, vehicle_photo_required (400), throttled (429), service_offline, '
+               description='Same as the profile page: needs the current notice agreed, photos of the front and '
+                           'the back of the licence, a selfie taken now, and a primary vehicle with a photo; '
+                           'licence details come from the profile. Drivers only. Takes up to two minutes. '
+                           'Photos are never stored. Error codes: consent_required, notice_changed, '
+                           'license_required, invalid_license_image, license_back_required, '
+                           'invalid_license_back_image, selfie_required, invalid_selfie, '
+                           'vehicle_photo_required (400), not_a_driver (403), throttled (429), service_offline, '
                            'service_error (503).')
 @api_view(['POST'])
 @permission_classes(SIGNED_IN)
@@ -126,7 +132,8 @@ def verify(request):
 
     try:
         result = verification.verify(
-            request._request, user, request.FILES.get('license_image'), request.FILES.get('selfie'),
+            request._request, user, request.FILES.get('license_image'), request.FILES.get('license_back_image'),
+            request.FILES.get('selfie'),
             consent_details(client_ip(request), request.META.get('HTTP_USER_AGENT', '')))
     except verification.VerificationError as e:
         raise VerificationRefused(e)

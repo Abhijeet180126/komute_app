@@ -1,12 +1,13 @@
-"""Driver identity verification with DL-Verification (API module 8).
+"""Driver identity verification with the verification node (API module 8).
 
 Moved from komute/views.py (verify_driver_view, request_verification_review_view
 and their helpers), which call these. The rules that matter most here:
 
 - the driver accepts the current biometric notice on each attempt, and the
   consent is recorded before any image leaves the server (privacy policy s.12);
-- the licence photo and the selfie are resized in memory, sent to the service
-  and dropped: never written to disk or storage (audit P-5/P-13). Callers
+- the licence photos (front, and back with the barcode) and the selfie are
+  resized in memory, sent to the service and dropped: never written to disk
+  or storage (audit P-5/P-13). Callers
   install InMemoryUploadHandler before the request body is read;
 - only the outcome is kept: which checks passed, reason categories (never the
   service's reason text, which can quote licence values) and the face score;
@@ -56,7 +57,7 @@ class InMemoryUploadHandler(MemoryFileUploadHandler):
         self.activated = True
 
 
-# Keyword -> category for DL-Verification's free-text rejection_reasons. The
+# Keyword -> category for the node's free-text rejection_reasons. The
 # service can't send codes, and its text may quote licence values, which the
 # privacy policy (s.9/s.13) doesn't let us keep -- so only the category is
 # stored. First match wins: image quality before the field checks, and vehicle
@@ -112,14 +113,19 @@ def record_biometric_consent(user, consent):
     )
 
 
-def verify(request, user, license_file, selfie_file, consent):
+def verify(request, user, license_file, license_back_file, selfie_file, consent):
     """One verification attempt, after the caller's rate limit and
     consent_error() check. Returns the result the driver is shown; raises
     VerificationError."""
     import requests as http_client
 
-    # The licence photo comes with this request and is never written to
-    # storage: it is resized in memory, sent to DL-Verification and dropped
+    # Only drivers verify. Checked first: a rider leaves no consent record
+    # and no photo is read.
+    if user.role != "driver":
+        raise VerificationError("Only drivers can verify their identity.", status=403, code='not_a_driver')
+
+    # The licence photos come with this request and are never written to
+    # storage: they are resized in memory, sent to the node and dropped
     # with the request (audit P-5/P-13).
     if not license_file:
         raise VerificationError("Please add a photo of your driving license.", code='license_required')
@@ -128,6 +134,18 @@ def verify(request, user, license_file, selfie_file, consent):
     except ValidationError as e:
         raise VerificationError(f"License photo: {e.messages[0]} Please choose another photo.",
                                 code='invalid_license_image')
+
+    # The node reads the barcode on the back. It needs more pixels than the
+    # front: readable at 1200 and 1600 px, one card fails at 800 px.
+    if not license_back_file:
+        raise VerificationError("Please add a photo of the back of your driving license, with the barcode.",
+                                code='license_back_required')
+    try:
+        license_back_bytes = resize_image(license_back_file, max_dim=1600,
+                                          label=f"user={user.id} verify-license-back").read()
+    except ValidationError as e:
+        raise VerificationError(f"License back photo: {e.messages[0]} Please choose another photo.",
+                                code='invalid_license_back_image')
 
     # Only the selfie captured for this attempt counts. The profile photo is
     # never used: it may legitimately show the driver's vehicle instead of
@@ -140,10 +158,10 @@ def verify(request, user, license_file, selfie_file, consent):
     except ValidationError as e:
         raise VerificationError(f"Selfie: {e.messages[0]} Please take the selfie again.", code='invalid_selfie')
 
-    # The verification pipeline scores DL OCR, face biometrics, and vehicle
-    # ALPR as one composite decision -- a missing vehicle photo makes the
-    # whole pipeline reject the driver (not just the vehicle), so a vehicle
-    # with a photo is required before calling out to the service at all.
+    # The node checks the licence barcode, the face and the vehicle plate as
+    # one decision -- a missing vehicle photo makes it reject the driver (not
+    # just the vehicle), so a vehicle with a photo is required before
+    # calling out to the service at all.
     user_vehicle = user.vehicles.filter(is_primary=True).first() or user.vehicles.first()
     if not user_vehicle or not user_vehicle.photo_url:
         raise VerificationError("Please add a vehicle with a photo to your profile before verifying.",
@@ -160,6 +178,9 @@ def verify(request, user, license_file, selfie_file, consent):
     payload = {
         "request_id": f"req_{uuid.uuid4().hex[:8]}",
         "driver_id": f"usr_{user.id}",
+        # When the driver agreed, under which notice. Time zone included: the node refuses one without.
+        "consent_at": timezone.now().isoformat(),
+        "consent_policy_version": settings.BIOMETRIC_NOTICE_VERSION,
         "personal_info": {
             "full_name": user.full_name or "",
             "date_of_birth": user.dob.strftime("%Y-%m-%d") if user.dob else "",
@@ -179,6 +200,7 @@ def verify(request, user, license_file, selfie_file, consent):
         "images": {
             "selfie_base64": base64.b64encode(selfie_bytes).decode("utf-8"),
             "license_image_base64": base64.b64encode(license_bytes).decode("utf-8"),
+            "license_back_base64": base64.b64encode(license_back_bytes).decode("utf-8"),
             "vehicle_photo_base64": base64.b64encode(vehicle_bytes).decode("utf-8"),
         },
     }
@@ -197,7 +219,7 @@ def verify(request, user, license_file, selfie_file, consent):
         resp.raise_for_status()
         result = resp.json()
     except http_client.exceptions.ConnectionError:
-        raise VerificationError("Verification service is offline. Make sure DL-Verification is running.",
+        raise VerificationError("Verification service is offline. Please try again later.",
                                 status=503, code='service_offline')
     except Exception:
         logger.exception("verify_driver_view: verification service call failed for user %s", user.id)
@@ -212,9 +234,8 @@ def verify(request, user, license_file, selfie_file, consent):
         name: bool((stages.get(name) or {}).get("passed", False))
         for name in ("license_ocr", "face_biometrics", "vehicle_verification")
     }
-    # The service approves on one combined score (licence OCR + face +
-    # vehicle, > 85%), which can carry a failed check. A driver passes only
-    # if every check passed as well; a missing check counts as failed.
+    # A driver passes only if the decision is APPROVED and every check
+    # passed as well; a missing check counts as failed.
     verified = decision == "APPROVED" and all(stage_results.values())
     stage2 = stages.get("face_biometrics", {})
     try:
@@ -270,9 +291,9 @@ def verify(request, user, license_file, selfie_file, consent):
         send_review_admin_email(request, log)
     # Reason codes only, never the reason text (see above).
     upload_logger.info(
-        "verification result: user=%s decision=%s stages=%s reasons=%s image_bytes=selfie:%d,license:%d,vehicle:%d",
+        "verification result: user=%s decision=%s stages=%s reasons=%s image_bytes=selfie:%d,license:%d,license_back:%d,vehicle:%d",
         user.id, decision, stage_results, codes,
-        len(selfie_bytes), len(license_bytes), len(vehicle_bytes),
+        len(selfie_bytes), len(license_bytes), len(license_back_bytes), len(vehicle_bytes),
     )
 
     return {

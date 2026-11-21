@@ -71,8 +71,8 @@ def plate_error(user, plate, vehicle=None):
 
 
 def details_changed(vehicle, make, model, year, color, plate):
-    """DL-Verification checked make, model, year, colour and plate against
-    the photo; any real change voids that."""
+    """A verification pass vouched for these vehicle details (the node
+    compares the plate); any real change voids that."""
     return (
         make.casefold() != (vehicle.make or "").casefold()
         or model.strip().casefold() != (vehicle.model or "").strip().casefold()
@@ -92,7 +92,7 @@ def create_vehicle(user, *, make, model, year, color, plate):
     """A new, unverified vehicle. The first one is the primary."""
     return Vehicle.objects.create(
         owner=user, make=make, model=model, year=year, color=color, plate=plate,
-        # Verified only by a DL-Verification pass (C3).
+        # Verified only by a verification-node pass (C3).
         vehicle_verified=False,
         is_primary=not user.vehicles.exists(),
     )

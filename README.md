@@ -64,3 +64,28 @@ API tests: `manage.py test api --settings=config.settings_regression`. Export th
 | `SEARCH_RADIUS_KM` | `15` | Radius in km around origin/destination within which rides are shown in search results |
 | `SERVICE_FEE_CENTS` | `100` | Flat service fee added to every booking, in cents (100 = $1.00) |
 | `INVITE_EXPIRY_HOURS` | `48` | Hours before a ride invite link/token expires |
+
+## Verification node
+
+Driver verification runs in `verification_node/`, a second process in the same Python environment (Python 3.11). It checks the licence barcode, the selfie against the licence photo, and the vehicle plate. It stores nothing; the app keeps only the outcome (`VerificationLog`). Do not edit `verification_node/` here: change it in the Komute-Local repository and export it again.
+
+1. `pip install -r requirements.txt` (it includes `verification_node/requirements.txt`).
+2. `python verification_node/fetch_models.py` (about 180 MB; every file is checked against `models.lock`).
+3. Add to `.env`:
+
+   ```text
+   KOMUTE_ENV=dev
+   KOMUTE_DEV_SKIP_LIVENESS=true
+   KOMUTE_MODELS_DIR=verification_node/backend/models
+   DL_VERIFICATION_API_KEY=<same value the app uses>
+   ```
+
+4. From the repository root, start the node:
+
+   ```text
+   python -m uvicorn backend.app.main:create_app --factory --app-dir verification_node --host 127.0.0.1 --port 8080 --workers 1
+   ```
+
+5. `GET http://127.0.0.1:8080/health` must return `"status":"ok"`.
+
+`DL_VERIFICATION_API_URL` defaults to `http://127.0.0.1:8080/api/v1/verify`. The node needs 2 GB of RAM or more and runs one verification at a time. There is no liveness model yet: `KOMUTE_ENV=production` refuses to start without one. Node tests: `cd verification_node && pip install -r requirements-dev.txt && python -m pytest -q`.

@@ -1610,12 +1610,13 @@ body.role-rider .driver-only { display: none; }
            the server never stores it (audit P-5/P-13). -->
       <div id="verifyLicenseStep" style="display:none;">
         <div class="verify-modal-icon">🪪</div>
-        <p class="verify-modal-title" style="font-size:18px;">Photo of your licence</p>
+        <p class="verify-modal-title" style="font-size:18px;">Photos of your licence</p>
         <p class="verify-modal-score" style="text-align:left;font-size:13px;">
-          Take or choose a clear photo of the front of your driving licence: flat, well lit, all four corners showing, no glare. It is used only for this check and isn't saved.
+          Add a clear photo of the front and of the back of your driving licence. The back has the barcode we read. Keep each photo flat, well lit, with all four corners showing and no glare. They are used only for this check and aren't saved.
         </p>
+        <p class="verify-modal-score" style="text-align:left;font-size:13px;font-weight:600;margin-bottom:4px;">Front of your licence</p>
         <div id="vlPreviewWrap" style="display:none;text-align:center;margin-bottom:10px;">
-          <img id="vlPreview" alt="Licence photo"
+          <img id="vlPreview" alt="Front of your licence"
             style="max-width:100%;max-height:200px;border-radius:10px;border:2px solid #e2e8f0;display:block;margin:0 auto;">
         </div>
         <div style="display:flex;gap:10px;justify-content:center;flex-wrap:wrap;">
@@ -1624,6 +1625,17 @@ body.role-rider .driver-only { display: none; }
         </div>
         <input type="file" id="verifyLicenseCameraInput" accept="image/*" capture="environment" style="display:none" onchange="handleVerifyLicenseInput(this)">
         <input type="file" id="verifyLicenseFileInput" accept="image/*" style="display:none" onchange="handleVerifyLicenseInput(this)">
+        <p class="verify-modal-score" style="text-align:left;font-size:13px;font-weight:600;margin:14px 0 4px;">Back of your licence (barcode)</p>
+        <div id="vlbPreviewWrap" style="display:none;text-align:center;margin-bottom:10px;">
+          <img id="vlbPreview" alt="Back of your licence"
+            style="max-width:100%;max-height:200px;border-radius:10px;border:2px solid #e2e8f0;display:block;margin:0 auto;">
+        </div>
+        <div style="display:flex;gap:10px;justify-content:center;flex-wrap:wrap;">
+          <button type="button" class="btn-modal btn-modal-primary" onclick="document.getElementById('verifyLicenseBackCameraInput').click()">Take Photo</button>
+          <button type="button" class="btn-modal btn-modal-secondary" onclick="document.getElementById('verifyLicenseBackFileInput').click()">Choose Photo</button>
+        </div>
+        <input type="file" id="verifyLicenseBackCameraInput" accept="image/*" capture="environment" style="display:none" onchange="handleVerifyLicenseBackInput(this)">
+        <input type="file" id="verifyLicenseBackFileInput" accept="image/*" style="display:none" onchange="handleVerifyLicenseBackInput(this)">
         <div style="display:flex;justify-content:center;margin-top:12px;">
           <button type="button" id="vlNextBtn" class="btn-verify-identity" disabled onclick="acceptVerifyLicense()">Next: selfie</button>
         </div>
@@ -2601,6 +2613,7 @@ body.role-rider .driver-only { display: none; }
   let _camMode = 'profile';
   let _verifySelfieBlob = null;
   let _verifyLicenseFile = null;
+  let _verifyLicenseBackFile = null;
   let _verifyModalHiddenForCamera = false;
   // Consent is asked on every attempt, so a driver re-verifying after
   // DRIVER_REVERIFY_DAYS agrees again and gets a fresh consent record.
@@ -2643,20 +2656,41 @@ body.role-rider .driver-only { display: none; }
     img._blobUrl = URL.createObjectURL(_verifyLicenseFile);
     img.src = img._blobUrl;
     document.getElementById('vlPreviewWrap').style.display = 'block';
-    document.getElementById('vlNextBtn').disabled = false;
+    _updateVerifyLicenseNext();
+  }
+
+  function handleVerifyLicenseBackInput(input) {
+    if (!input.files || !input.files[0]) return;
+    _verifyLicenseBackFile = input.files[0];
+    input.value = '';
+    const img = document.getElementById('vlbPreview');
+    if (img._blobUrl) URL.revokeObjectURL(img._blobUrl);
+    img._blobUrl = URL.createObjectURL(_verifyLicenseBackFile);
+    img.src = img._blobUrl;
+    document.getElementById('vlbPreviewWrap').style.display = 'block';
+    _updateVerifyLicenseNext();
+  }
+
+  // "Next" needs both sides of the licence.
+  function _updateVerifyLicenseNext() {
+    document.getElementById('vlNextBtn').disabled = !(_verifyLicenseFile && _verifyLicenseBackFile);
   }
 
   function _clearVerifyLicense() {
     _verifyLicenseFile = null;
-    const img = document.getElementById('vlPreview');
-    if (img._blobUrl) { URL.revokeObjectURL(img._blobUrl); img._blobUrl = null; }
-    img.removeAttribute('src');
+    _verifyLicenseBackFile = null;
+    ['vlPreview', 'vlbPreview'].forEach(id => {
+      const img = document.getElementById(id);
+      if (img._blobUrl) { URL.revokeObjectURL(img._blobUrl); img._blobUrl = null; }
+      img.removeAttribute('src');
+    });
     document.getElementById('vlPreviewWrap').style.display = 'none';
-    document.getElementById('vlNextBtn').disabled = true;
+    document.getElementById('vlbPreviewWrap').style.display = 'none';
+    _updateVerifyLicenseNext();
   }
 
   function acceptVerifyLicense() {
-    if (!_verifyLicenseFile) return;
+    if (!_verifyLicenseFile || !_verifyLicenseBackFile) return;
     document.getElementById('verifyLicenseStep').style.display = 'none';
     document.getElementById('verifyCaptureStep').style.display = 'block';
   }
@@ -2705,18 +2739,19 @@ body.role-rider .driver-only { display: none; }
   }
 
   function submitVerificationWithSelfie() {
-    if (!_verifySelfieBlob || !_verifyLicenseFile || !_biometricConsent) return;
+    if (!_verifySelfieBlob || !_verifyLicenseFile || !_verifyLicenseBackFile || !_biometricConsent) return;
 
     const vBtn = document.getElementById('vsVerifyBtn');
     const lbl  = document.getElementById('vsVerifyBtnLabel');
     vBtn.disabled = true;
     lbl.textContent = 'Verifying…';
 
-    Promise.all([shrinkImage(_verifySelfieBlob), shrinkImage(_verifyLicenseFile)])
-    .then(([selfie, license]) => {
+    Promise.all([shrinkImage(_verifySelfieBlob), shrinkImage(_verifyLicenseFile), shrinkImage(_verifyLicenseBackFile)])
+    .then(([selfie, license, licenseBack]) => {
       const fd = new FormData();
       fd.append('selfie', selfie, 'verify_selfie.jpg');
       fd.append('license_image', license, 'verify_license.jpg');
+      fd.append('license_back_image', licenseBack, 'verify_license_back.jpg');
       fd.append('biometric_consent', '1');
       fd.append('notice_version', '{{ biometric_notice_version }}');
       return fetch('/profile/verify-driver/', {
@@ -2727,7 +2762,7 @@ body.role-rider .driver-only { display: none; }
     })
     .then(r => {
       // A 413 comes from Nginx as an HTML page, not JSON.
-      if (r.status === 413) return { error: 'These photos are too large to upload. Please use a smaller licence photo and take the selfie again.' };
+      if (r.status === 413) return { error: 'These photos are too large to upload. Please use smaller licence photos and take the selfie again.' };
       return r.json().catch(() => ({ error: 'Verification service error. Please try again later.' }));
     })
     .then(data => {

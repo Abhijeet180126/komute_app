@@ -177,7 +177,7 @@ r2.font.color.rgb = RGBColor.from_string(BLUE)
 
 p2b = doc.add_paragraph()
 p2b.alignment = WD_ALIGN_PARAGRAPH.CENTER
-r2b = p2b.add_run("Django/Channels ride-sharing platform + DL-Verification driver-verification service")
+r2b = p2b.add_run("Django/Channels ride-sharing platform + verification node (driver verification)")
 r2b.font.name = "Calibri"
 r2b.font.size = Pt(12)
 r2b.font.color.rgb = RGBColor.from_string(GREY)
@@ -192,7 +192,7 @@ r3.font.color.rgb = RGBColor.from_string(GREY)
 
 p4 = doc.add_paragraph()
 p4.alignment = WD_ALIGN_PARAGRAPH.CENTER
-r4 = p4.add_run("Scope: KomuteProject (Django) and DL-Verification-main (Node.js + Python ML)\nco-deployed on a single Ubuntu 22.04 droplet")
+r4 = p4.add_run("Scope: KomuteProject (Django) and its verification node (verification_node/, Python ML)\nrun on one Ubuntu 22.04 droplet")
 r4.font.name = "Calibri"
 r4.font.size = Pt(10)
 r4.font.color.rgb = RGBColor.from_string(GREY)
@@ -216,8 +216,8 @@ toc_items = [
     "9. Step 6 — Deploy the Komute Django App",
     "10. Step 7 — Production Settings Hardening (settings.py)",
     "11. Step 8 — systemd Service for Komute (Daphne)",
-    "12. Step 9 — Install Docker & Docker Compose",
-    "13. Step 10 — Deploy DL-Verification (Node API + Python Face API)",
+    "12. Step 9 — Install the Verification Node Packages and Models",
+    "13. Step 10 — Run the Verification Node (systemd)",
     "14. Step 11 — Nginx Reverse Proxy + HTTPS",
     "15. Step 12 — Cron Jobs (Scheduled Management Commands)",
     "16. Step 13 — End-to-End Smoke Test",
@@ -235,16 +235,15 @@ page_break()
 add_heading("1. Architecture Overview", level=1)
 add_para(
     "Komute is a Django 5.2 app served over ASGI (Django Channels + Daphne) for WebSocket chat, backed by "
-    "PostgreSQL and Redis. Driver identity verification is delegated to a separate project, "
-    "DL-Verification-main, which is a two-service system (Node.js orchestration API + Python Flask "
-    "face/OCR ML API)."
+    "PostgreSQL and Redis. Driver identity verification runs in the verification node "
+    "(verification_node/), a second Python process in the same virtual environment. It stores nothing: "
+    "Komute keeps only the outcome."
 )
 add_warn(
-    "The Django view verify_driver_view (komute/views.py) calls the verification service at the hardcoded "
-    "address http://localhost:3000/api/verify. This is not configurable via an environment variable. As a "
-    "direct consequence, the DL-Verification Node API must run on the same host as Komute, on port 3000 — "
-    "it cannot be deployed on a separate droplet without a code change. This guide deploys both projects "
-    "on one droplet to match this constraint."
+    "Komute calls the node at DL_VERIFICATION_API_URL (default http://127.0.0.1:8080/api/v1/verify), "
+    "with the key in DL_VERIFICATION_API_KEY. The node needs 2 GB of RAM or more and runs one "
+    "verification at a time. This guide runs it on the same droplet. To use a separate machine, change "
+    "the URL, put TLS in front of the node and bind it to a private address."
 )
 add_para("Recommended process topology on the single droplet:")
 add_code(r"""
@@ -269,32 +268,23 @@ Internet
 | (apt package)     |           | (apt package)    |
 +------------------+           +------------------+
 
-Komute view verify_driver_view() -----> http://localhost:3000/api/verify
+Komute verification call --------> http://127.0.0.1:8080/api/v1/verify
                                               |
                                               v
                               +----------------------------------+
-                              | node-api  (Express, port 3000)    |
-                              | Docker container [docker compose] |
-                              +----------------------------------+
-                                              |
-                                              | http://python-face-api:5001
-                                              v                (docker network)
-                              +----------------------------------+
-                              | python-face-api (Flask, port 5001)|
-                              | Docker container [docker compose] |
-                              | InsightFace (ArcFace) + PaddleOCR |
+                              | verification node (FastAPI)      |
+                              | systemd unit: komute-verify      |
+                              | same Python venv, port 8080      |
+                              | ONNX models: barcode, face, plate|
                               +----------------------------------+
 
-Ports 3000 and 5001 are published to 127.0.0.1 only (not exposed to the
+Port 8080 listens on 127.0.0.1 only (not exposed to the
 internet) - only Nginx (80/443) is internet-facing, enforced via UFW.
 """)
 add_para(
-    "Why two different process managers (systemd vs. Docker Compose)? Komute is a plain Django/ASGI app "
-    "with no Dockerfile in the repo, so it is run natively under systemd + a Python venv — this is simpler "
-    "to debug and keeps direct filesystem access to media/log files. DL-Verification already ships tested "
-    "Dockerfiles and a docker-compose.yml for its two services, whose native dependencies (InsightFace, "
-    "ONNX Runtime, PaddleOCR, dlib toolchain) are heavy and fragile to install by hand — Docker Compose is "
-    "the path of least resistance and reuses what the project already provides."
+    "One process manager. Komute and the verification node both run natively under systemd, in the same "
+    "Python venv. There is no Docker. The node's models are ONNX files that fetch_models.py downloads and "
+    "checks against a hash list."
 )
 page_break()
 
@@ -339,29 +329,28 @@ add_bullets([
     "A DigitalOcean account with billing enabled.",
     "A registered domain name you can point at the droplet (e.g. komute.example.com).",
     "An SSH key pair on your local machine (ssh-keygen -t ed25519).",
-    "The Komute codebase and the DL-Verification-main codebase, ready to transfer to the server "
+    "The Komute codebase (it includes verification_node/), ready to transfer to the server "
     "(via git push to a private repo, or scp/rsync).",
     "SMTP credentials for transactional email (already required by Komute's .env — see README.md).",
 ])
 add_heading("Droplet Sizing", level=2, color=BLUE)
 add_para(
-    "The Python Face API loads InsightFace (ArcFace, buffalo_l model) and PaddleOCR into memory and runs "
-    "CPU-only inference (no GPU needed). These libraries are RAM-hungry at import time (model weights + "
-    "OpenBLAS/ONNX runtime). Undersizing this will cause OOM kills."
+    "The verification node loads ONNX models (face, plate, barcode) into memory and runs CPU-only "
+    "inference (no GPU needed). One verification peaks near 1.2 GB. The node needs 2 GB of RAM or more "
+    "on top of Postgres, Redis and Daphne. Undersizing this will cause OOM kills."
 )
 add_table(
     ["Plan", "vCPU / RAM", "Suitability"],
     [
         ["Basic Premium AMD, 4 GB", "2 vCPU / 4 GB", "Minimum viable — acceptable for staging/low traffic. Watch memory closely."],
-        ["Basic Premium AMD, 8 GB (recommended)", "4 vCPU / 8 GB", "Comfortable headroom for Postgres + Redis + Daphne + the two ML containers running concurrently."],
+        ["Basic Premium AMD, 8 GB (recommended)", "4 vCPU / 8 GB", "Comfortable headroom for Postgres + Redis + Daphne + the verification node."],
     ],
     col_widths=[2.3, 1.4, 2.5],
 )
 add_bullets([
     "OS image: Ubuntu 22.04 LTS x64 (used throughout this guide).",
     "Enable weekly backups or snapshots (small extra cost, cheap insurance).",
-    "50 GB+ SSD disk recommended — PaddleOCR/InsightFace model downloads plus Docker images consume "
-    "several GB.",
+    "25 GB+ SSD disk recommended — the node's models take about 180 MB.",
 ])
 page_break()
 
@@ -422,9 +411,8 @@ sudo systemctl restart ssh
 
 add_heading("Firewall (UFW)", level=2, color=BLUE)
 add_para(
-    "Only SSH, HTTP and HTTPS are exposed to the internet. Postgres (5432), Redis (6379), the Node API "
-    "(3000) and the Python Face API (5001) all stay bound to localhost/loopback and are never opened in "
-    "the firewall."
+    "Only SSH, HTTP and HTTPS are exposed to the internet. Postgres (5432), Redis (6379) and the verification node "
+    "(8080) all stay bound to localhost/loopback and are never opened in the firewall."
 )
 add_code(r"""
 sudo ufw allow OpenSSH
@@ -455,13 +443,6 @@ sudo apt install -y software-properties-common build-essential git curl \
     python3.11 python3.11-venv python3.11-dev \
     libpq-dev nginx redis-server postgresql postgresql-contrib \
     certbot python3-certbot-nginx
-""")
-
-add_heading("Node.js 20.x (required to run the DL-Verification stack via Docker, and useful for local checks)", level=2, color=BLUE)
-add_code(r"""
-curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
-sudo apt install -y nodejs
-node -v   # expect v20.x
 """)
 
 add_heading("Confirm Redis is running", level=2, color=BLUE)
@@ -678,66 +659,65 @@ page_break()
 # ============================================================================
 # 12. STEP 9
 # ============================================================================
-add_heading("12. Step 9 — Install Docker & Docker Compose", level=1)
+add_heading("12. Step 9 — Install the Verification Node Packages and Models", level=1)
+add_para(
+    "The verification node is the verification_node/ folder in the Komute repository. It uses the same venv "
+    "as Komute (Python 3.11). Its packages are listed in requirements.txt, so the install from Step 6 covers "
+    "them. Download the models once (about 180 MB; every file is checked against models.lock):"
+)
 add_code(r"""
-curl -fsSL https://get.docker.com | sudo sh
-sudo usermod -aG docker deploy
-newgrp docker   # or log out/in to pick up the group change
-
-docker --version
-docker compose version
+cd /var/www/komute
+source venv/bin/activate
+pip install -r requirements.txt
+python verification_node/fetch_models.py
 """)
+add_para(
+    "Add these lines to /var/www/komute/.env. The node reads only KOMUTE_* keys and "
+    "DL_VERIFICATION_API_KEY. Use the same key value for Komute."
+)
+add_code(r"""
+KOMUTE_ENV=dev
+KOMUTE_DEV_SKIP_LIVENESS=true
+KOMUTE_MODELS_DIR=verification_node/backend/models
+DL_VERIFICATION_API_KEY=<long random value>
+""")
+add_warn(
+    "No liveness model exists yet. KOMUTE_ENV=production refuses to start without one, so the node runs "
+    "with KOMUTE_ENV=dev and liveness skipped until a model is supplied. Do not edit files under "
+    "verification_node/ on the server: change the node in its own repository and export it again."
+)
 page_break()
 
 # ============================================================================
 # 13. STEP 10
 # ============================================================================
-add_heading("13. Step 10 — Deploy DL-Verification (Node API + Python Face API)", level=1)
+add_heading("13. Step 10 — Run the Verification Node (systemd)", level=1)
 add_para(
-    "Transfer DL-Verification-main to the server the same way as Komute (rsync or git). Only the "
-    "backend/ folder (node-api + python-face-api) is required for the Komute integration — the frontend/ "
-    "React app is not called by Django and can be skipped for this deployment."
+    "Install the unit file that ships with the node (user www-data, working directory /var/www/komute, "
+    "port 8080, one worker):"
 )
 add_code(r"""
-rsync -avz --exclude 'node_modules' --exclude 'venv' --exclude '__pycache__' \
-    "./DL-Verification-main/" deploy@<droplet-ip>:/home/deploy/apps/dl-verification/
+sudo cp /var/www/komute/verification_node/deploy/komute-verify.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now komute-verify
 """)
-add_heading("Build and start the stack", level=2, color=BLUE)
-add_para(
-    "docker-compose.yml (at the DL-Verification-main root) already defines both services, publishes "
-    "ports 3000 and 5001 to the host, wires the internal Docker network so node-api reaches "
-    "python-face-api by container name, and sets restart: unless-stopped."
-)
+add_heading("Verify the node", level=2, color=BLUE)
 add_code(r"""
-cd /home/deploy/apps/dl-verification
-docker compose build
-docker compose up -d
-docker compose ps
+curl http://127.0.0.1:8080/health      # {"status":"ok", ...}
+journalctl -u komute-verify -f
 """)
 add_note(
-    "First startup downloads the InsightFace buffalo_l model and PaddleOCR model weights from the "
-    "internet (several hundred MB total). This can take a few minutes on first boot — watch "
-    "docker compose logs -f python-face-api until you see the server report it's ready, before testing."
+    "Do not use EnvironmentFile in the unit: the node reads /var/www/komute/.env itself, and systemd "
+    "parses .env differently."
 )
-add_heading("Verify both services", level=2, color=BLUE)
-add_code(r"""
-curl http://127.0.0.1:5001/health
-curl http://127.0.0.1:3000/api/health
-""")
-add_heading("Keep the stack running across reboots", level=2, color=BLUE)
+add_heading("Cutover and rollback", level=2, color=BLUE)
 add_para(
-    "Container restart policies (unless-stopped) bring containers back up automatically once the Docker "
-    "daemon restarts, and the Docker daemon itself is enabled by default. Confirm:"
+    "Start komute-verify, then stop the old DL-Verification service. The URL and key are unchanged. "
+    "To roll back, stop komute-verify and start the old service again."
 )
-add_code("sudo systemctl enable docker")
 add_warn(
-    "Ports 3000 and 5001 are bound by Docker's default port publishing, which listens on all interfaces "
-    "(0.0.0.0) unless restricted. Since UFW is enabled and does not explicitly allow 3000/5001, external "
-    "traffic to those ports is blocked at the firewall — but be aware Docker manipulates iptables directly "
-    "and can bypass UFW rules in some configurations. Confirm from outside the droplet that 3000 and 5001 "
-    "are unreachable (e.g. curl http://<droplet-ip>:3000 from your laptop should time out) before going "
-    "live. If it does not, bind the compose ports explicitly to loopback in docker-compose.yml, e.g. "
-    "\"127.0.0.1:3000:3000\" instead of \"3000:3000\"."
+    "The node handles one verification at a time. A second driver at the same moment gets the generic "
+    "\"service error\" message."
 )
 page_break()
 
@@ -849,14 +829,14 @@ page_break()
 add_heading("16. Step 13 — End-to-End Smoke Test", level=1)
 add_bullets([
     "systemctl status komute — active (running).",
-    "docker compose ps (in dl-verification dir) — both containers healthy.",
+    "systemctl status komute-verify and curl http://127.0.0.1:8080/health — node healthy.",
     "Visit https://komute.example.com/ — site loads over HTTPS, padlock valid.",
     "Sign up / log in — confirm verification email is sent (SMTP working).",
     "Open two browser sessions in an active ride chat — confirm messages arrive live (WebSocket / Redis "
     "channel layer working).",
     "Log in as a driver, upload a license photo + take a selfie, submit for verification — confirm the "
-    "request reaches Node API → Python Face API and returns a verified/rejected result. If you see "
-    "\"Verification service is offline\", check docker compose logs.",
+    "request reaches the verification node and returns a verified/rejected result. If you see "
+    "\"Verification service is offline\", check journalctl -u komute-verify.",
     "Download a ride receipt PDF — confirms the reportlab fix from Step 2 took effect.",
     "Check static assets (CSS/images) load correctly — confirms collectstatic + Nginx alias are correct.",
 ])
@@ -888,8 +868,8 @@ add_para(
 add_heading("Monitoring", level=2, color=BLUE)
 add_bullets([
     "Enable the free DigitalOcean Monitoring agent and set alert policies for CPU, memory, and disk — "
-    "the ML containers are the most likely source of memory pressure.",
-    "journalctl -u komute -f and docker compose logs -f for live troubleshooting.",
+    "the verification node is the most likely source of memory pressure.",
+    "journalctl -u komute -f and journalctl -u komute-verify -f for live troubleshooting.",
     "Rotate logs/cron.log (e.g. via logrotate) so it doesn't grow unbounded.",
 ])
 page_break()
@@ -908,12 +888,14 @@ python manage.py migrate
 python manage.py collectstatic --noinput
 sudo systemctl restart komute
 """)
-add_heading("DL-Verification", level=2, color=BLUE)
+add_heading("Verification node", level=2, color=BLUE)
 add_code(r"""
-cd /home/deploy/apps/dl-verification
-git pull                       # or re-sync via rsync
-docker compose build
-docker compose up -d
+cd /var/www/komute
+git pull                       # includes verification_node/
+source venv/bin/activate
+pip install -r requirements.txt
+python verification_node/fetch_models.py
+sudo systemctl restart komute-verify
 """)
 page_break()
 
@@ -925,8 +907,8 @@ add_table(
     ["Symptom", "Likely cause", "Fix"],
     [
         ["\"Verification service is offline\" error in the app",
-         "node-api container not running, or crashed",
-         "docker compose ps; docker compose logs node-api; docker compose restart node-api"],
+         "komute-verify not running, or crashed",
+         "systemctl status komute-verify; journalctl -u komute-verify -n 100; systemctl restart komute-verify"],
         ["502 Bad Gateway from Nginx",
          "Daphne / komute.service not running",
          "systemctl status komute; journalctl -u komute -n 100"],
@@ -943,9 +925,9 @@ add_table(
         ["ModuleNotFoundError: reportlab",
          "Deployed from a repo copy before the Step 2 fix",
          "pip install -r requirements.txt after confirming reportlab is listed"],
-        ["python-face-api container repeatedly restarting",
-         "OOM kill (insufficient droplet RAM) or model download interrupted",
-         "docker stats; check dmesg for OOM; resize droplet or free memory; docker compose logs python-face-api"],
+        ["komute-verify repeatedly restarting",
+         "OOM kill (insufficient droplet RAM) or models missing",
+         "check dmesg for OOM; resize droplet to 2 GB RAM or more; rerun python verification_node/fetch_models.py"],
         ["manage.py migrate: permission denied for schema public",
          "PostgreSQL 15+ default schema privilege revocation",
          "Re-run the GRANT ALL ON SCHEMA public TO komute_user; from Step 4"],

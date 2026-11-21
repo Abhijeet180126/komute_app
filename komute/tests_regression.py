@@ -3163,6 +3163,47 @@ class VerifyDriverViewGateTests(TestCase):
         self.assertEqual(resp.status_code, 400)
         self.assertIn('selfie', json.loads(resp.content)['error'].lower())
 
+    def test_missing_licence_back_rejected(self):
+        # The node reads the barcode on the back of the licence: no back photo, no call.
+        self._make_verifiable()
+        data = self._selfie_file()
+        del data['license_back_image']
+        c = Client()
+        c.login(username='vd_driver@example.com', password='TestPass123')
+        with patch('komute.services.verification.open_stored_file', mock_open(read_data=b'fake-bytes')), \
+             patch('requests.post') as mock_post:
+            resp = c.post(reverse('verify-driver'), data)
+        self.assertEqual(resp.status_code, 400)
+        self.assertIn('back', json.loads(resp.content)['error'].lower())
+        mock_post.assert_not_called()
+
+    def test_unreadable_licence_back_rejected(self):
+        self._make_verifiable()
+        data = self._selfie_file()
+        data['license_back_image'] = SimpleUploadedFile('lb.jpg', b'garbage', content_type='image/jpeg')
+        c = Client()
+        c.login(username='vd_driver@example.com', password='TestPass123')
+        with patch('komute.services.verification.open_stored_file', mock_open(read_data=b'fake-bytes')), \
+             patch('requests.post') as mock_post:
+            resp = c.post(reverse('verify-driver'), data)
+        self.assertEqual(resp.status_code, 400)
+        self.assertIn('back', json.loads(resp.content)['error'].lower())
+        mock_post.assert_not_called()
+
+    def test_rider_refused_before_consent_or_call(self):
+        # Only drivers verify (the server did not check this before).
+        make_user('vd_rider@example.com', role='rider')
+        c = Client()
+        c.login(username='vd_rider@example.com', password='TestPass123')
+        with patch('komute.services.verification.open_stored_file', mock_open(read_data=b'fake-bytes')), \
+             patch('requests.post') as mock_post:
+            resp = c.post(reverse('verify-driver'), self._selfie_file())
+        self.assertEqual(resp.status_code, 403)
+        self.assertIn('driver', json.loads(resp.content)['error'].lower())
+        mock_post.assert_not_called()
+        self.assertFalse(BiometricConsent.objects.exists())
+        self.assertFalse(VerificationLog.objects.exists())
+
     def test_no_vehicle_rejected(self):
         c = Client()
         c.login(username='vd_driver@example.com', password='TestPass123')
@@ -3208,16 +3249,21 @@ class VerifyDriverViewGateTests(TestCase):
         self.assertEqual(data['similarity'], 93.0)
         self.assertEqual(data['decision']['status'], 'APPROVED')
 
-        # The outbound payload must use the DL-Verification Node's actual
+        # The outbound payload must use the verification node's actual
         # schema field names -- this is what regresses if the request
         # shape silently drifts from the service's contract again.
         sent = mock_post.call_args.kwargs['json']
         self.assertEqual(mock_post.call_args.kwargs['headers']['X-API-Key'], settings.DL_VERIFICATION_API_KEY)
         self.assertEqual(mock_post.call_args.args[0], settings.DL_VERIFICATION_API_URL)
-        for key in ('request_id', 'driver_id', 'personal_info', 'license_details', 'vehicle_details', 'images'):
+        for key in ('request_id', 'driver_id', 'personal_info', 'license_details', 'vehicle_details', 'images',
+                    'consent_at', 'consent_policy_version'):
             self.assertIn(key, sent)
-        for key in ('selfie_base64', 'license_image_base64', 'vehicle_photo_base64'):
+        for key in ('selfie_base64', 'license_image_base64', 'license_back_base64', 'vehicle_photo_base64'):
             self.assertIn(key, sent['images'])
+        self.assertEqual(sent['consent_policy_version'], settings.BIOMETRIC_NOTICE_VERSION)
+        consent_at = datetime.fromisoformat(sent['consent_at'])
+        self.assertIsNotNone(consent_at.tzinfo)  # the node refuses a time without a zone
+        self.assertLess(abs(timezone.now() - consent_at), timedelta(minutes=1))
         self.assertEqual(sent['vehicle_details']['plate_number'], vehicle.plate)
 
         self.driver.refresh_from_db()
@@ -3276,9 +3322,10 @@ class VerifyDriverViewGateTests(TestCase):
 
 
 def _licence_image():
-    """The licence photo the verification modal sends with the selfie (it is
-    never stored, audit P-5/P-13)."""
-    return {'license_image': SimpleUploadedFile('l.jpg', _jpeg_bytes(), content_type='image/jpeg')}
+    """The licence photos (front, and back with the barcode) the verification
+    modal sends with the selfie (never stored, audit P-5/P-13)."""
+    return {'license_image': SimpleUploadedFile('l.jpg', _jpeg_bytes(), content_type='image/jpeg'),
+            'license_back_image': SimpleUploadedFile('lb.jpg', _jpeg_bytes(), content_type='image/jpeg')}
 
 
 def _consent_fields():
@@ -3596,7 +3643,9 @@ class ImageUploadTests(TestCase):
              patch('requests.post', return_value=mock_resp) as mock_post:
             resp = self.client.post(reverse('verify-driver'), {
                 'selfie': SimpleUploadedFile('s.jpg', _jpeg_bytes(), content_type='image/jpeg'),
-                'license_image': licence, **_consent_fields()})
+                'license_image': licence,
+                'license_back_image': SimpleUploadedFile('lb.jpg', _jpeg_bytes(), content_type='image/jpeg'),
+                **_consent_fields()})
         return resp, mock_post
 
     def test_licence_photo_sent_resized_and_never_stored(self):
@@ -3627,7 +3676,7 @@ class ImageUploadTests(TestCase):
         with patch('komute.services.verification.resize_image', side_effect=spy):
             resp, _ = self._verify(SimpleUploadedFile('l.jpg', self._big_jpeg(), content_type='image/jpeg'))
         self.assertEqual(resp.status_code, 200)
-        self.assertEqual(seen, [InMemoryUploadedFile, InMemoryUploadedFile])
+        self.assertEqual(seen, [InMemoryUploadedFile] * 3)  # licence front, licence back, selfie
 
     def test_verify_still_checks_csrf(self):
         self._verifiable()
@@ -3670,6 +3719,7 @@ class ImageUploadTests(TestCase):
         self.assertLess(html.index('id="verifyConsentStep"'), html.index('id="verifyLicenseStep"'))
         self.assertLess(html.index('id="verifyLicenseStep"'), html.index('id="verifyCaptureStep"'))
         self.assertIn("fd.append('license_image', license, 'verify_license.jpg')", html)
+        self.assertIn("fd.append('license_back_image', licenseBack, 'verify_license_back.jpg')", html)
 
     @override_settings(UPLOAD_REQUEST_MAX_MB=40)
     def test_upload_too_large_page(self):
