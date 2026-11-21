@@ -3885,14 +3885,14 @@ class DriverReverificationTests(TestCase):
         self.assertTrue(resp.context['reverify_expired'])
         self.assertContains(resp, 'Your identity verification expired on')
 
-    def test_verification_selfie_upload_only_in_debug(self):
+    def test_verification_selfie_has_no_file_upload(self):
+        # The verification selfie must be a live camera capture, in DEBUG too.
         c = self._login('rv_driver@example.com')
-        with override_settings(DEBUG=False):
-            resp = c.get(reverse('profile'))
-        self.assertNotContains(resp, 'id="verifySelfieFileInput"')
-        with override_settings(DEBUG=True):
-            resp = c.get(reverse('profile'))
-        self.assertContains(resp, 'id="verifySelfieFileInput"')
+        for debug in (False, True):
+            with override_settings(DEBUG=debug):
+                resp = c.get(reverse('profile'))
+            self.assertNotContains(resp, 'id="verifySelfieFileInput"')
+            self.assertNotContains(resp, 'Upload Photo (dev only)')
 
     def test_changing_profile_photo_keeps_verification(self):
         self._verified_days_ago(10)

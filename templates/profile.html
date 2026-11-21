@@ -1661,16 +1661,8 @@ body.role-rider .driver-only { display: none; }
           <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right:5px"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
           Open Camera
         </button>
-        {% if allow_verify_selfie_upload %}
-        <button type="button" class="btn-modal btn-modal-secondary" onclick="document.getElementById('verifySelfieFileInput').click()">
-          Upload Photo (dev only)
-        </button>
-        {% endif %}
       </div>
       <p id="vsCameraError" class="verify-modal-score" style="display:none;color:#b91c1c;font-size:13px;"></p>
-      {% if allow_verify_selfie_upload %}
-      <input type="file" id="verifySelfieFileInput" accept="image/*" capture="user" style="display:none" onchange="handleVerifyFileInput(this)">
-      {% endif %}
 
       <!-- Retake + Verify buttons (shown after photo) -->
       <div id="vsActionBtns" style="display:none;flex-direction:column;align-items:center;gap:10px;">
@@ -2721,13 +2713,6 @@ body.role-rider .driver-only { display: none; }
     document.getElementById('vsActionBtns').style.display  = 'none';
   }
 
-  function handleVerifyFileInput(input) {
-    if (!input.files || !input.files[0]) return;
-    _verifySelfieBlob = input.files[0];
-    showVerifySelfiePreview(URL.createObjectURL(_verifySelfieBlob));
-    input.value = '';
-  }
-
   function showVerifySelfiePreview(blobUrl) {
     const img = document.getElementById('vsPreview');
     if (img._blobUrl) URL.revokeObjectURL(img._blobUrl);
@@ -3024,16 +3009,10 @@ body.role-rider .driver-only { display: none; }
 
   function _camFallbackClick() {
     if (_camMode === 'verify') {
-      // Production has no file fallback for the verification selfie
-      // (allow_verify_selfie_upload): it must be a live camera capture.
-      const fileInput = document.getElementById('verifySelfieFileInput');
-      if (fileInput) {
-        fileInput.click();
-      } else {
-        const err = document.getElementById('vsCameraError');
-        err.textContent = "We couldn't open your camera. Allow camera access for this site and try again, or use a phone.";
-        err.style.display = 'block';
-      }
+      // No file fallback for the verification selfie: it must be a live camera capture.
+      const err = document.getElementById('vsCameraError');
+      err.textContent = "We couldn't open your camera. Allow camera access for this site and try again, or use a phone.";
+      err.style.display = 'block';
     } else {
       document.getElementById('selfieCameraFile').click();
     }

@@ -548,10 +548,6 @@ def profile_view(request):
         # has_unverified_vehicle, reverify_soon, reverify_expired.
         **status,
         "face_match_score": user.face_match_score,
-        # Uploading a file as the verification selfie is a development
-        # convenience only; in production the selfie must come from the
-        # live camera.
-        "allow_verify_selfie_upload": settings.DEBUG,
         "biometric_notice_version": settings.BIOMETRIC_NOTICE_VERSION,
         # Human review of the latest attempt (audit P-10): "pending" while
         # it's in the queue, "available" if a rejection can still be sent.
