@@ -5555,6 +5555,9 @@ class PrivacyPolicyProcessorTests(TestCase):
         'images.unsplash.com': 'Unsplash',
         'photon.komoot.io': 'Photon',
         'router.project-osrm.org': 'OSRM',
+        # MapKit JS, the route map when MAP_DISPLAY=mapkit.
+        'cdn.apple-mapkit.com': 'Apple',
+        '*.apple-mapkit.com': 'Apple',
         # form-action only: the sign-in buttons redirect there.
         'accounts.google.com': 'Google',
         'appleid.apple.com': 'Apple',

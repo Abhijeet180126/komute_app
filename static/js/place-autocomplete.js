@@ -1,7 +1,13 @@
-/* Place autocomplete (Photon), shared by post-ride, edit-ride and search-rides
+/* Place autocomplete, shared by post-ride, edit-ride and search-rides
    (ISSUES.md M2). A field only gets coordinates when the user picks one of
    the suggestions: nothing is auto-filled on blur or Tab, so the wrong place
    can't be chosen silently. A failed lookup says so instead of vanishing.
+
+   Where suggestions come from is set by the page's #map-config element
+   ({% map_config %}, komute/templatetags/map_tags.py): "photon" (the public
+   Photon server, the original) or "apple" (Komute's own /map/ endpoints, which
+   ask the map node). Set MAP_AUTOCOMPLETE in .env to switch; no redeploy of
+   the script is needed. "Locate Me" still uses placeLabel() with Photon.
 
    PlaceAutocomplete.attach(input, latInput, lngInput, { onSelect(place) })
    PlaceAutocomplete.hasPlace(latInput, lngInput) -> picked from suggestions?
@@ -14,6 +20,31 @@
   const BBOX = '-168,24,-52,72';   // CONUS + Canada + Alaska (bias only)
   const MIN_CHARS = 3;
   const DEBOUNCE_MS = 300;
+
+  const mapConfig = document.getElementById('map-config');
+  const USE_APPLE = !!mapConfig && mapConfig.dataset.autocomplete === 'apple';
+  const MAP_URL = '/map';   // Komute's own endpoints (komute/views_map.py), never a third-party host
+
+  // Where the rider probably is, so Apple can rank nearby places first. In order: the page's hint (the origin of their
+  // last search or ride), then a GPS fix the browser already allows without asking. This never shows a permission
+  // prompt. With neither, the server falls back to its own default and typed full addresses still resolve.
+  let biasPromise = null;
+  function getBias() {
+    if (biasPromise) return biasPromise;
+    const lat = parseFloat(mapConfig && mapConfig.dataset.biasLat);
+    const lon = parseFloat(mapConfig && mapConfig.dataset.biasLon);
+    if (isFinite(lat) && isFinite(lon)) return (biasPromise = Promise.resolve({ lat, lon }));
+    biasPromise = new Promise(resolve => {
+      if (!navigator.permissions || !navigator.geolocation) return resolve(null);
+      navigator.permissions.query({ name: 'geolocation' }).then(p => {
+        if (p.state !== 'granted') return resolve(null);
+        navigator.geolocation.getCurrentPosition(
+          pos => resolve({ lat: pos.coords.latitude, lon: pos.coords.longitude }),
+          () => resolve(null), { maximumAge: 600000, timeout: 4000 });
+      }).catch(() => resolve(null));
+    });
+    return biasPromise;
+  }
 
   function isInUsCanada(lat, lng) {
     const inMain   = lat >= 24 && lat <= 72 && lng >= -168 && lng <= -52;
@@ -86,6 +117,7 @@
     }
 
     function lookup(q) {
+      if (USE_APPLE) return lookupApple(q);
       if (controller) controller.abort();
       controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
       note('Searching…', 'autocomplete-loading');
@@ -124,6 +156,58 @@
           retry.addEventListener('mousedown', e => { e.preventDefault(); lookup(q); });
           dd.appendChild(retry);
         });
+    }
+
+    // Suggestions from Komute's /map/suggest/ (the map node, Apple Maps). Same box, same keys, same wording as the
+    // Photon path above; a row without coordinates is resolved when it is picked.
+    function lookupApple(q) {
+      if (controller) controller.abort();
+      controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
+      note('Searching…', 'autocomplete-loading');
+      getBias()
+        .then(bias => fetch(MAP_URL + '/suggest/?q=' + encodeURIComponent(q) + (bias ? '&lat=' + bias.lat + '&lon=' + bias.lon : ''),
+                            { credentials: 'same-origin', signal: controller ? controller.signal : undefined }))
+        .then(r => {
+          if (!r.ok) throw new Error('HTTP ' + r.status);
+          return r.json();
+        })
+        .then(data => {
+          if (input.value.trim() !== q) return;   // user kept typing
+          const places = (data.results || [])
+            .map(r => ({ label: [r.title, r.subtitle].filter(Boolean).join(', '), ref: r.ref, lat: r.lat, lng: r.lon }))
+            .filter(pl => pl.label && (pl.lat == null || isInUsCanada(pl.lat, pl.lng)));
+          if (!places.length) {
+            note('No US/Canada matches. Try adding the street, city or province/state.');
+            return;
+          }
+          const dd = open();
+          places.forEach(pl => {
+            const item = document.createElement('div');
+            item.className = 'autocomplete-item';
+            item.textContent = pl.label;
+            // mousedown, not click: fires before the input's blur closes the list
+            item.addEventListener('mousedown', e => { e.preventDefault(); pickApple(pl); });
+            dd.appendChild(item);
+          });
+        })
+        .catch(err => {
+          if (err && err.name === 'AbortError') return;
+          if (input.value.trim() !== q) return;
+          const dd = note("Couldn't load suggestions. Check your connection.");
+          const retry = document.createElement('div');
+          retry.className = 'autocomplete-item';
+          retry.textContent = '↻ Try again';
+          retry.addEventListener('mousedown', e => { e.preventDefault(); lookup(q); });
+          dd.appendChild(retry);
+        });
+    }
+
+    function pickApple(pl) {
+      if (pl.lat != null) return select(pl);
+      fetch(MAP_URL + '/details/?ref=' + encodeURIComponent(pl.ref), { credentials: 'same-origin' })
+        .then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+        .then(d => select({ label: pl.label, lat: d.lat, lng: d.lon }))
+        .catch(() => note("Couldn't load that place. Pick another or type the full address."));
     }
 
     input.addEventListener('input', () => {

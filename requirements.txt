@@ -59,3 +59,6 @@ reportlab==4.5.1
 
 # Verification node (replaces DL-Verification); same Python, own process
 -r verification_node/requirements.txt
+
+# Map node (Apple Maps behind it); same Python, own process
+-r map/requirements.txt

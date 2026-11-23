@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Apple Maps: address search via the map node</title>
+<link rel="stylesheet" href="places.css">
+<script src="place-autocomplete.apple.js"></script>
+</head><body>
+<header><h1>Address search and Locate Me: Apple Maps</h1><p class="sub">place-autocomplete.apple.js (data source swapped) · /api/map/v1/places/suggest, /details and /reverse · rider location sent as a bias</p></header>
+<form onsubmit="return false">
+  <div><label for="origin_input">Pickup</label><input type="text" id="origin_input" autocomplete="off" placeholder="Where are you leaving from?"></div>
+  <input type="hidden" id="origin_lat"><input type="hidden" id="origin_lng">
+  <button type="button" id="locateBtn" onclick="locateMe()">Locate me</button>
+  <div id="result">No place picked yet.</div>
+</form>
+<script>
+const input = document.getElementById('origin_input'), latI = document.getElementById('origin_lat'), lngI = document.getElementById('origin_lng'), out = document.getElementById('result');
+window.QA = { kind: 'apple' };
+// The rider's last known place. In the real page this is the profile city or the last GPS fix; here it is downtown Toronto.
+window.PLACE_BIAS = { lat: 43.6532, lon: -79.3832 };
+const show = (p) => { out.textContent = `label: ${p.label}\nlat/lng: ${(+p.lat).toFixed(5)}, ${(+p.lng).toFixed(5)}`; window.QA.picked = p; };
+PlaceAutocomplete.attach(input, latI, lngI, { onSelect: show });
+const labelOf = (p) => { const a = p.address || {}; return [[a.house_number, a.street].filter(Boolean).join(' '), a.city, a.province].filter(Boolean).join(', ') || p.title; };
+function locateMe() {
+  window.QA.locate = { started: performance.now() };
+  navigator.geolocation.getCurrentPosition(async (pos) => {
+    const { latitude, longitude } = pos.coords;
+    try {
+      if (!PlaceAutocomplete.isInCanada(latitude, longitude)) { out.textContent = 'Refused: Komute currently supports Canada only.'; window.QA.locate.refused = true; window.QA.locate.ms = Math.round(performance.now() - window.QA.locate.started); return; }
+      const res = await fetch(`/api/map/v1/places/reverse?lat=${latitude}&lon=${longitude}`);
+      if (res.status === 422) { out.textContent = 'Refused: Komute currently supports Canada only.'; window.QA.locate.refused = true; window.QA.locate.ms = Math.round(performance.now() - window.QA.locate.started); return; }
+      const p = res.ok ? await res.json() : null;
+      const label = (p && (p.label || labelOf(p))) || `${latitude.toFixed(4)}, ${longitude.toFixed(4)}`;
+      input.value = label; latI.value = latitude; lngI.value = longitude; input.classList.add('place-confirmed');
+      show({ label, lat: latitude, lng: longitude });
+      window.QA.locate.label = label; window.QA.locate.status = res.status;
+    } catch (e) { out.textContent = 'Could not resolve your address.'; window.QA.locate.error = String(e); }
+    window.QA.locate.ms = Math.round(performance.now() - window.QA.locate.started);
+  }, (e) => { out.textContent = 'GPS error ' + e.code; window.QA.locate.error = 'gps ' + e.code; window.QA.locate.ms = 1; });
+}
+</script></body></html>

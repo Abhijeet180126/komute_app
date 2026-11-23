@@ -49,7 +49,7 @@ def build(driver):
         # Blocked riders can't be invited, so don't list them (ISSUES.md A1).
         .exclude(user_id__in=UserBlock.objects.hidden_ids(driver.id))
         .select_related('user')
-        .order_by('-created_at')
+        .order_by('-created_at', '-id')  # id breaks ties: two searches can share a timestamp
     ) if routes else []
 
     # Riders who searched within the radius of a route's origin AND

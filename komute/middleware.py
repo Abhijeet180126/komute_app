@@ -43,7 +43,9 @@ class PermissionsPolicyMiddleware:
 # Where pages may load scripts, styles, fonts, images and connections from
 # (audit S-8). Every outside host here is one a template or static/js file
 # uses: Leaflet from unpkg, OSM tiles, Unsplash photos on the
-# about/how-it-works pages, Photon place search and OSRM routing. 'self'
+# about/how-it-works pages, Photon place search, OSRM routing and Apple's
+# MapKit JS from cdn.apple-mapkit.com (the route map when MAP_DISPLAY=mapkit; it also
+# calls other *.apple-mapkit.com hosts and runs blob: workers). 'self'
 # also covers the chat and notification websockets on the same host.
 # 'unsafe-inline' stays until the inline <script> blocks and onclick=
 # handlers are gone (patch 01, step 3). Add a host here before using it.
@@ -51,12 +53,13 @@ class PermissionsPolicyMiddleware:
 # from everything but form-action (sign-in).
 CONTENT_SECURITY_POLICY = '; '.join([
     "default-src 'self'",
-    "script-src 'self' 'unsafe-inline' https://unpkg.com",
+    "script-src 'self' 'unsafe-inline' https://unpkg.com https://cdn.apple-mapkit.com",
     "style-src 'self' 'unsafe-inline' https://unpkg.com",
     "font-src 'self'",
     "img-src 'self' data: blob: https://tile.openstreetmap.org https://*.tile.openstreetmap.org "
-    "https://images.unsplash.com https://unpkg.com",
-    "connect-src 'self' https://photon.komoot.io https://router.project-osrm.org",
+    "https://images.unsplash.com https://unpkg.com https://cdn.apple-mapkit.com",
+    "connect-src 'self' https://photon.komoot.io https://router.project-osrm.org https://*.apple-mapkit.com",
+    "worker-src 'self' blob:",
     "media-src 'self' blob:",
     "frame-ancestors 'none'",
     "base-uri 'self'",

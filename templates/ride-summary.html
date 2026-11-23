@@ -1,4 +1,4 @@
-{% load static %}
+{% load static map_tags %}
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -7,8 +7,12 @@
 <title>Komüte – Ride Summary</title>
 <link rel="stylesheet" href="{% static 'css/fonts.css' %}">
 <link rel="stylesheet" href="{% static 'css/base.css' %}">
+{% map_setting 'display' as map_display %}{% if map_display == 'mapkit' %}
+<script src="https://cdn.apple-mapkit.com/mk/5.x.x/mapkit.js"></script>
+{% else %}
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin=""/>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+{% endif %}
 <style>
 :root{
   --light-bg:#E9F7EE;--contrast-lt:#D5FBE5;--brand-green:#0D7810;
@@ -480,6 +484,78 @@ body{font-family:'DM Sans',sans-serif;background:var(--light-bg);min-height:100v
 const RIDE_ID = "{{ ride_id }}";
 
 /* ── ROUTE MAP ── */
+{% if map_display == 'mapkit' %}
+// Apple's MapKit JS (MAP_DISPLAY=mapkit). The line and the stats come from Apple as well: Apple's route is only
+// drawn on Apple's map, never on the Leaflet one.
+(function () {
+  const originLat = {{ ride.origin_lat|default:0 }};
+  const originLng = {{ ride.origin_lng|default:0 }};
+  const destLat   = {{ ride.dest_lat|default:0 }};
+  const destLng   = {{ ride.dest_lng|default:0 }};
+  const stops     = [{% for stop in stops %}{% if stop.lat and stop.lng %}{ lat: {{ stop.lat }}, lng: {{ stop.lng }}, name: "{{ stop.location|escapejs }}" },{% endif %}{% endfor %}];
+
+  if (!originLat || !originLng || !destLat || !destLng || !window.mapkit) return;
+
+  mapkit.init({
+    authorizationCallback: (done) => {
+      fetch('{% url 'map-token' %}', { credentials: 'same-origin' })
+        .then(r => (r.ok ? r.json() : Promise.reject(r.status)))
+        .then(j => done(j.token))
+        .catch(() => {});   // no token: the map frame stays empty and the stats stay hidden
+    },
+    language: 'en',
+  });
+
+  const map = new mapkit.Map('routeMap', {
+    isScrollEnabled: false, isZoomEnabled: false, isRotationEnabled: false,
+    showsZoomControl: false, showsMapTypeControl: false, showsCompass: mapkit.FeatureVisibility.Hidden,
+  });
+  // Titles are set as plain text, so place names typed by the driver are never parsed as HTML.
+  const pin = (lat, lng, color, title, subtitle) =>
+    new mapkit.MarkerAnnotation(new mapkit.Coordinate(lat, lng), { color, title, subtitle, glyphText: '' });
+  const pins = [
+    pin(originLat, originLng, '#0D7810', '{{ ride.origin|escapejs }}', 'Departure point'),
+    ...stops.map((s, i) => pin(s.lat, s.lng, '#f59e0b', `Stop ${i + 1}`, s.name)),
+    pin(destLat, destLng, '#0C63B4', '{{ ride.destination|escapejs }}', 'Destination'),
+  ];
+  const padding = new mapkit.Padding(30, 30, 30, 30);
+  map.addAnnotations(pins);
+  map.showItems(pins, { animate: false, padding });
+
+  const q = new URLSearchParams({ o: originLat + ',' + originLng, d: destLat + ',' + destLng, line: '1' });
+  if (stops.length) q.set('s', stops.map(s => s.lat + ',' + s.lng).join(';'));
+  fetch('{% url 'map-route' %}?' + q.toString(), { credentials: 'same-origin' })
+    .then(r => (r.ok ? r.json() : Promise.reject(r.status)))
+    .then(data => {
+      if (!Array.isArray(data.line) || data.line.length < 2) return;
+      const line = new mapkit.PolylineOverlay(
+        data.line.map(p => new mapkit.Coordinate(p[1], p[0])),
+        { style: new mapkit.Style({ lineWidth: 4, strokeColor: '#0D7810', strokeOpacity: 0.85 }) });
+      map.addOverlay(line);
+      map.showItems([...pins, line], { animate: false, padding });
+
+      const km   = (data.distance_m / 1000).toFixed(1);
+      const mins = Math.round(data.duration_s / 60);
+      const hrs  = Math.floor(mins / 60);
+      const rem  = mins % 60;
+      const timeStr = hrs > 0 ? `${hrs}h ${rem}m` : `${mins} min`;
+      const stats = document.getElementById('routeMapStats');
+      stats.innerHTML = `
+        <div class="stat-item">
+          <svg viewBox="0 0 24 24"><line x1="3" y1="12" x2="21" y2="12"/><polyline points="15 6 21 12 15 18"/></svg>
+          Distance: ${km} km
+        </div>
+        <div class="stat-divider"></div>
+        <div class="stat-item">
+          <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+          Duration: ~ ${timeStr}
+        </div>
+      `;
+      stats.style.display = 'flex';
+    })
+    .catch(() => {});   // the pins stay in view; the stats stay hidden, as on the Leaflet map
+})();
+{% else %}
 (function () {
   const originLat = {{ ride.origin_lat|default:0 }};
   const originLng = {{ ride.origin_lng|default:0 }};
@@ -572,6 +648,7 @@ const RIDE_ID = "{{ ride_id }}";
       map.fitBounds([[originLat, originLng], [destLat, destLng]], { padding: [30, 30] });
     });
 })();
+{% endif %}
 
 function downloadReceipt(){
   showToast('Preparing receipt…');

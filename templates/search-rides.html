@@ -1,4 +1,4 @@
-{% load static %}
+{% load static map_tags %}
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -514,7 +514,7 @@ nav {
 <!-- ════ NAVBAR ════ -->
 <!-- <nav>
   <a href="{% url 'profile' %}" class="nav-logo">
-    <img src="{% static 'komute/logo.png' %}" alt="Komüte"
+    <img src="{% static 'images/logo.png' %}" alt="Komüte"
          onerror="this.style.display='none';this.nextElementSibling.style.display='block'">
     <span class="nav-logo-text" style="display:none">KOMÜTE</span>
   </a>
@@ -853,6 +853,7 @@ nav {
 
 </div><!-- /page-outer -->
 
+{% map_config %}
 <script src="{% static 'js/place-autocomplete.js' %}"></script>
 <script>
   // Always display MM-DD-YYYY in date inputs regardless of browser locale

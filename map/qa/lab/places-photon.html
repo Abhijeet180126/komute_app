@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Today: Photon address search</title>
+<link rel="stylesheet" href="places.css">
+<script src="/prod-static/js/place-autocomplete.js"></script>
+</head><body>
+<header><h1>Address search and Locate Me: today's stack</h1><p class="sub">The real static/js/place-autocomplete.js · photon.komoot.io/api and /reverse (same calls as post-ride.html)</p></header>
+<form onsubmit="return false">
+  <div><label for="origin_input">Pickup</label><input type="text" id="origin_input" autocomplete="off" placeholder="Where are you leaving from?"></div>
+  <input type="hidden" id="origin_lat"><input type="hidden" id="origin_lng">
+  <button type="button" id="locateBtn" onclick="locateMe()">Locate me</button>
+  <div id="result">No place picked yet.</div>
+</form>
+<script>
+const input = document.getElementById('origin_input'), latI = document.getElementById('origin_lat'), lngI = document.getElementById('origin_lng'), out = document.getElementById('result');
+window.QA = { kind: 'photon' };
+const show = (p) => { out.textContent = `label: ${p.label}\nlat/lng: ${(+p.lat).toFixed(5)}, ${(+p.lng).toFixed(5)}`; window.QA.picked = p; };
+PlaceAutocomplete.attach(input, latI, lngI, { onSelect: show });
+// Same logic as templates/post-ride.html locateMe()
+function locateMe() {
+  window.QA.locate = { started: performance.now() };
+  navigator.geolocation.getCurrentPosition(async (pos) => {
+    const { latitude, longitude } = pos.coords;
+    try {
+      const res = await fetch(`https://photon.komoot.io/reverse?lat=${latitude}&lon=${longitude}&lang=en`);
+      const data = await res.json();
+      if (!PlaceAutocomplete.isInUsCanada(latitude, longitude)) { out.textContent = 'Refused: only US and Canada are supported.'; window.QA.locate.refused = true; window.QA.locate.ms = Math.round(performance.now() - window.QA.locate.started); return; }
+      const p = (data.features || [])[0]?.properties;
+      const label = (p && PlaceAutocomplete.placeLabel(p)) || `${latitude.toFixed(4)}, ${longitude.toFixed(4)}`;
+      input.value = label; latI.value = latitude; lngI.value = longitude; input.classList.add('place-confirmed');
+      show({ label, lat: latitude, lng: longitude });
+      window.QA.locate.label = label;
+    } catch (e) { out.textContent = 'Could not resolve your address.'; window.QA.locate.error = String(e); }
+    window.QA.locate.ms = Math.round(performance.now() - window.QA.locate.started);
+  }, (e) => { out.textContent = 'GPS error ' + e.code; window.QA.locate.error = 'gps ' + e.code; window.QA.locate.ms = 1; });
+}
+</script></body></html>
