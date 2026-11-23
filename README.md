@@ -62,7 +62,7 @@ API tests: `manage.py test api --settings=config.settings_regression`. Export th
 | Variable | Default | Description |
 |---|---|---|
 | `SEARCH_RADIUS_KM` | `15` | Radius in km around origin/destination within which rides are shown in search results |
-| `SERVICE_FEE_CENTS` | `100` | Flat service fee added to every booking, in cents (100 = $1.00) |
+| `SERVICE_FEE_CENTS` | `0` | Flat service fee added to every booking, in cents. Komüte is free, so leave it at 0 |
 | `INVITE_EXPIRY_HOURS` | `48` | Hours before a ride invite link/token expires |
 
 ## Verification node

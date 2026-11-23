@@ -217,7 +217,7 @@ toc_items = [
     "10. Step 7 — Production Settings Hardening (settings.py)",
     "11. Step 8 — systemd Service for Komute (Daphne)",
     "12. Step 9 — Install the Verification Node Packages and Models",
-    "13. Step 10 — Run the Verification Node (systemd)",
+    "13. Step 10 — Run the Verification Node and the Map Node (systemd)",
     "14. Step 11 — Nginx Reverse Proxy + HTTPS",
     "15. Step 12 — Cron Jobs (Scheduled Management Commands)",
     "16. Step 13 — End-to-End Smoke Test",
@@ -342,6 +342,7 @@ add_para(
 add_table(
     ["Plan", "vCPU / RAM", "Suitability"],
     [
+        ['Current test droplet', '1 vCPU / 961 MB', 'Testing only, until it is resized. A verification peaks near 1.2 GB: add 2 GB of swap first (below).'],
         ["Basic Premium AMD, 4 GB", "2 vCPU / 4 GB", "Minimum viable — acceptable for staging/low traffic. Watch memory closely."],
         ["Basic Premium AMD, 8 GB (recommended)", "4 vCPU / 8 GB", "Comfortable headroom for Postgres + Redis + Daphne + the verification node."],
     ],
@@ -351,6 +352,7 @@ add_bullets([
     "OS image: Ubuntu 22.04 LTS x64 (used throughout this guide).",
     "Enable weekly backups or snapshots (small extra cost, cheap insurance).",
     "25 GB+ SSD disk recommended — the node's models take about 180 MB.",
+    'On the 961 MB test droplet, add a 2 GB swap file before starting the verification node, or a verification can be killed for lack of memory: sudo fallocate -l 2G /swapfile && sudo chmod 600 /swapfile && sudo mkswap /swapfile && sudo swapon /swapfile (add it to /etc/fstab to keep it after a reboot).',
 ])
 page_break()
 
@@ -691,7 +693,7 @@ page_break()
 # ============================================================================
 # 13. STEP 10
 # ============================================================================
-add_heading("13. Step 10 — Run the Verification Node (systemd)", level=1)
+add_heading("13. Step 10 — Run the Verification Node and the Map Node (systemd)", level=1)
 add_para(
     "Install the unit file that ships with the node (user www-data, working directory /var/www/komute, "
     "port 8080, one worker):"
@@ -719,6 +721,37 @@ add_warn(
     "The node handles one verification at a time. A second driver at the same moment gets the generic "
     "\"service error\" message."
 )
+add_heading("Map node (Apple Maps)", level=2, color=BLUE)
+add_para('The map node (map/) holds the Apple Maps key and answers address search, routes and the browser map token for the site. It is a third small process in the same venv, on 127.0.0.1:8081, and stores nothing. Its packages come with requirements.txt from Step 6. Add these lines to /var/www/komute/.env:')
+add_code(r"""
+APPLE_MAPS_TEAM_ID=<10 characters, Apple Account > Membership>
+APPLE_MAPS_KEY_ID=<10 characters, from the key's page>
+APPLE_MAPS_PRIVATE_KEY_PATH=/etc/komute/AuthKey_<KEYID>.p8
+APPLE_MAPS_WEB_ORIGIN=https://komute.example.com
+MAP_ENV=production
+MAP_API_URL=http://127.0.0.1:8081
+MAP_API_KEY=<24+ random characters, the same value for the site and the node>
+MAP_AUTOCOMPLETE=photon
+MAP_ROUTES=osrm
+MAP_DISPLAY=leaflet
+""")
+add_note("MAP_ENV=production makes the node refuse to start without the Apple key, the web origin and a MAP_API_KEY of 24 characters or more. Without it the node falls back to KOMUTE_ENV, which stays dev for the verification node, and then runs without those checks. APPLE_MAPS_WEB_ORIGIN must be the site's exact origin with https:// and no trailing slash: MapKit refuses the token otherwise.")
+add_para('Keep the Apple .p8 key outside the repository, readable only by root and www-data:')
+add_code(r"""
+sudo mkdir -p /etc/komute
+sudo cp AuthKey_<KEYID>.p8 /etc/komute/
+sudo chown root:www-data /etc/komute/AuthKey_<KEYID>.p8
+sudo chmod 640 /etc/komute/AuthKey_<KEYID>.p8
+""")
+add_para('Install the unit that ships with the node and check it:')
+add_code(r"""
+sudo cp /var/www/komute/map/deploy/komute-map.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now komute-map
+curl http://127.0.0.1:8081/health      # {"status":"ok","provider_configured":true}
+sudo systemctl restart komute          # the site reads the MAP_* lines at start
+""")
+add_note('The three MAP_* switches start on the old providers (Photon, OSRM, Leaflet). Turn them on one at a time: MAP_AUTOCOMPLETE=apple (address search), MAP_ROUTES=apple (drive time on post and edit ride), MAP_DISPLAY=mapkit (route map on ride summary and booking). Restart komute after each change. To roll back, set a switch back and restart komute. Apple allows 25,000 calls a day per team.')
 page_break()
 
 # ============================================================================
@@ -830,11 +863,12 @@ add_heading("16. Step 13 — End-to-End Smoke Test", level=1)
 add_bullets([
     "systemctl status komute — active (running).",
     "systemctl status komute-verify and curl http://127.0.0.1:8080/health — node healthy.",
+    'systemctl status komute-map and curl http://127.0.0.1:8081/health — map node healthy. With MAP_ROUTES=apple, post a ride and check the drive time appears; with MAP_DISPLAY=mapkit, open a ride summary and check the map and route line appear.',
     "Visit https://komute.example.com/ — site loads over HTTPS, padlock valid.",
     "Sign up / log in — confirm verification email is sent (SMTP working).",
     "Open two browser sessions in an active ride chat — confirm messages arrive live (WebSocket / Redis "
     "channel layer working).",
-    "Log in as a driver, upload a license photo + take a selfie, submit for verification — confirm the "
+    "Log in as a driver, add the front and back of the licence and take a selfie, submit for verification — confirm the "
     "request reaches the verification node and returns a verified/rejected result. If you see "
     "\"Verification service is offline\", check journalctl -u komute-verify.",
     "Download a ride receipt PDF — confirms the reportlab fix from Step 2 took effect.",

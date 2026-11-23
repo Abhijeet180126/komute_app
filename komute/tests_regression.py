@@ -481,7 +481,7 @@ class PasswordResetFlowTests(TestCase):
 
 
 class PurgeDeactivatedAccountsCommandTests(TestCase):
-    """The 45-day fulfillment job: highest-risk new code this session."""
+    """The grace-period fulfillment job: highest-risk new code this session."""
 
     def setUp(self):
         self.grace_days = 45
@@ -4874,7 +4874,7 @@ class AuditFixTests(TestCase):
 
     def test_deleted_account_searches_go_at_once_and_it_cant_be_invited(self):
         # P-14: the privacy policy says search logs are deleted immediately;
-        # they used to wait for the 45-day purge, and kept the closed account
+        # they used to wait for the grace-period purge, and kept the closed account
         # on drivers' Route Demand lists.
         from komute.views import _make_deactivate_token
         RideSearch.objects.create(

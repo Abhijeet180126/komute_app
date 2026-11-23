@@ -167,7 +167,7 @@ def send_invite(request, driver, ride, rider_id):
                           status=403, code='driver_not_verified')
 
     # Closed accounts can't be invited (audit P-14): they stay in the
-    # database until the 45-day purge, and a prior booking would still
+    # database until the grace-period purge, and a prior booking would still
     # make them inviteable below.
     rider = get_user_model().objects.filter(id=rider_id, is_active=True).first()
 
