@@ -2758,7 +2758,7 @@ body.role-rider .driver-only { display: none; }
           failMsg = data.decision.details;
       }
 
-      showVerifyModal(data.verified, data.similarity, failMsg, {
+      showVerifyModal(data.verified, 0, failMsg, {
         canRequestReview: data.can_request_review,
         reviewPending: data.review_pending,
       });

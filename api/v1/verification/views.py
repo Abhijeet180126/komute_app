@@ -54,7 +54,6 @@ NoticeSerializer = inline_serializer('BiometricNotice', {
 
 ResultSerializer = inline_serializer('VerificationResult', {
     'verified': serializers.BooleanField(),
-    'similarity_percent': serializers.FloatField(help_text='Face match, 0-100.'),
     'decision': serializers.CharField(allow_null=True, help_text='APPROVED, REJECTED, or another value when a '
                                                                  'person will decide.'),
     'reasons': serializers.ListField(child=serializers.CharField(), help_text='Why it was rejected, to show.'),
@@ -111,8 +110,9 @@ def notice(request):
                            'Photos are never stored. Error codes: consent_required, notice_changed, '
                            'license_required, invalid_license_image, license_back_required, '
                            'invalid_license_back_image, selfie_required, invalid_selfie, '
-                           'vehicle_photo_required (400), not_a_driver (403), throttled (429), service_offline, '
-                           'service_error (503).')
+                           'vehicle_photo_required, invalid_photo (retake it), profile_incomplete, profile_invalid '
+                           '(fix the profile) (400), not_a_driver (403), throttled (429), service_offline, '
+                           'service_busy, service_error (503). Busy or offline does not use an attempt.')
 @api_view(['POST'])
 @permission_classes(SIGNED_IN)
 @parser_classes([MultiPartParser])
@@ -140,7 +140,6 @@ def verify(request):
 
     return Response({
         'verified': result['verified'],
-        'similarity_percent': round(result['similarity'] * 100, 1),
         'decision': result['decision'],
         'reasons': result['reasons'],
         'checks': result['stage_results'],

@@ -2562,8 +2562,6 @@ def _verify_driver_view(request):
 
     return JsonResponse({
         "verified":   result["verified"],
-        "similarity": round(result["similarity"] * 100, 1),
-        "face_match": result["face_match"],
         "decision":   {"status": result["decision"], "details": "; ".join(result["reasons"])},
         # A person will look at this result anyway (borderline).
         "review_pending": result["review_pending"],

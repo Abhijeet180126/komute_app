@@ -52,6 +52,14 @@ def service_reply(body):
     return resp
 
 
+def node_error(status, code):
+    """A node error reply, as requests gives it: raise_for_status raises HTTPError."""
+    resp = MagicMock(status_code=status)
+    resp.raise_for_status.side_effect = requests.exceptions.HTTPError(response=resp)
+    resp.json.return_value = {'error': {'code': code, 'message': 'SECRET node text'}} if code else {}
+    return resp
+
+
 def error(response):
     return response.json()['error']
 
@@ -93,8 +101,9 @@ class AttemptTests(VerificationTestCase):
         response, post = self.attempt()
         self.assertEqual(response.status_code, 200, response.content)
         body = response.json()
-        self.assertEqual((body['verified'], body['similarity_percent'], body['decision'], body['reasons']),
-                         (True, 90.0, 'APPROVED', []))
+        self.assertEqual((body['verified'], body['decision'], body['reasons']), (True, 'APPROVED', []))
+        # Ticket item 4: the face score is a similarity (pass at 0.40), not a percentage; the app gets none.
+        self.assertNotIn('similarity_percent', body)
         self.assertTrue(all(body['checks'].values()))
         self.driver.refresh_from_db()
         self.vehicle.refresh_from_db()
@@ -209,6 +218,32 @@ class AttemptTests(VerificationTestCase):
         self.assertEqual((response.status_code, error(response)['code']), (503, 'service_offline'))
         self.driver.refresh_from_db()
         self.assertFalse(self.driver.driver_verified)
+
+    def test_node_errors_become_driver_messages(self):
+        """The node's 422/503 codes reach the driver as our own message and code, never the node's text."""
+        for status, node_code, want_status, want_code in (
+                (503, 'BUSY', 503, 'service_busy'),
+                (422, 'IMAGE_TOO_LARGE', 400, 'invalid_photo'),
+                (422, 'INVALID_IMAGE', 400, 'invalid_photo'),
+                (422, 'MISSING_FIELD', 400, 'profile_incomplete'),
+                (422, 'INVALID_FIELD', 400, 'profile_invalid'),
+                (422, 'SOMETHING_NEW', 503, 'service_error'),
+                (500, None, 503, 'service_error')):
+            response, _ = self.attempt(side_effect=[node_error(status, node_code)])
+            body = error(response)
+            self.assertEqual((response.status_code, body['code']), (want_status, want_code), node_code)
+            self.assertNotIn('SECRET', body['message'])
+        self.driver.refresh_from_db()
+        self.assertFalse(self.driver.driver_verified)
+        self.assertFalse(VerificationLog.objects.exists())
+
+    @override_settings(RATE_LIMITS={**settings.RATE_LIMITS, 'verify-driver': (1, 3600)})
+    def test_busy_or_offline_does_not_use_an_attempt(self):
+        self.attempt(side_effect=[node_error(503, 'BUSY')])
+        self.attempt(side_effect=requests.exceptions.ConnectionError())
+        response, post = self.attempt()
+        self.assertEqual(response.status_code, 200, response.content)
+        self.assertEqual(self.attempt()[0].status_code, 429)
 
     @override_settings(RATE_LIMITS={**settings.RATE_LIMITS, 'verify-driver': (1, 3600)})
     def test_rate_limit(self):

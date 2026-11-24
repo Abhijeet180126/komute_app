@@ -681,7 +681,7 @@ add_code(r"""
 KOMUTE_ENV=production
 KOMUTE_MODELS_DIR=verification_node/backend/models
 KOMUTE_LIVENESS_MODEL=verification_node/backend/models/minifasnet_v2.onnx
-KOMUTE_REDIS_URL=redis://127.0.0.1:6379/0
+KOMUTE_REDIS_URL=redis://127.0.0.1:6379/1
 DL_VERIFICATION_API_KEY=<long random value>
 """)
 add_warn("The node refuses to start without DL_VERIFICATION_API_KEY (24+ characters in production) and, in production, without the liveness model (MiniFASNetV2, downloaded by fetch_models.py). Do not edit files under verification_node/ on the server: change the node in its own repository and export it again.")
@@ -715,8 +715,7 @@ add_para(
     "To roll back, stop komute-verify and start the old service again."
 )
 add_warn(
-    "The node handles one verification at a time. A second driver at the same moment gets the generic "
-    "\"service error\" message."
+    "The node handles one verification at a time. Drivers who verify at the same moment wait their turn in the Redis queue (up to 100 s); only past that do they see \"Verification is busy\", and that try does not use one of their attempts."
 )
 add_heading("Map node (Apple Maps)", level=2, color=BLUE)
 add_para('The map node (map/) holds the Apple Maps key and answers address search, routes and the browser map token for the site. It is a third small process in the same venv, on 127.0.0.1:8081, and stores nothing. Its packages come with requirements.txt from Step 6. Add these lines to /var/www/komute/.env:')

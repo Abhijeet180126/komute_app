@@ -88,7 +88,7 @@ Driver verification runs in `verification_node/`, a second process in the same P
 
 5. `GET http://127.0.0.1:8080/health` must return `"status":"ok"`.
 
-`DL_VERIFICATION_API_URL` defaults to `http://127.0.0.1:8080/api/v1/verify`. The node refuses to start without `DL_VERIFICATION_API_KEY`, in every mode. It runs one verification at a time; requests wait their turn in a Redis queue (`KOMUTE_REDIS_URL`), up to 100 s. Models: YuNet and SFace (face), MiniFASNetV2 (liveness), two plate models; the request and response contract and every error code are in `verification_node/README.md`. Canadian licences only. Node tests: `cd verification_node && pip install -r requirements-dev.txt && python -m pytest -q`.
+`DL_VERIFICATION_API_URL` defaults to `http://127.0.0.1:8080/api/v1/verify`. The node refuses to start without `DL_VERIFICATION_API_KEY`, in every mode. It runs one verification at a time; requests wait their turn in a Redis queue, up to 100 s. The queue shares the site's Redis server but uses its own database: `KOMUTE_REDIS_URL=redis://127.0.0.1:6379/1` (the site uses database 0). Models: YuNet and SFace (face), MiniFASNetV2 (liveness), two plate models; the request and response contract and every error code are in `verification_node/README.md`. Canadian licences only. Node tests: `cd verification_node && pip install -r requirements-dev.txt && python -m pytest -q`.
 
 ## Map node
 

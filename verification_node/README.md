@@ -32,7 +32,7 @@ verification_node/
    KOMUTE_MODELS_DIR=verification_node/backend/models
    KOMUTE_LIVENESS_MODEL=verification_node/backend/models/minifasnet_v2.onnx
    DL_VERIFICATION_API_KEY=<24+ random characters, the same value the app sends>
-   KOMUTE_REDIS_URL=redis://127.0.0.1:6379/0
+   KOMUTE_REDIS_URL=redis://127.0.0.1:6379/1
    ```
 
    The node refuses to start without an API key, in every mode. `KOMUTE_ENV=production` also needs the key to be 24+
@@ -147,4 +147,8 @@ up to `KOMUTE_BUSY_WAIT_S` (100 s, inside the main app's 120 s call timeout). Re
 licence data never leave the node's memory. A request that gives up or whose caller hangs up leaves the line; one that
 died (a crash) is cleared from the front after 30 s. The line is cleared at start-up. If Redis is unreachable the node
 keeps verifying one at a time without the shared line, and logs a warning. `GET /health` shows
-`"queue": {"backend": "redis", "waiting": N}`. One node per Redis line.
+`"queue": {"backend": "redis", "waiting": N}`.
+
+It can share the main app's Redis server (chat, notifications, cache and rate limits use database 0). Use its own
+database, `redis://127.0.0.1:6379/1`, so the line is kept apart. Rules: one node per Redis line (a node clears its line
+when it starts); keep Redis on `noeviction` (the Ubuntu default), since an `allkeys-lru` policy could delete queue keys.

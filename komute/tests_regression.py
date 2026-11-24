@@ -3246,7 +3246,8 @@ class VerifyDriverViewGateTests(TestCase):
         self.assertEqual(resp.status_code, 200)
         data = json.loads(resp.content)
         self.assertTrue(data['verified'])
-        self.assertEqual(data['similarity'], 93.0)
+        self.assertNotIn('similarity', data)  # ticket item 4: no face % in the page's data either
+        self.assertNotIn('face_match', data)
         self.assertEqual(data['decision']['status'], 'APPROVED')
 
         # The outbound payload must use the verification node's actual
