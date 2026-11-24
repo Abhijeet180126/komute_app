@@ -19,7 +19,7 @@ KEY = "test-api-key-123"
 
 @pytest.fixture
 def settings():
-    return Settings(_env_file=None, api_key=KEY, dev_skip_liveness=True, max_upload_bytes=200_000)
+    return Settings(_env_file=None, api_key=KEY, dev_skip_liveness=True, max_upload_bytes=200_000, busy_wait_s=0.2)
 
 
 class FakeEngine:
@@ -41,7 +41,7 @@ class FakeEngine:
     monitor = None  # set per instance below
 
     def models_info(self):
-        return [{"role": "face_embedder", "stage": "face", "file": "w600k_r50.onnx", "loaded": True},
+        return [{"role": "face_embedder", "stage": "face", "file": "face_recognition_sface_2021dec.onnx", "loaded": True},
                 {"role": "liveness", "stage": "face", "file": None, "loaded": False}]
 
 
@@ -160,6 +160,16 @@ def test_busy_returns_503_with_retry_after_and_gate_releases(settings):
     assert post(c, {**FIELDS, "request_id": "req-2"}).status_code == 200  # gate released after a failed request
 
 
+def test_a_second_request_waits_for_its_turn(settings):
+    # Ticket item 5: while one check runs, the next one waits instead of failing at once.
+    import threading
+    c, _ = make(settings.model_copy(update={"busy_wait_s": 5.0}))
+    gate = c.app.state.gate
+    assert gate.try_acquire()
+    threading.Timer(0.3, gate.release).start()
+    assert post(c).status_code == 200
+
+
 def test_engine_error_500_has_no_decision_key(settings):
     c, _ = make(settings, "error")
     r = post(c)
@@ -173,6 +183,32 @@ def test_health_no_secrets_and_degraded(settings):
     eng.models["plate_ocr"] = False
     r = c.get("/health")
     assert r.status_code == 503 and r.json()["status"] == "degraded"
+
+
+def test_health_reports_the_queue(settings):
+    c, _ = make(settings)
+    assert c.get("/health").json()["queue"] == {"backend": "local", "waiting": None}
+
+
+def test_verify_goes_through_the_redis_queue_and_leaves_it(settings):
+    from backend.app.gate import RedisQueue
+    from tests.app.test_queue import FakeRedis
+
+    with make(settings)[0] as c:  # the context runs start-up, which resets the line
+        fake = FakeRedis()
+        c.app.state.queue = RedisQueue(fake, c.app.state.gate, key="t:q")
+        assert post(c).status_code == 200
+        assert fake.lists.get("t:q") == [] and c.get("/health").json()["queue"] == {"backend": "redis", "waiting": 0}
+
+
+def test_redis_url_comes_from_the_shared_env_name(tmp_path):
+    from backend.core.config import Settings
+
+    f = tmp_path / ".env"
+    f.write_text("KOMUTE_API_KEY=k\nREDIS_URL=redis://127.0.0.1:6379/0\n")
+    assert Settings(_env_file=f).redis_url == "redis://127.0.0.1:6379/0"
+    f.write_text("KOMUTE_API_KEY=k\nREDIS_URL=\n")
+    assert Settings(_env_file=f).redis_url is None
 
 
 def test_there_is_no_replay_route_and_the_same_request_id_runs_again(settings):
@@ -215,11 +251,12 @@ def test_index_served(settings):
     assert r.status_code == 200 and "text/html" in r.headers["content-type"] and "Komute Verify" in r.text
 
 
-def test_no_key_configured_means_open_api(settings):
+def test_a_missing_key_setting_fails_closed(settings):
+    # Settings refuse to load without a key; if one ever got past them, every call is still refused.
     open_settings = settings.model_copy(update={"api_key": None})
     c, _ = make(open_settings)
-    assert post(c, key=None).status_code == 200
-    assert post(c, {**FIELDS, "request_id": "req-k"}, key="anything").status_code == 200
+    assert post(c, key=None).status_code == 401
+    assert post(c, {**FIELDS, "request_id": "req-k"}, key="anything").status_code == 401
     assert c.get("/health").status_code == 200
 
 

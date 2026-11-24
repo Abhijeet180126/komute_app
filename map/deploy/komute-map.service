@@ -4,7 +4,7 @@
 #
 # Settings: the node reads /var/www/komute/.env itself (the working directory below). Do NOT use EnvironmentFile:
 # systemd parses .env differently (no inline "#" comments, other quoting).
-# Needs the four APPLE_MAPS_* settings and MAP_API_KEY (24+ characters) in .env, and KOMUTE_ENV=production.
+# Needs the four APPLE_MAPS_* settings and MAP_API_KEY (24+ characters) in .env, and MAP_ENV=production.
 # Keep the Apple .p8 key file outside the repo, readable only by www-data (chmod 600).
 # --workers 1 on purpose: the cache lives in the process.
 #

@@ -4276,6 +4276,22 @@ class BiometricConsentTests(TestCase):
         self.assertFalse(model_admin.has_change_permission(request))
 
 
+class FaceScoreNotShownAsPercentTests(TestCase):
+    """Ticket item 4: the node's face score is a cosine similarity (pass at 0.40), not a percentage. A genuine
+    driver at 0.42 must not read "42% match"; the site shows only verified or not."""
+
+    def test_profile_and_verify_modal_show_no_match_percentage(self):
+        driver = make_driver_with_vehicle('fs_driver@example.com')
+        driver.face_match_score = 0.42
+        driver.save(update_fields=['face_match_score'])
+        c = Client()
+        c.force_login(driver)
+        html = c.get(reverse('profile')).content.decode()
+        self.assertIn('Identity Verified', html)
+        self.assertNotIn('% match', html)
+        self.assertNotIn('Face match score', html)
+
+
 class VerificationResultStorageTests(TestCase):
     """ISSUES.md C3: combined-score approval and stored rejection reasons."""
 

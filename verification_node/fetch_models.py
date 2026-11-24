@@ -28,10 +28,12 @@ SOURCES = {
         "url": "https://github.com/opencv/opencv_zoo/raw/main/models/face_detection_yunet/face_detection_yunet_2023mar.onnx"},
     "yolo-v9-t-384-license-plates-end2end.onnx": {
         "url": "https://github.com/ankandrew/open-image-models/releases/download/assets/yolo-v9-t-384-license-plates-end2end.onnx"},
+    "minifasnet_v2.onnx": {  # liveness: MiniFASNetV2 from minivision-ai/Silent-Face-Anti-Spoofing (Apache-2.0), ONNX by UniFace
+        "url": "https://huggingface.co/yakhyo/uniface-weights/resolve/main/minifasnet_v2.onnx"},
     "cct_xs_v2_global.onnx": {
         "url": "https://github.com/ankandrew/fast-plate-ocr/releases/download/arg-plates/cct_xs_v2_global.onnx"},
-    "w600k_r50.onnx": {
-        "url": "https://github.com/deepinsight/insightface/releases/download/v0.7/buffalo_l.zip", "zip_entry": "w600k_r50.onnx"},
+    "face_recognition_sface_2021dec.onnx": {
+        "url": "https://github.com/opencv/opencv_zoo/raw/main/models/face_recognition_sface/face_recognition_sface_2021dec.onnx"},
 }
 
 

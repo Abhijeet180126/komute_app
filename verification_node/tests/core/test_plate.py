@@ -39,6 +39,27 @@ def test_letterbox_roundtrip_coordinates():
     assert max(abs(b.x1 - 100), abs(b.y1 - 200), abs(b.x2 - 400), abs(b.y2 - 300)) <= 1
 
 
+@pytest.mark.parametrize("size", [384, 640])
+def test_detect_plate_letterboxes_to_the_models_own_input_size(size):
+    # A larger detector (for example yolo-v9-t-640) must get a 640x640 input, not the old fixed 384.
+    from types import SimpleNamespace
+
+    from backend.core.stages.vehicle import detect_plate
+
+    class Det:
+        seen = None
+
+        def get_inputs(self):
+            return [SimpleNamespace(name="images", shape=[1, 3, size, size])]
+
+        def run(self, _, feed):
+            Det.seen = feed["images"].shape
+            return [np.zeros((0, 7), np.float32)]
+
+    assert detect_plate(np.zeros((300, 500, 3), np.uint8), Det()) is None
+    assert Det.seen == (1, 3, size, size)
+
+
 def test_decode_end2end_filters_low_scores():
     out = np.array([[0, 10, 10, 50, 40, 0, 0.04], [0, 10, 10, 50, 40, 0, 0.67]])
     assert [round(b.score, 2) for b in decode_end2end(out, 1.0, (0, 0))] == [0.67]

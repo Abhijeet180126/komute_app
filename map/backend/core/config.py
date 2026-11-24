@@ -15,7 +15,7 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_prefix="MAP_", env_file=".env", env_file_encoding="utf-8", extra="ignore",
                                       validate_by_name=True, validate_by_alias=True)
 
-    env: Literal["dev", "production"] = Field("dev", validation_alias=AliasChoices("MAP_ENV", "KOMUTE_ENV"))
+    env: Literal["dev", "production"] = Field("dev", validation_alias=AliasChoices("MAP_ENV"))  # not KOMUTE_ENV: the verification node owns that
     # Key the main app sends in X-API-Key (MAP_API_KEY). Unset or empty = no authentication (local testing only).
     api_key: SecretStr | None = None
     # Apple Maps credentials from the developer portal (see README).

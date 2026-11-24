@@ -5,6 +5,8 @@ from pydantic import ValidationError
 
 from backend.core.config import Settings
 
+FACE_THRESHOLD = 0.40  # set from the SFace AgeDB-30 benchmark (docs/calibration/face-agedb30-sface.md)
+
 
 def make(**kw) -> Settings:
     base = dict(api_key="a" * 32)
@@ -14,7 +16,7 @@ def make(**kw) -> Settings:
 
 def test_defaults_ok():
     s = make()
-    assert s.env == "dev" and s.face_match_threshold == 0.35
+    assert s.env == "dev" and s.face_match_threshold == FACE_THRESHOLD
 
 
 def test_production_rejects_dev_skip_liveness():
@@ -28,11 +30,12 @@ def test_production_requires_liveness_model():
     assert make(env="production", liveness_model=Path("m.onnx")).env == "production"
 
 
-def test_api_key_optional_in_dev_required_in_production():
-    assert make(api_key=None).api_key is None
-    assert make(api_key="").api_key is None
-    with pytest.raises(ValidationError):
-        make(env="production", liveness_model=Path("m.onnx"), api_key=None)
+def test_api_key_required_in_every_mode():
+    # An unset or blank key used to mean an open API in dev mode (ticket item 2).
+    for env in ("dev", "production"):
+        for key in (None, "", "   "):
+            with pytest.raises(ValidationError):
+                make(env=env, liveness_model=Path("m.onnx"), api_key=key)
 
 
 def test_production_rejects_short_api_key_dev_allows_it():
@@ -52,7 +55,7 @@ def test_new_tunables_default_and_are_bounded():
 
 def test_values_load_from_dotenv_file(tmp_path):
     f = tmp_path / ".env"
-    f.write_text("KOMUTE_FACE_MATCH_THRESHOLD=0.55\n")
+    f.write_text("KOMUTE_API_KEY=k\nKOMUTE_FACE_MATCH_THRESHOLD=0.55\n")
     assert Settings(_env_file=f).face_match_threshold == 0.55
 
 

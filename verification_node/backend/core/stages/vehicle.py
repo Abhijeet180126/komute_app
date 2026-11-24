@@ -59,8 +59,10 @@ def decode_end2end(
 
 
 def detect_plate(img_bgr: np.ndarray, session, min_score: float = 0.35) -> Optional[PlateBox]:
-    tensor, scale, pad = letterbox(img_bgr)
-    out = session.run(None, {session.get_inputs()[0].name: tensor})[0]
+    inp = session.get_inputs()[0]
+    size = inp.shape[2] if isinstance(inp.shape[2], int) else YOLO_SIZE  # the model's own input size (384, 640, ...)
+    tensor, scale, pad = letterbox(img_bgr, size)
+    out = session.run(None, {inp.name: tensor})[0]
     h, w = img_bgr.shape[:2]
     best = None
     for b in decode_end2end(out, scale, pad, min_score):

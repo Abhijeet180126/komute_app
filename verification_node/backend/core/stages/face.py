@@ -61,6 +61,36 @@ def align_112(img_bgr: np.ndarray, landmarks: np.ndarray) -> np.ndarray:
     return cv2.warpAffine(img_bgr, alignment_matrix(landmarks), (112, 112), borderValue=(0, 0, 0))
 
 
+# Selfie quality. A poor selfie gets a retake instead of a failed match. On AgeDB-30, genuine pairs with a blurry face
+# (sharpness under the 1st percentile, 70) failed the match 44% of the time against 26%; dark faces 47% against 27%.
+MIN_SELFIE_FACE_PX = 80               # shorter side of the face box; smaller faces are upscaled into the 112x112 crop
+MAX_YAW = 0.4                         # nose offset from the eye midpoint, in eye widths (not yet measured on real selfies)
+MIN_BRIGHTNESS, MAX_BRIGHTNESS = 50, 215  # mean grey of the aligned crop
+MIN_SHARPNESS = 70.0                  # variance of the Laplacian of the aligned crop (AgeDB-30 1st percentile)
+
+
+def selfie_quality(face: FaceBox, crop_bgr: np.ndarray) -> Optional[Reason]:
+    """None for a usable selfie, otherwise a retryable IMAGE_QUALITY reason that says what to fix."""
+    def retake(problem: str) -> Reason:
+        return Reason(ReasonCode.IMAGE_QUALITY, True, f"Your selfie is {problem}. Please retake it.")
+
+    if min(face.box[2], face.box[3]) < MIN_SELFIE_FACE_PX:
+        return retake("taken from too far away: your face is too small, hold the phone closer")
+    left_eye, right_eye, nose = (np.asarray(p, np.float64) for p in face.landmarks[:3])
+    eye_width = float(np.linalg.norm(right_eye - left_eye))
+    if eye_width <= 0 or abs(nose[0] - (left_eye[0] + right_eye[0]) / 2) / eye_width > MAX_YAW:
+        return retake("turned away from the camera: face the camera directly")
+    gray = cv2.cvtColor(crop_bgr, cv2.COLOR_BGR2GRAY)
+    brightness = float(gray.mean())
+    if brightness < MIN_BRIGHTNESS:
+        return retake("too dark: find more light")
+    if brightness > MAX_BRIGHTNESS:
+        return retake("too bright: avoid direct light behind or on your face")
+    if cv2.Laplacian(gray, cv2.CV_64F).var() < MIN_SHARPNESS:
+        return retake("too blurry: hold the phone still")
+    return None
+
+
 def pick_licence_face(faces: list[FaceBox]) -> Optional[FaceBox]:
     """The largest face: licences often carry a small ghost portrait as well."""
     return max(faces, key=lambda f: f.area) if faces else None
@@ -81,9 +111,11 @@ class _Thresholds(Protocol):
 
 
 def embed(aligned_bgr: np.ndarray, session) -> np.ndarray:
-    """512-d L2-normalised embedding from a 112x112 aligned BGR face."""
-    rgb = cv2.cvtColor(aligned_bgr, cv2.COLOR_BGR2RGB).astype(np.float32)
-    blob = ((rgb - 127.5) / 127.5).transpose(2, 0, 1)[None]
+    """128-d L2-normalised SFace embedding from a 112x112 aligned BGR face.
+
+    Fed as OpenCV's FaceRecognizerSF does: RGB, 0-255, no mean or scale (a test checks it against that reference).
+    """
+    blob = cv2.cvtColor(aligned_bgr, cv2.COLOR_BGR2RGB).astype(np.float32).transpose(2, 0, 1)[None]
     out = np.asarray(session.run(None, {session.get_inputs()[0].name: blob})[0], dtype=np.float64).reshape(-1)
     norm = np.linalg.norm(out)
     if norm == 0 or not np.isfinite(norm):
@@ -109,8 +141,11 @@ def run_face_stage(
     licence_face = pick_licence_face(detector.detect(licence_front))
     result.timings_ms["detect"] = round((time.perf_counter() - t0) * 1000, 1)
 
+    selfie_crop = None
     if isinstance(selfie_face, Reason):
         result.reasons.append(selfie_face)
+    elif (poor := selfie_quality(selfie_face, selfie_crop := align_112(selfie, selfie_face.landmarks))) is not None:
+        result.reasons.append(poor)  # retake first: no point judging liveness or the match on a poor selfie
     else:
         t1 = time.perf_counter()
         score = float(liveness.score(selfie, selfie_face))
@@ -124,7 +159,6 @@ def run_face_stage(
         return result
 
     t2 = time.perf_counter()
-    selfie_crop = align_112(selfie, selfie_face.landmarks)
     licence_crop = align_112(licence_front, licence_face.landmarks)
     similarity = cosine(embedder(selfie_crop), embedder(licence_crop))
     result.timings_ms["embed_match"] = round((time.perf_counter() - t2) * 1000, 1)

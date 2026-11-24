@@ -70,14 +70,14 @@ API tests: `manage.py test api --settings=config.settings_regression`. Export th
 Driver verification runs in `verification_node/`, a second process in the same Python environment (Python 3.11). It checks the licence barcode, the selfie against the licence photo, and the vehicle plate. It stores nothing; the app keeps only the outcome (`VerificationLog`). Do not edit `verification_node/` here: change it in the Komute-Local repository and export it again.
 
 1. `pip install -r requirements.txt` (it includes `verification_node/requirements.txt`).
-2. `python verification_node/fetch_models.py` (about 180 MB; every file is checked against `models.lock`).
+2. `python verification_node/fetch_models.py` (five models, about 50 MB; every file is checked against `models.lock`).
 3. Add to `.env`:
 
    ```text
-   KOMUTE_ENV=dev
-   KOMUTE_DEV_SKIP_LIVENESS=true
+   KOMUTE_ENV=dev                     # production on the server
    KOMUTE_MODELS_DIR=verification_node/backend/models
-   DL_VERIFICATION_API_KEY=<same value the app uses>
+   KOMUTE_LIVENESS_MODEL=verification_node/backend/models/minifasnet_v2.onnx
+   DL_VERIFICATION_API_KEY=<same value the app uses; 24+ characters in production>
    ```
 
 4. From the repository root, start the node:
@@ -88,7 +88,7 @@ Driver verification runs in `verification_node/`, a second process in the same P
 
 5. `GET http://127.0.0.1:8080/health` must return `"status":"ok"`.
 
-`DL_VERIFICATION_API_URL` defaults to `http://127.0.0.1:8080/api/v1/verify`. The node needs 2 GB of RAM or more and runs one verification at a time. There is no liveness model yet: `KOMUTE_ENV=production` refuses to start without one. Node tests: `cd verification_node && pip install -r requirements-dev.txt && python -m pytest -q`.
+`DL_VERIFICATION_API_URL` defaults to `http://127.0.0.1:8080/api/v1/verify`. The node refuses to start without `DL_VERIFICATION_API_KEY`, in every mode. It runs one verification at a time; requests wait their turn in a Redis queue (`KOMUTE_REDIS_URL`), up to 100 s. Models: YuNet and SFace (face), MiniFASNetV2 (liveness), two plate models; the request and response contract and every error code are in `verification_node/README.md`. Canadian licences only. Node tests: `cd verification_node && pip install -r requirements-dev.txt && python -m pytest -q`.
 
 ## Map node
 

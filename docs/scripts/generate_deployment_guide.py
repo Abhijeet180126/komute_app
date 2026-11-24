@@ -257,7 +257,7 @@ table(
 bullets([
     "OS image: <b>Ubuntu 22.04 LTS x64</b> (used throughout this guide).",
     "Enable weekly backups or snapshots (small extra cost, cheap insurance).",
-    "25 GB+ SSD disk recommended — the node's models take about 180 MB.",
+    "25 GB+ SSD disk recommended — the node's five models take about 50 MB.",
     "On the 961 MB test droplet, add a 2 GB swap file before starting the verification node, or a verification can be killed for lack of memory: <font face='Courier'>sudo fallocate -l 2G /swapfile && sudo chmod 600 /swapfile && sudo mkswap /swapfile && sudo swapon /swapfile</font> (add it to /etc/fstab to keep it after a reboot).",
 ])
 
@@ -564,7 +564,7 @@ h1_("12. Step 9 — Install the Verification Node Packages and Models")
 p("The verification node is the <font face='Courier'>verification_node/</font> folder in the Komute "
   "repository. It uses the same venv as Komute (Python 3.11). Its packages are listed in "
   "<font face='Courier'>requirements.txt</font>, so the install from Step 6 covers them. Download the "
-  "models once (about 180 MB; every file is checked against <font face='Courier'>models.lock</font>):")
+  "models once (five models, about 50 MB; every file is checked against <font face='Courier'>models.lock</font>):")
 code(r"""
 cd /var/www/komute
 source venv/bin/activate
@@ -575,15 +575,13 @@ p("Add these lines to <font face='Courier'>/var/www/komute/.env</font>. The node
   "<font face='Courier'>KOMUTE_*</font> keys and <font face='Courier'>DL_VERIFICATION_API_KEY</font>. "
   "Use the same key value for Komute.")
 code(r"""
-KOMUTE_ENV=dev
-KOMUTE_DEV_SKIP_LIVENESS=true
+KOMUTE_ENV=production
 KOMUTE_MODELS_DIR=verification_node/backend/models
+KOMUTE_LIVENESS_MODEL=verification_node/backend/models/minifasnet_v2.onnx
+KOMUTE_REDIS_URL=redis://127.0.0.1:6379/0
 DL_VERIFICATION_API_KEY=<long random value>
 """)
-warn_("No liveness model exists yet. <font face='Courier'>KOMUTE_ENV=production</font> refuses to start "
-      "without one, so the node runs with <font face='Courier'>KOMUTE_ENV=dev</font> and liveness skipped "
-      "until a model is supplied. Do not edit files under verification_node/ on the server: change the node "
-      "in its own repository and export it again.")
+warn_("The node refuses to start without DL_VERIFICATION_API_KEY (24+ characters in production) and, in production, without the liveness model (MiniFASNetV2, downloaded by fetch_models.py). Do not edit files under verification_node/ on the server: change the node in its own repository and export it again.")
 
 page_break()
 
@@ -626,7 +624,7 @@ MAP_AUTOCOMPLETE=photon
 MAP_ROUTES=osrm
 MAP_DISPLAY=leaflet
 """)
-note_("MAP_ENV=production makes the node refuse to start without the Apple key, the web origin and a MAP_API_KEY of 24 characters or more. Without it the node falls back to KOMUTE_ENV, which stays dev for the verification node, and then runs without those checks. APPLE_MAPS_WEB_ORIGIN must be the site's exact origin with https:// and no trailing slash: MapKit refuses the token otherwise.")
+note_("MAP_ENV=production makes the node refuse to start without the Apple key, the web origin and a MAP_API_KEY of 24 characters or more. The map node reads only MAP_ENV, never KOMUTE_ENV, so the two nodes' modes stay separate. APPLE_MAPS_WEB_ORIGIN must be the site's exact origin with https:// and no trailing slash: MapKit refuses the token otherwise.")
 p('Keep the Apple .p8 key outside the repository, readable only by root and www-data:')
 code(r"""
 sudo mkdir -p /etc/komute

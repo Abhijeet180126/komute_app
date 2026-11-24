@@ -16,6 +16,10 @@ anyio==4.16.0
     #   -c requirements.lock
     #   fastapi
     #   starlette
+async-timeout==5.0.1
+    # via
+    #   -c requirements.lock
+    #   redis
 click==8.5.1
     # via
     #   -c requirements.lock
@@ -92,6 +96,11 @@ python-multipart==0.0.33
     #   -r requirements-node.txt
 rapidfuzz==3.14.6
     # via
+    #   -c requirements.lock
+    #   -r requirements-node.txt
+redis==7.4.0
+    # via
+    #   -c constraints-main-app.txt
     #   -c requirements.lock
     #   -r requirements-node.txt
 scipy==1.17.1

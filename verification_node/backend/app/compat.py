@@ -143,8 +143,9 @@ def to_dl_response(result: dict[str, Any]) -> dict[str, Any]:
 
 @router.post("/api/v1/verify", dependencies=[Depends(require_api_key)])
 async def verify_dl(request: Request) -> JSONResponse:
-    gate = request.app.state.gate
-    if not gate.try_acquire():
+    queue = request.app.state.queue
+    job = await queue.acquire(request.app.state.settings.busy_wait_s)
+    if job is None:
         raise ApiError(
             503, "BUSY", "A verification is already running.",
             {"Retry-After": str(request.app.state.settings.retry_after_s)},
@@ -159,4 +160,4 @@ async def verify_dl(request: Request) -> JSONResponse:
         result = await run_in_threadpool(request.app.state.engine.verify, inp)
         return JSONResponse(to_dl_response(result))
     finally:
-        gate.release()
+        await queue.release(job)

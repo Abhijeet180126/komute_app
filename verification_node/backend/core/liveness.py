@@ -1,4 +1,5 @@
-"""Single-photo passive liveness. The model file is supplied by the owner (none ships in the repo)."""
+"""Single-photo passive liveness: MiniFASNetV2 (minivision-ai/Silent-Face-Anti-Spoofing, Apache-2.0), fetched by
+scripts/fetch_models.py and enabled with KOMUTE_LIVENESS_MODEL."""
 from __future__ import annotations
 
 from typing import Protocol
@@ -22,9 +23,9 @@ class DevSkipLiveness:
 
 
 class OnnxLiveness:
-    """Passive anti-spoof classifier (MiniFASNet style): crop around the face, resize, softmax.
+    """Passive anti-spoof classifier (MiniFASNetV2): crop around the face as minivision does, resize, softmax.
 
-    `crop_scale`, `input_size` and `live_index` come from the model's facts once the file arrives.
+    MiniFASNetV2 takes an 80x80 BGR crop at 2.7x the face box, raw 0-255 values; class 1 is a live face.
     """
 
     def __init__(self, session, crop_scale: float, input_size: int, live_index: int) -> None:
@@ -35,16 +36,23 @@ class OnnxLiveness:
         self._live = live_index
 
     def _crop(self, img: np.ndarray, face: FaceBox) -> np.ndarray:
+        # minivision's CropImage._get_new_box, the crop the model was trained on: the scale shrinks so the box fits
+        # the image, and a box past an edge is shifted back inside (never padded).
+        src_h, src_w = img.shape[:2]
         x, y, w, h = face.box
-        side = max(w, h) * self._scale
+        scale = min((src_h - 1) / h, (src_w - 1) / w, self._scale)
         cx, cy = x + w / 2, y + h / 2
-        x1, y1 = int(round(cx - side / 2)), int(round(cy - side / 2))
-        x2, y2 = int(round(cx + side / 2)), int(round(cy + side / 2))
-        pad = max(0, -x1, -y1, x2 - img.shape[1], y2 - img.shape[0])
-        if pad:
-            img = cv2.copyMakeBorder(img, pad, pad, pad, pad, cv2.BORDER_REPLICATE)
-            x1, y1, x2, y2 = x1 + pad, y1 + pad, x2 + pad, y2 + pad
-        return cv2.resize(img[y1:y2, x1:x2], (self._size, self._size), interpolation=cv2.INTER_LINEAR)
+        l, t, r, b = cx - w * scale / 2, cy - h * scale / 2, cx + w * scale / 2, cy + h * scale / 2
+        if l < 0:
+            r, l = r - l, 0
+        if t < 0:
+            b, t = b - t, 0
+        if r > src_w - 1:
+            l, r = l - (r - src_w + 1), src_w - 1
+        if b > src_h - 1:
+            t, b = t - (b - src_h + 1), src_h - 1
+        l, t, r, b = int(l), int(t), int(r), int(b)
+        return cv2.resize(img[t:b + 1, l:r + 1], (self._size, self._size))
 
     def score(self, img_bgr: np.ndarray, face: FaceBox) -> float:
         blob = self._crop(img_bgr, face).astype(np.float32).transpose(2, 0, 1)[None]

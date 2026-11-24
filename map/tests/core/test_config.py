@@ -18,6 +18,16 @@ def test_production_needs_every_apple_setting(tmp_path):
         Settings(_env_file=None, **{**good, "api_key": "short"})
 
 
+def test_mode_comes_only_from_map_env(tmp_path):
+    # The verification node reads KOMUTE_ENV from the same .env; it must not switch the map node's mode.
+    f = tmp_path / ".env"
+    f.write_text("KOMUTE_ENV=production\n")
+    assert Settings(_env_file=f).env == "dev"
+    f.write_text("KOMUTE_ENV=dev\nMAP_ENV=production\nMAP_API_KEY=" + LONG + "\nAPPLE_MAPS_TEAM_ID=T\nAPPLE_MAPS_KEY_ID=K\n"
+                 "APPLE_MAPS_PRIVATE_KEY=PEM\nAPPLE_MAPS_WEB_ORIGIN=https://komute.ca\n")
+    assert Settings(_env_file=f).env == "production"
+
+
 def test_blank_values_mean_not_set():
     s = Settings(_env_file=None, api_key="", apple_team_id=" ", apple_key_id="", apple_private_key_path="", apple_private_key=" ", apple_web_origin="")
     assert (s.api_key, s.apple_team_id, s.apple_key_id, s.apple_private_key_path, s.apple_private_key, s.apple_web_origin) == (None,) * 6

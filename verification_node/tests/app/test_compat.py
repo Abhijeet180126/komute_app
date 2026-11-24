@@ -28,7 +28,7 @@ def b64(b):
 
 @pytest.fixture
 def settings():
-    return Settings(_env_file=None, api_key=KEY, dev_skip_liveness=True, max_upload_bytes=200_000)
+    return Settings(_env_file=None, api_key=KEY, dev_skip_liveness=True, max_upload_bytes=200_000, busy_wait_s=0.2)
 
 
 def stage(passed=True, **details):
@@ -217,6 +217,16 @@ def test_busy_returns_503_with_retry_after_and_releases(settings):
     assert post(c).status_code == 200
     assert post(c, ["bad"]).status_code == 422
     assert post(c).status_code == 200  # the gate is released after a failed request
+
+
+def test_a_second_request_waits_for_its_turn(settings):
+    # Ticket item 5: while one check runs, the next one waits instead of failing at once.
+    import threading
+    c, _ = make(settings.model_copy(update={"busy_wait_s": 5.0}))
+    gate = c.app.state.gate
+    assert gate.try_acquire()
+    threading.Timer(0.3, gate.release).start()
+    assert post(c).status_code == 200
 
 
 def test_engine_error_is_500_without_a_decision(settings):

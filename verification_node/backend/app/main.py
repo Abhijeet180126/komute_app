@@ -19,7 +19,7 @@ from backend.core.pipeline import Engine, build_engine
 
 from .errors import ApiError, error_response
 from .compat import router as compat_router
-from .gate import RunGate
+from .gate import LocalQueue, RedisQueue, RunGate
 from .pages import STATIC, router as pages_router
 from .routes import router
 
@@ -48,14 +48,25 @@ def create_app(settings: Settings | None = None, engine: Engine | None = None) -
         if getattr(app.state, "engine", None) is None:
             app.state.engine = build_engine(settings)  # fails startup closed if models or settings are wrong
         app.state.sampler = SystemSampler(settings.models_dir).start()
+        await app.state.queue.reset()
+        log.info("verification queue: %s", app.state.queue.backend)
         yield
         app.state.sampler.stop()
+        if redis_client is not None:
+            await redis_client.aclose()
 
     app = FastAPI(title="Komute-Local", lifespan=lifespan, docs_url=None, redoc_url=None, openapi_url=None)
     app.state.settings = settings
     app.state.gate = RunGate()
-    if settings.api_key is None:
-        log.warning("authentication is OFF: no KOMUTE_API_KEY set (local testing only)")
+    redis_client = None
+    if settings.redis_url:
+        import redis.asyncio as redis_asyncio
+
+        redis_client = redis_asyncio.from_url(settings.redis_url, decode_responses=True,
+                                              socket_connect_timeout=2, socket_timeout=2)
+        app.state.queue = RedisQueue(redis_client, app.state.gate)
+    else:
+        app.state.queue = LocalQueue(app.state.gate)
     app.state.engine = engine
     app.include_router(router)
     app.include_router(compat_router)

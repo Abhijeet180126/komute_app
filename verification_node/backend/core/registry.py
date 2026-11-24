@@ -14,7 +14,7 @@ from backend.core.hardware import ort_session_options
 
 Name = Literal["face_embedder", "plate_detector", "plate_ocr", "liveness"]
 _FILES = {
-    "face_embedder": "w600k_r50.onnx",
+    "face_embedder": "face_recognition_sface_2021dec.onnx",  # OpenCV Zoo SFace, Apache-2.0
     "plate_detector": "yolo-v9-t-384-license-plates-end2end.onnx",
     "plate_ocr": "cct_xs_v2_global.onnx",
 }

@@ -46,19 +46,19 @@ def test_registry_loads_all_sessions():
 
 def test_load_rejects_lock_missing_an_entry(tmp_path):
     lock = json.loads(LOCK.read_text())
-    del lock["w600k_r50.onnx"]
+    del lock["face_recognition_sface_2021dec.onnx"]
     (tmp_path / "models.lock").write_text(json.dumps(lock))
     reg = ModelRegistry(MODELS, tmp_path / "models.lock", liveness_path=None)
     with pytest.raises(ModelHashMismatch) as e:
         reg.load()
-    assert e.value.name == "w600k_r50.onnx"
+    assert e.value.name == "face_recognition_sface_2021dec.onnx"
     with pytest.raises(KeyError):
         reg.session("face_embedder")
 
 
 def test_liveness_file_must_be_locked(tmp_path):
     live = tmp_path / "liveness.onnx"
-    shutil.copy(MODELS / "w600k_r50.onnx", live)  # stand-in file, not in the lock
+    shutil.copy(MODELS / "face_detection_yunet_2023mar.onnx", live)  # stand-in file, not in the lock under this name
     reg = ModelRegistry(MODELS, LOCK, liveness_path=live)
     with pytest.raises(ModelHashMismatch) as e:
         reg.load()

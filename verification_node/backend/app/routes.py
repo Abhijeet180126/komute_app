@@ -43,8 +43,9 @@ async def _read_form(request: Request, max_bytes: int) -> tuple[dict[str, str], 
 
 @router.post("/v1/verify", dependencies=[Depends(require_api_key)])
 async def verify(request: Request) -> JSONResponse:
-    gate = request.app.state.gate
-    if not gate.try_acquire():
+    queue = request.app.state.queue
+    job = await queue.acquire(request.app.state.settings.busy_wait_s)
+    if job is None:
         raise ApiError(
             503, "BUSY", "A verification is already running.",
             {"Retry-After": str(request.app.state.settings.retry_after_s)},
@@ -55,7 +56,7 @@ async def verify(request: Request) -> JSONResponse:
         response = await run_in_threadpool(request.app.state.engine.verify, inp)
         return JSONResponse(response)
     finally:
-        gate.release()
+        await queue.release(job)
 
 
 @router.get("/health")
@@ -64,7 +65,8 @@ async def health(request: Request) -> JSONResponse:
     loaded = info.get("models_loaded", {})
     required = [v for k, v in loaded.items() if k != "liveness"]
     return JSONResponse(
-        {"status": "ok" if all(required) else "degraded", "models_loaded": loaded, "rss_mb": round(hardware.rss_mb(), 1)},
+        {"status": "ok" if all(required) else "degraded", "models_loaded": loaded, "rss_mb": round(hardware.rss_mb(), 1),
+         "queue": {"backend": request.app.state.queue.backend, "waiting": await request.app.state.queue.waiting()}},
         status_code=200 if all(required) else 503,
     )
 

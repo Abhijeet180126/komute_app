@@ -1541,7 +1541,6 @@ body.role-rider .driver-only { display: none; }
           <span class="verify-badge verify-badge--ok">
             <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
             Identity Verified
-            {% if face_match_score %}&nbsp;·&nbsp;{% widthratio face_match_score 1 100 %}% match{% endif %}
           </span>
           {% if reverify_soon %}
           <p class="verify-hint" id="reverifySoonHint" style="color:#b45309;font-weight:600;">⚠️ Your identity verification expires on {{ reverify_due_at|date:"M j, Y" }}. Take a new selfie before then to keep posting rides and accepting bookings.</p>
@@ -2767,7 +2766,7 @@ body.role-rider .driver-only { display: none; }
         const badge = document.getElementById('verifyStatusBadge');
         if (badge) {
           badge.className = 'verify-badge verify-badge--ok';
-          badge.innerHTML = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg> Identity Verified · ' + data.similarity + '% match';
+          badge.innerHTML = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg> Identity Verified';
         }
         const mainBtn = document.getElementById('verifyIdentityBtn');
         if (mainBtn) mainBtn.style.display = 'none';
@@ -2819,7 +2818,7 @@ body.role-rider .driver-only { display: none; }
       content.innerHTML = `
         <div class="verify-modal-icon">✅</div>
         <p class="verify-modal-title" style="color:#15803d">Identity Verified!</p>
-        <p class="verify-modal-score">Face match score: <strong>${score}%</strong></p>`;
+        <p class="verify-modal-score">Your selfie matched your licence photo.</p>`;
     } else {
       content.innerHTML = `
         <div class="verify-modal-icon">❌</div>
