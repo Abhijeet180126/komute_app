@@ -104,7 +104,7 @@ def check_profile(full_name, country_code, phone_number, dob_str, role, license_
             errors["license_expiry"] = "Invalid license expiry date."
         else:
             # The date picker already blocks past dates; this enforces it
-            # server-side. DL-Verification cross-checks this value against
+            # server-side. The verification node cross-checks this value against
             # the license, so it must be a real, current expiry.
             if role == "driver" and license_expiry < timezone.localdate():
                 errors["license_expiry"] = "Your license has expired. Please enter the expiry date of a valid license."
@@ -112,7 +112,7 @@ def check_profile(full_name, country_code, phone_number, dob_str, role, license_
 
 
 def identity_changed(user, role, full_name, dob, license_number, license_province, license_expiry):
-    """Details DL-Verification compared against the license. Changing any of
+    """Details the verification node compared against the license. Changing any of
     them means the driver is no longer verified as entered (C3). Comparison
     mirrors the service: case and hyphens ignored."""
     return role == "driver" and user.driver_verified and (

@@ -457,13 +457,13 @@ def profile_view(request):
 
                     is_new = vehicle is None
                     if is_new:
-                        # Verified only by a DL-Verification pass (C3).
+                        # Verified only by a verification-node pass (C3).
                         vehicle = Vehicle(owner=user, vehicle_verified=False)
 
                     model = models_list[i] if i < len(models_list) else ""
                     color = colors[i] if i < len(colors) else ""
-                    # DL-Verification checked make, model, year, colour and
-                    # plate against the photo; any real change voids that.
+                    # A verification pass vouched for these vehicle details
+                    # (the node compares the plate); any real change voids that.
                     details_changed = not is_new and vehicle_rules.details_changed(
                         vehicle, make, model, yr, color, plate)
 
@@ -548,10 +548,6 @@ def profile_view(request):
         # has_unverified_vehicle, reverify_soon, reverify_expired.
         **status,
         "face_match_score": user.face_match_score,
-        # Uploading a file as the verification selfie is a development
-        # convenience only; in production the selfie must come from the
-        # live camera.
-        "allow_verify_selfie_upload": settings.DEBUG,
         "biometric_notice_version": settings.BIOMETRIC_NOTICE_VERSION,
         # Human review of the latest attempt (audit P-10): "pending" while
         # it's in the queue, "available" if a rejection can still be sent.
@@ -2527,7 +2523,7 @@ def verify_driver_view(request):
 
 @csrf_protect
 def _verify_driver_view(request):
-    """POST /profile/verify-driver/ - calls DL-Verification Node API and updates driver_verified."""
+    """POST /profile/verify-driver/ - calls the verification node and updates driver_verified."""
     try:
         import requests as http_client  # noqa: F401  (500 early if it is missing)
     except ImportError:
@@ -2555,18 +2551,17 @@ def _verify_driver_view(request):
     if refused:
         return JsonResponse({"error": refused[0]}, status=400)
 
-    # The licence photo and selfie are resized in memory, sent to
-    # DL-Verification and dropped (audit P-5/P-13; komute.services.verification).
+    # The licence photos and selfie are resized in memory, sent to
+    # the verification node and dropped (audit P-5/P-13; komute.services.verification).
     try:
         result = verification.verify(request, user, request.FILES.get("license_image"),
+                                     request.FILES.get("license_back_image"),
                                      request.FILES.get("selfie"), _consent_request_details(request))
     except verification.VerificationError as e:
         return JsonResponse({"error": e.message}, status=e.status)
 
     return JsonResponse({
         "verified":   result["verified"],
-        "similarity": round(result["similarity"] * 100, 1),
-        "face_match": result["face_match"],
         "decision":   {"status": result["decision"], "details": "; ".join(result["reasons"])},
         # A person will look at this result anyway (borderline).
         "review_pending": result["review_pending"],

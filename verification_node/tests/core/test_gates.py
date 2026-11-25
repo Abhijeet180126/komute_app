@@ -1,0 +1,187 @@
+from dataclasses import replace
+from datetime import date, datetime, timezone
+
+from backend.core.aamva import parse_aamva
+from backend.core.contracts import Advisory, Claimed, ReasonCode
+from backend.core.gates import licence_gates
+from tests.fixtures.aamva_factory import FAKE_FIELDS, make_aamva_text
+
+NOW = datetime(2026, 11, 11, 15, 0, tzinfo=timezone.utc)
+
+
+def claimed(**kw) -> Claimed:
+    base = dict(
+        full_name="Alex Jamie Tester", date_of_birth=date(1990, 3, 15),
+        licence_number="T1234-56789-01234", issuing_province="ON", plate_number="ABC123",
+        vehicle_colour="Grey", vehicle_make=None, vehicle_model=None, vehicle_year=None,
+        licence_class="G", issue_date=date(2023, 9, 14), expiry_date=date(2030, 12, 31),
+    )
+    base.update(kw)
+    return Claimed(**base)
+
+
+def run(fields=None, iin="636012", cl=None, now=NOW, align=True):
+    """`align` copies the card's class and dates into the claim, so a test isolates the rule it is about."""
+    rec = parse_aamva(make_aamva_text(iin=iin, fields=dict(FAKE_FIELDS, **(fields or {}))))
+    cl = cl or claimed()
+    if align:
+        cl = replace(cl, licence_class=rec.fields.get("DCA"), issue_date=rec.date("DBD"), expiry_date=rec.date("DBA"))
+    reasons, adv, _ = licence_gates(rec, cl, now)
+    return {r.code for r in reasons}, adv
+
+
+def test_all_pass_for_valid_ontario_g():
+    assert run()[0] == set()
+
+
+def test_any_class_and_any_restriction_accepted():
+    for cls in ("G1", "G2", "5", "7", "A", "Z"):
+        assert run({"DCA": cls})[0] == set()
+    assert run({"DCB": "ZZ"})[0] == set()
+
+
+def test_expiry_today_passes_and_yesterday_fails():
+    assert ReasonCode.LICENCE_EXPIRED not in run({"DBA": "20261111"})[0]
+    assert ReasonCode.LICENCE_EXPIRED in run({"DBA": "20261110"})[0]
+
+
+def test_vancouver_midnight_boundary():
+    # 2026-06-02 02:00Z is still 1 June in Vancouver, so a licence expiring on 1 June is valid.
+    f = {"DAJ": "BC", "DCA": "5", "DAQ": "1234567", "DBA": "20260601"}
+    cl = claimed(issuing_province="BC", licence_number="1234567")
+    early = datetime(2026, 6, 2, 2, 0, tzinfo=timezone.utc)
+    late = datetime(2026, 6, 2, 8, 0, tzinfo=timezone.utc)
+    assert ReasonCode.LICENCE_EXPIRED not in run(f, iin="636028", cl=cl, now=early)[0]
+    assert ReasonCode.LICENCE_EXPIRED in run(f, iin="636028", cl=cl, now=late)[0]
+
+
+def test_underage_17():
+    codes, _ = run({"DBB": "20090315"}, cl=claimed(date_of_birth=date(2009, 3, 15)))
+    assert ReasonCode.UNDERAGE in codes
+
+
+def test_exactly_18_today_passes():
+    codes, _ = run({"DBB": "20081111"}, cl=claimed(date_of_birth=date(2008, 11, 11)))
+    assert ReasonCode.UNDERAGE not in codes
+
+
+def test_quebec_class_5_ok():
+    f = {"DAJ": "QC", "DCA": "5", "DAQ": "T123456789012"}
+    cl = claimed(issuing_province="QC", licence_number="T123456789012")
+    assert run(f, iin="604428", cl=cl)[0] == set()
+
+
+def test_every_province_accepts_any_class():
+    from backend.core import policy
+    for iin, prov in policy.IIN_TO_PROVINCE.items():
+        f = {"DAJ": prov, "DCA": "X9", "DAQ": "12345"}
+        cl = claimed(issuing_province=prov, licence_number="12345")
+        assert run(f, iin=iin, cl=cl)[0] == set()
+
+
+def test_dob_mismatch_by_one_day():
+    assert ReasonCode.DOB_MISMATCH in run(cl=claimed(date_of_birth=date(1990, 3, 16)))[0]
+
+
+def test_collects_multiple_failures():
+    codes, _ = run({"DBA": "20200101"}, cl=claimed(full_name="Somebody Else"))
+    assert {ReasonCode.LICENCE_EXPIRED, ReasonCode.NAME_MISMATCH} <= codes
+
+
+def test_jurisdiction_mismatch_between_claim_iin_and_daj():
+    assert ReasonCode.JURISDICTION_MISMATCH in run(cl=claimed(issuing_province="QC"))[0]
+    assert ReasonCode.JURISDICTION_MISMATCH in run({"DAJ": "QC"})[0]
+    assert ReasonCode.JURISDICTION_MISMATCH in run(iin="999999")[0]
+
+
+def test_nf_in_daj_accepted_for_newfoundland():
+    f = {"DAJ": "NF", "DAQ": "T123456789", "DCA": "5"}
+    cl = claimed(issuing_province="NL", licence_number="T123456789")
+    assert ReasonCode.JURISDICTION_MISMATCH not in run(f, iin="636016", cl=cl)[0]
+
+
+def test_licence_number_mismatch_and_unusual_format_advisory():
+    codes, adv = run({"DAQ": "123"}, cl=claimed(licence_number="123"))
+    assert ReasonCode.LICENCE_NUMBER_MISMATCH not in codes
+    assert Advisory.LICENCE_FORMAT_UNUSUAL in adv
+    assert ReasonCode.LICENCE_NUMBER_MISMATCH in run(cl=claimed(licence_number="T99999999999999"))[0]
+
+
+def test_missing_dates_fail_closed():
+    f = {k: v for k, v in FAKE_FIELDS.items() if k not in ("DBA", "DBB")}
+    rec = parse_aamva(make_aamva_text(fields=f))
+    codes = {r.code for r in licence_gates(rec, claimed(), NOW)[0]}
+    assert {ReasonCode.LICENCE_EXPIRED, ReasonCode.DOB_MISMATCH, ReasonCode.EXPIRY_DATE_MISMATCH} <= codes
+    assert ReasonCode.UNDERAGE not in codes
+
+
+def test_unparseable_claimed_province_does_not_crash():
+    assert ReasonCode.JURISDICTION_MISMATCH in run(cl=claimed(issuing_province="ZZ"))[0]
+
+
+def test_class_must_match_the_barcode():
+    assert ReasonCode.CLASS_MISMATCH in run(cl=claimed(licence_class="G2"), align=False)[0]
+    assert run(cl=claimed(licence_class=" g "), align=False)[0] == set()  # case and spaces ignored
+    assert ReasonCode.CLASS_MISMATCH in run(cl=claimed(licence_class=None), align=False)[0]  # missing claim fails closed
+    no_class = {k: v for k, v in FAKE_FIELDS.items() if k != "DCA"}
+    rec = parse_aamva(make_aamva_text(fields=no_class))
+    assert ReasonCode.CLASS_MISMATCH in {r.code for r in licence_gates(rec, claimed(), NOW)[0]}
+
+
+def test_issue_and_expiry_dates_must_match_exactly():
+    codes = run(cl=claimed(issue_date=date(2023, 9, 15), expiry_date=date(2030, 12, 30)), align=False)[0]
+    assert codes == {ReasonCode.ISSUE_DATE_MISMATCH, ReasonCode.EXPIRY_DATE_MISMATCH}
+    assert run(align=False)[0] == set()
+
+
+def test_issue_date_in_the_future_fails():
+    assert ReasonCode.LICENCE_NOT_YET_VALID in run({"DBD": "20261112"})[0]
+    assert ReasonCode.LICENCE_NOT_YET_VALID not in run({"DBD": "20261111"})[0]
+
+
+def test_checks_report_every_field_with_a_score():
+    rec = parse_aamva(make_aamva_text())
+    _, _, checks = licence_gates(rec, claimed(full_name="Alex Tester"), NOW)
+    by = {c["field"]: c for c in checks}
+    assert list(by) == ["issuing_province", "licence_number", "full_name", "date_of_birth", "licence_class",
+                        "issue_date", "expiry_date"]
+    assert all(c["passed"] for c in checks)
+    assert by["licence_class"] == {"field": "licence_class", "claimed": "G", "decoded": "G", "score": 100.0,
+                                   "threshold": 100.0, "passed": True}
+    assert by["issue_date"]["decoded"] == "2023-09-14" and by["full_name"]["threshold"] == 90.0
+    _, _, bad = licence_gates(rec, claimed(full_name="Alex Tster", licence_class="A"), NOW)
+    by = {c["field"]: c for c in bad}
+    assert by["licence_class"]["score"] == 0.0 and not by["licence_class"]["passed"]
+    assert 0 < by["full_name"]["score"] <= 100
+
+
+def test_name_pass_mark_is_90_by_default():
+    # One letter wrong scores about 94: passes. Two letters wrong (ALAN for ALEX) scores about 88: fails at 90.
+    assert ReasonCode.NAME_MISMATCH not in run(cl=claimed(full_name="Alex Jamie Testor"))[0]
+    assert ReasonCode.NAME_MISMATCH in run(cl=claimed(full_name="Alan Jamie Tester"))[0]  # about 88
+
+
+def test_class_and_issue_date_can_be_left_out_only_when_the_caller_allows_it():
+    # the DL-Verification-compatible route sends neither: those two checks are skipped, nothing else changes
+    cl = claimed(licence_class=None, issue_date=None, optional_class_issue=True)
+    rec = parse_aamva(make_aamva_text(iin="636012", fields=dict(FAKE_FIELDS)))
+    reasons, _, checks = licence_gates(rec, replace(cl, expiry_date=rec.date("DBA")), NOW)
+    assert {r.code for r in reasons} == set()
+    assert "licence_class" not in {c["field"] for c in checks} and "issue_date" not in {c["field"] for c in checks}
+    # without the flag, a missing claim still fails closed
+    strict = replace(cl, optional_class_issue=False, expiry_date=rec.date("DBA"))
+    assert {ReasonCode.CLASS_MISMATCH, ReasonCode.ISSUE_DATE_MISMATCH} <= {r.code for r in licence_gates(rec, strict, NOW)[0]}
+
+
+def test_values_given_to_an_optional_caller_are_still_checked():
+    cl = claimed(licence_class="A", optional_class_issue=True)
+    rec = parse_aamva(make_aamva_text(iin="636012", fields=dict(FAKE_FIELDS)))
+    codes = {r.code for r in licence_gates(rec, replace(cl, expiry_date=rec.date("DBA"), issue_date=rec.date("DBD")), NOW)[0]}
+    assert codes == {ReasonCode.CLASS_MISMATCH}
+
+
+def test_barcode_only_rules_still_apply_when_the_issue_date_is_not_claimed():
+    cl = claimed(licence_class=None, issue_date=None, optional_class_issue=True)
+    rec = parse_aamva(make_aamva_text(iin="636012", fields=dict(FAKE_FIELDS, DBD="20271231")))
+    codes = {r.code for r in licence_gates(rec, replace(cl, expiry_date=rec.date("DBA")), NOW)[0]}
+    assert ReasonCode.LICENCE_NOT_YET_VALID in codes

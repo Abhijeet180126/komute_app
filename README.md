@@ -62,5 +62,62 @@ API tests: `manage.py test api --settings=config.settings_regression`. Export th
 | Variable | Default | Description |
 |---|---|---|
 | `SEARCH_RADIUS_KM` | `15` | Radius in km around origin/destination within which rides are shown in search results |
-| `SERVICE_FEE_CENTS` | `100` | Flat service fee added to every booking, in cents (100 = $1.00) |
+| `SERVICE_FEE_CENTS` | `0` | Flat service fee added to every booking, in cents. Komüte is free, so leave it at 0 |
 | `INVITE_EXPIRY_HOURS` | `48` | Hours before a ride invite link/token expires |
+
+## Verification node
+
+Driver verification runs in `verification_node/`, a second process in the same Python environment (Python 3.11). It checks the licence barcode, the selfie against the licence photo, and the vehicle plate. It stores nothing; the app keeps only the outcome (`VerificationLog`). Do not edit `verification_node/` here: change it in the Komute-Local repository and export it again.
+
+1. `pip install -r requirements.txt` (it includes `verification_node/requirements.txt`).
+2. `python verification_node/fetch_models.py` (five models, about 50 MB; every file is checked against `models.lock`).
+3. Add to `.env`:
+
+   ```text
+   KOMUTE_ENV=dev                     # production on the server
+   KOMUTE_MODELS_DIR=verification_node/backend/models
+   KOMUTE_LIVENESS_MODEL=verification_node/backend/models/minifasnet_v2.onnx
+   DL_VERIFICATION_API_KEY=<same value the app uses; 24+ characters in production>
+   ```
+
+4. From the repository root, start the node:
+
+   ```text
+   python -m uvicorn backend.app.main:create_app --factory --app-dir verification_node --host 127.0.0.1 --port 8080 --workers 1
+   ```
+
+5. `GET http://127.0.0.1:8080/health` must return `"status":"ok"`.
+
+`DL_VERIFICATION_API_URL` defaults to `http://127.0.0.1:8080/api/v1/verify`. The node refuses to start without `DL_VERIFICATION_API_KEY`, in every mode. It runs one verification at a time; requests wait their turn in a Redis queue, up to 100 s. The queue shares the site's Redis server but uses its own database: `KOMUTE_REDIS_URL=redis://127.0.0.1:6379/1` (the site uses database 0). Models: YuNet and SFace (face), MiniFASNetV2 (liveness), two plate models; the request and response contract and every error code are in `verification_node/README.md`. Canadian licences only. Node tests: `cd verification_node && pip install -r requirements-dev.txt && python -m pytest -q`.
+
+## Map node
+
+Address suggestions (and, in later releases, routes and the route map) come from `map/`, a third process in the same Python environment. It holds the Apple Maps credentials and talks to Apple; the website calls it, and pages never see the node or any key. Page scripts call `/map/...` on this site (`komute/views_map.py`), which calls the node through `komute/services/map_client.py`.
+
+1. `pip install -r requirements.txt` (it includes `map/requirements.txt`).
+2. Create an Apple Maps ID and key (steps in `map/README.md`) and add to `.env`:
+
+   ```text
+   APPLE_MAPS_TEAM_ID=<10 characters>
+   APPLE_MAPS_KEY_ID=<10 characters>
+   APPLE_MAPS_PRIVATE_KEY_PATH=<full path to the .p8 file, outside the repository>
+   APPLE_MAPS_WEB_ORIGIN=https://<your domain>
+   MAP_API_URL=http://127.0.0.1:8081
+   MAP_API_KEY=<24 or more random characters; the same value for the node and the website>
+   ```
+
+3. From the repository root, start the node:
+
+   ```text
+   python -m uvicorn backend.app.main:create_app --factory --app-dir map --host 127.0.0.1 --port 8081 --workers 1
+   ```
+
+   In production use `map/deploy/komute-map.service`.
+4. `GET http://127.0.0.1:8081/health` must return `"status":"ok"`.
+5. Three switches in `.env`, each independent. Change one and restart the site; set it back to its default to roll back.
+   - `MAP_AUTOCOMPLETE=photon|apple`: address suggestions on post-ride, edit-ride and search-rides.
+   - `MAP_ROUTES=osrm|apple`: drive time, distance and the detour warning on post-ride and edit-ride.
+   - `MAP_DISPLAY=leaflet|mapkit`: the route map on ride-summary and booking-details. `mapkit` loads Apple's MapKit JS and draws Apple's route.
+   The defaults (`photon`, `osrm`, `leaflet`) are the original behaviour. "Locate Me" uses Photon whatever the switches say. The privacy policy wording follows the switches.
+
+The node serves the US and Canada (`MAP_COUNTRIES=CA,US`) and uses `MAP_DEFAULT_BIAS` (Ottawa) when a request carries no location. Apple allows 25,000 service calls a day per team. Node tests: `cd map && pip install -r requirements-dev.txt && python -m pytest -q`.

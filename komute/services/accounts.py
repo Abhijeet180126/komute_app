@@ -590,7 +590,7 @@ def close_account(user):
     user.deactivated_at = timezone.now()
     user.save(update_fields=['is_active', 'deactivated_at'])
     # The privacy policy promises search logs go at once, not with the rest
-    # of the account at the 45-day purge (audit P-14). It also takes the
+    # of the account at the grace-period purge (audit P-14). It also takes the
     # user off drivers' Route Demand lists, which are built from searches.
     RideSearch.objects.filter(user=user).delete()
     end_upcoming_trips(user)

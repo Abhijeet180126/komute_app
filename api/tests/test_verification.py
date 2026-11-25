@@ -3,21 +3,23 @@
     manage.py test api --settings=config.settings_regression
 
 The rules are the website's (komute.services.verification, covered by
-komute.tests_regression). The outbound call to DL-Verification and the
+komute.tests_regression). The outbound call to the verification node and the
 vehicle photo read are faked, as in those tests. The main point here:
 photos stay in memory and nothing is stored or sent without consent."""
 import base64
 import io
 import shutil
 import tempfile
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from unittest.mock import MagicMock, mock_open, patch
 
 import requests
 from django.conf import settings
 from django.core import mail
+from django.core.cache import cache
 from django.core.files.uploadedfile import InMemoryUploadedFile, SimpleUploadedFile
 from django.test import Client, override_settings
+from django.utils import timezone
 from PIL import Image
 
 from api.tests.base import ApiTestCase, auth_client, make_user
@@ -50,6 +52,14 @@ def service_reply(body):
     return resp
 
 
+def node_error(status, code):
+    """A node error reply, as requests gives it: raise_for_status raises HTTPError."""
+    resp = MagicMock(status_code=status)
+    resp.raise_for_status.side_effect = requests.exceptions.HTTPError(response=resp)
+    resp.json.return_value = {'error': {'code': code, 'message': 'SECRET node text'}} if code else {}
+    return resp
+
+
 def error(response):
     return response.json()['error']
 
@@ -73,8 +83,8 @@ class VerificationTestCase(ApiTestCase):
                                 HTTP_USER_AGENT='KomuteApp/1.0')
 
     def attempt(self, reply=APPROVED, side_effect=None, **fields):
-        body = {'license_image': jpeg('licence.jpg'), 'selfie': jpeg('selfie.jpg'),
-                'biometric_consent': 'true', 'notice_version': settings.BIOMETRIC_NOTICE_VERSION, **fields}
+        body = {'license_image': jpeg('licence.jpg'), 'license_back_image': jpeg('licence_back.jpg'),
+                'selfie': jpeg('selfie.jpg'), 'biometric_consent': 'true', 'notice_version': settings.BIOMETRIC_NOTICE_VERSION, **fields}
         body = {k: v for k, v in body.items() if v is not None}
         with patch('komute.services.verification.open_stored_file', mock_open(read_data=b'vehicle-bytes')), \
                 patch('requests.post', return_value=service_reply(reply), side_effect=side_effect) as post:
@@ -91,18 +101,25 @@ class AttemptTests(VerificationTestCase):
         response, post = self.attempt()
         self.assertEqual(response.status_code, 200, response.content)
         body = response.json()
-        self.assertEqual((body['verified'], body['similarity_percent'], body['decision'], body['reasons']),
-                         (True, 90.0, 'APPROVED', []))
+        self.assertEqual((body['verified'], body['decision'], body['reasons']), (True, 'APPROVED', []))
+        # Ticket item 4: the face score is a similarity (pass at 0.40), not a percentage; the app gets none.
+        self.assertNotIn('similarity_percent', body)
         self.assertTrue(all(body['checks'].values()))
         self.driver.refresh_from_db()
         self.vehicle.refresh_from_db()
         self.assertTrue(self.driver.driver_verified)
         self.assertTrue(self.vehicle.vehicle_verified)
-        # What went to the service: the profile's licence details and the three images.
+        # What went to the service: the profile's licence details and the four images.
         sent = post.call_args.kwargs['json']
         self.assertEqual(sent['license_details']['license_number'], 'D1234-56789')
         self.assertEqual(base64.b64decode(sent['images']['vehicle_photo_base64']), b'vehicle-bytes')
         self.assertTrue(base64.b64decode(sent['images']['license_image_base64']).startswith(b'\xff\xd8'))
+        self.assertTrue(base64.b64decode(sent['images']['license_back_base64']).startswith(b'\xff\xd8'))
+        # The node needs when and under which notice the driver agreed.
+        self.assertEqual(sent['consent_policy_version'], settings.BIOMETRIC_NOTICE_VERSION)
+        consent_at = datetime.fromisoformat(sent['consent_at'])
+        self.assertIsNotNone(consent_at.tzinfo)
+        self.assertLess(abs(timezone.now() - consent_at), timedelta(minutes=1))
         log = VerificationLog.objects.get()
         self.assertEqual((log.result, log.reason_codes), (VerificationLog.RESULT_APPROVED, None))
 
@@ -129,16 +146,19 @@ class AttemptTests(VerificationTestCase):
     def test_photos_stay_in_memory_even_when_large(self):
         """With a 10-byte limit Django would spill every upload to a temp file
         on disk; the attempt endpoint keeps them in memory."""
-        seen = []
+        seen, max_dims = [], []
         real = verification_service.resize_image
 
         def spy(file_obj, *args, **kwargs):
             seen.append(type(file_obj))
+            max_dims.append(kwargs.get('max_dim'))
             return real(file_obj, *args, **kwargs)
         with patch('komute.services.verification.resize_image', side_effect=spy):
             response, _ = self.attempt()
         self.assertEqual(response.status_code, 200, response.content)
-        self.assertEqual(seen, [InMemoryUploadedFile, InMemoryUploadedFile])
+        self.assertEqual(seen, [InMemoryUploadedFile] * 3)
+        # Licence front, licence back, selfie. The back keeps 1600 px so the barcode stays readable.
+        self.assertEqual(max_dims, [None, 1600, None])
 
     def test_rejected_then_review(self):
         response, _ = self.attempt(reply=REJECTED)
@@ -171,13 +191,26 @@ class AttemptTests(VerificationTestCase):
 
     def test_missing_pieces(self):
         for fields, code in (({'license_image': None}, 'license_required'),
+                             ({'license_back_image': None}, 'license_back_required'),
+                             ({'license_back_image': SimpleUploadedFile('b.jpg', b'not an image')},
+                              'invalid_license_back_image'),
                              ({'selfie': None}, 'selfie_required'),
                              ({'selfie': SimpleUploadedFile('s.jpg', b'not an image')}, 'invalid_selfie')):
             response, post = self.attempt(**fields)
             self.assertEqual(error(response)['code'], code, fields)
             post.assert_not_called()
+        cache.clear()  # the cases above used up the attempts allowed per hour
         Vehicle.objects.update(photo_url=None)
         self.assertEqual(error(self.attempt()[0])['code'], 'vehicle_photo_required')
+
+    def test_rider_is_refused(self):
+        """Only drivers verify. A rider is stopped before any consent record, photo read or call."""
+        self.client = auth_client(make_user('rider@example.com', role='rider'))
+        response, post = self.attempt()
+        self.assertEqual((response.status_code, error(response)['code']), (403, 'not_a_driver'))
+        post.assert_not_called()
+        self.assertFalse(BiometricConsent.objects.exists())
+        self.assertFalse(VerificationLog.objects.exists())
 
     def test_service_down(self):
         # Offline is told to the driver, not logged as an error (as on the website).
@@ -185,6 +218,32 @@ class AttemptTests(VerificationTestCase):
         self.assertEqual((response.status_code, error(response)['code']), (503, 'service_offline'))
         self.driver.refresh_from_db()
         self.assertFalse(self.driver.driver_verified)
+
+    def test_node_errors_become_driver_messages(self):
+        """The node's 422/503 codes reach the driver as our own message and code, never the node's text."""
+        for status, node_code, want_status, want_code in (
+                (503, 'BUSY', 503, 'service_busy'),
+                (422, 'IMAGE_TOO_LARGE', 400, 'invalid_photo'),
+                (422, 'INVALID_IMAGE', 400, 'invalid_photo'),
+                (422, 'MISSING_FIELD', 400, 'profile_incomplete'),
+                (422, 'INVALID_FIELD', 400, 'profile_invalid'),
+                (422, 'SOMETHING_NEW', 503, 'service_error'),
+                (500, None, 503, 'service_error')):
+            response, _ = self.attempt(side_effect=[node_error(status, node_code)])
+            body = error(response)
+            self.assertEqual((response.status_code, body['code']), (want_status, want_code), node_code)
+            self.assertNotIn('SECRET', body['message'])
+        self.driver.refresh_from_db()
+        self.assertFalse(self.driver.driver_verified)
+        self.assertFalse(VerificationLog.objects.exists())
+
+    @override_settings(RATE_LIMITS={**settings.RATE_LIMITS, 'verify-driver': (1, 3600)})
+    def test_busy_or_offline_does_not_use_an_attempt(self):
+        self.attempt(side_effect=[node_error(503, 'BUSY')])
+        self.attempt(side_effect=requests.exceptions.ConnectionError())
+        response, post = self.attempt()
+        self.assertEqual(response.status_code, 200, response.content)
+        self.assertEqual(self.attempt()[0].status_code, 429)
 
     @override_settings(RATE_LIMITS={**settings.RATE_LIMITS, 'verify-driver': (1, 3600)})
     def test_rate_limit(self):

@@ -22,11 +22,12 @@ CHANNELS = (
     ('Trust & Safety', 'safety@komute.net'),
     ('Legal & Privacy', 'legal@komute.net'),
     ('Partnerships', 'hello@komute.net'),
+    ('Security', 'security@komute.org'),
+    ('Copyright', 'copyright@komute.org'),
 )
 HOURS = (
-    ('Monday – Friday', '8:00 AM – 8:00 PM'),
-    ('Saturday', '9:00 AM – 5:00 PM'),
-    ('Sunday', '10:00 AM – 4:00 PM'),
+    ('Monday – Saturday', '9:00 AM – 6:00 PM'),
+    ('Sunday', 'Closed'),
 )
 HOURS_TIME_ZONE = 'Eastern Time'
 

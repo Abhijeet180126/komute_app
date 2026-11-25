@@ -1,4 +1,4 @@
-{% load static %}
+{% load static map_tags %}
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -1060,7 +1060,9 @@ nav {
 
 </div>
 
+{% map_config %}
 <script src="{% static 'js/place-autocomplete.js' %}"></script>
+<script src="{% static 'js/map-routes.js' %}"></script>
 <script>
   let seatCount = 2;
   const MAX_STOPS = 5;
@@ -1235,22 +1237,18 @@ nav {
     warning.style.display = 'none';
 
     try {
-      const coords       = waypoints.map(w => w.join(',')).join(';');
-      const directCoords = `${lng1},${lat1};${lng2},${lat2}`;
-      const hasStops     = waypoints.length > 2;
-
-      const fetches = [fetch(`https://router.project-osrm.org/route/v1/driving/${coords}?overview=false`)];
-      if (hasStops) fetches.push(fetch(`https://router.project-osrm.org/route/v1/driving/${directCoords}?overview=false`));
-
-      const [res, directRes] = await Promise.all(fetches);
-      const data             = await res.json();
-
-      if (data.code !== 'Ok' || !data.routes.length) {
-        strip.innerHTML = '<span style="color:#ef4444;font-size:0.8rem">Could not calculate route.</span>';
-        return;
+      const hasStops = waypoints.length > 2;
+      let route;
+      try {
+        // static/js/map-routes.js: OSRM or Apple, per MAP_ROUTES. waypoints are [lng, lat] pairs of strings.
+        route = await KomuteRoutes.summary(waypoints.map(w => ({ lat: Number(w[1]), lng: Number(w[0]) })), { direct: hasStops });
+      } catch (e) {
+        if (e && e.noRoute) {
+          strip.innerHTML = '<span style="color:#ef4444;font-size:0.8rem">Could not calculate route.</span>';
+          return;
+        }
+        throw e;
       }
-
-      const route   = data.routes[0];
       document.getElementById('duration_seconds').value = Math.round(route.duration);
       const distKm  = route.distance / 1000;
       const km      = distKm.toFixed(1);
@@ -1286,10 +1284,9 @@ nav {
       `;
 
       // ── Detour warning ──
-      if (hasStops && directRes) {
-        const directData = await directRes.json();
-        if (directData.code === 'Ok' && directData.routes.length) {
-          const directKm  = directData.routes[0].distance / 1000;
+      if (hasStops) {
+        if (route.directDistance > 0) {
+          const directKm  = route.directDistance / 1000;
           const detourKm  = route.distance / 1000 - directKm;
           const inflation = directKm > 0 ? detourKm / directKm : 0;
           if (detourKm > DETOUR_MAX_KM || inflation > DETOUR_MAX_DEC) {

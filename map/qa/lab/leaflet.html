@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Today: Leaflet + OSM tiles + OSRM</title>
+<!-- Copy of the route map in templates/ride-summary.html (same Leaflet 1.9.4, same integrity hashes, same tiles, same OSRM call). -->
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin=""/>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+<script src="fixture.js"></script>
+<style>
+  body { margin: 0; font: 15px/1.5 system-ui, sans-serif; color: #17202a; background: #f4f6f7; }
+  header { padding: 14px 16px 8px; } h1 { margin: 0; font-size: 1.05rem; } p { margin: 2px 0 0; color: #55656f; font-size: .85rem; }
+  #routeMap { height: 430px; margin: 0 16px; border-radius: 10px; border: 1px solid #d9e0e4; }
+  #routeMapStats { display: none; gap: 16px; padding: 10px 16px; font-weight: 600; }
+</style></head>
+<body>
+<header><h1>Ride summary map: today's stack</h1><p>Leaflet 1.9.4 · tile.openstreetmap.org · router.project-osrm.org</p></header>
+<div id="routeMap"></div><div id="routeMapStats"></div>
+<script>
+(function () {
+  const R = window.RIDE;
+  const map = L.map('routeMap', { zoomControl: false, scrollWheelZoom: false, doubleClickZoom: false, dragging: false, touchZoom: false, boxZoom: false, keyboard: false });
+  map.attributionControl.setPrefix(false);
+  L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    maxZoom: 19, referrerPolicy: 'strict-origin-when-cross-origin',
+    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a>',
+  }).addTo(map);
+  const mkDot = (color) => L.divIcon({ className: '', html: `<div style="width:14px;height:14px;border-radius:50%;background:${color};border:3px solid white;box-shadow:0 2px 6px rgba(0,0,0,.35)"></div>`, iconSize: [14, 14], iconAnchor: [7, 7] });
+  L.marker([R.originLat, R.originLng], { icon: mkDot('#0D7810'), title: 'Start' }).addTo(map);
+  R.stops.forEach((s) => L.marker([s.lat, s.lng], { icon: mkDot('#f59e0b'), title: 'Stop' }).addTo(map));
+  L.marker([R.destLat, R.destLng], { icon: mkDot('#0C63B4'), title: 'Destination' }).addTo(map);
+  const coordStr = [[R.originLng, R.originLat], ...R.stops.map((s) => [s.lng, s.lat]), [R.destLng, R.destLat]].map((w) => w.join(',')).join(';');
+  window.QA = { ready: false, kind: 'leaflet' };
+  const t0 = performance.now();
+  fetch(`https://router.project-osrm.org/route/v1/driving/${coordStr}?overview=full&geometries=geojson`)
+    .then((r) => r.json()).then((data) => {
+      if (data.code !== 'Ok' || !data.routes.length) { map.fitBounds([[R.originLat, R.originLng], [R.destLat, R.destLng]], { padding: [30, 30] }); window.QA.routeOk = false; return; }
+      const route = data.routes[0];
+      const line = L.geoJSON(route.geometry, { style: { color: '#0D7810', weight: 4, opacity: 0.85 } }).addTo(map);
+      map.fitBounds(line.getBounds(), { padding: [30, 30] });
+      const mins = Math.round(route.duration / 60);
+      const stats = document.getElementById('routeMapStats');
+      stats.innerHTML = `<span>Distance: ${(route.distance / 1000).toFixed(1)} km</span><span>Duration: ~ ${Math.floor(mins / 60)}h ${mins % 60}m</span>`;
+      stats.style.display = 'flex';
+      window.QA.routeOk = true; window.QA.km = route.distance / 1000; window.QA.min = route.duration / 60;
+      window.QA.linePoints = route.geometry.coordinates.length; window.QA.line = route.geometry.coordinates;
+      window.QA.routeMs = Math.round(performance.now() - t0);
+    }).catch((e) => { window.QA.routeOk = false; window.QA.error = String(e); })
+    .finally(() => { setTimeout(() => { window.QA.ready = true; }, 1500); }); // give tiles a moment to land
+})();
+</script></body></html>

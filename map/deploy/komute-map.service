@@ -1,0 +1,35 @@
+# systemd unit for the map node inside the main Komute app (copy to /etc/systemd/system/).
+# A second process of the same Python environment, next to komute-verify (8080). Listens on 127.0.0.1:8081, which is
+# where the main app's MAP_API_URL will point. Port 8000 is Daphne's.
+#
+# Settings: the node reads /var/www/komute/.env itself (the working directory below). Do NOT use EnvironmentFile:
+# systemd parses .env differently (no inline "#" comments, other quoting).
+# Needs the four APPLE_MAPS_* settings and MAP_API_KEY (24+ characters) in .env, and MAP_ENV=production.
+# Keep the Apple .p8 key file outside the repo, readable only by www-data (chmod 600).
+# --workers 1 on purpose: the cache lives in the process.
+#
+#   sudo cp map/deploy/komute-map.service /etc/systemd/system/
+#   sudo systemctl daemon-reload && sudo systemctl enable --now komute-map
+#   curl http://127.0.0.1:8081/health          # {"status":"ok", ...}
+#   journalctl -u komute-map -f
+[Unit]
+Description=Komute map node
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=www-data
+Group=www-data
+WorkingDirectory=/var/www/komute
+Environment=PYTHONUNBUFFERED=1 PYTHONUTF8=1
+ExecStart=/var/www/komute/venv/bin/python -m uvicorn backend.app.main:create_app --factory --app-dir map --host 127.0.0.1 --port 8081 --workers 1
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=strict
+
+[Install]
+WantedBy=multi-user.target

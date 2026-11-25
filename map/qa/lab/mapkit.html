@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Apple Maps: MapKit JS + map node</title>
+<script src="https://cdn.apple-mapkit.com/mk/5.x.x/mapkit.js"></script>
+<script src="fixture.js"></script>
+<style>
+  body { margin: 0; font: 15px/1.5 system-ui, sans-serif; color: #17202a; background: #f4f6f7; }
+  header { padding: 14px 16px 8px; } h1 { margin: 0; font-size: 1.05rem; } p { margin: 2px 0 0; color: #55656f; font-size: .85rem; }
+  #routeMap { height: 430px; margin: 0 16px; border-radius: 10px; border: 1px solid #d9e0e4; overflow: hidden; }
+  #routeMapStats { display: none; gap: 16px; padding: 10px 16px; font-weight: 600; }
+</style></head>
+<body>
+<header><h1>Ride summary map: Apple Maps</h1><p>MapKit JS · Apple tiles · route from the map node (Apple Directions)</p></header>
+<div id="routeMap"></div><div id="routeMapStats"></div>
+<script>
+(function () {
+  const R = window.RIDE;
+  window.QA = { ready: false, kind: 'mapkit' };
+  const t0 = performance.now();
+  mapkit.addEventListener('error', (e) => { window.QA.mapkitError = (e.status || e.type || 'error') + ''; });
+  mapkit.init({
+    authorizationCallback: (done) => fetch('/api/map/v1/mapkit-token').then((r) => r.json()).then((j) => { window.QA.tokenOk = !!j.token; done(j.token); }).catch((e) => { window.QA.tokenOk = false; window.QA.error = String(e); }),
+    language: 'en',
+  });
+  const map = new mapkit.Map('routeMap', { showsZoomControl: false, showsMapTypeControl: false, isScrollEnabled: false, isZoomEnabled: false, isRotationEnabled: false });
+  const dot = (lat, lng, color, title) => new mapkit.MarkerAnnotation(new mapkit.Coordinate(lat, lng), { color, title, glyphText: '' });
+  const pins = [dot(R.originLat, R.originLng, '#0D7810', 'Start'), ...R.stops.map((s) => dot(s.lat, s.lng, '#f59e0b', 'Stop')), dot(R.destLat, R.destLng, '#0C63B4', 'Destination')];
+  map.addAnnotations(pins);
+  map.showItems(pins, { animate: false, padding: new mapkit.Padding(40, 40, 40, 40) });
+  fetch('/api/map/v1/route', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({
+    origin: { lat: R.originLat, lon: R.originLng }, destination: { lat: R.destLat, lon: R.destLng }, waypoints: R.stops.map((s) => ({ lat: s.lat, lon: s.lng })) }) })
+    .then((r) => r.json()).then((data) => {
+      if (!data.geometry || !data.geometry.length) { window.QA.routeOk = false; window.QA.error = JSON.stringify(data).slice(0, 200); return; }
+      const overlay = new mapkit.PolylineOverlay(data.geometry.map((p) => new mapkit.Coordinate(p[1], p[0])), { style: new mapkit.Style({ lineWidth: 4, strokeColor: '#0D7810', strokeOpacity: 0.85 }) });
+      map.addOverlay(overlay);
+      map.showItems([...pins, overlay], { animate: false, padding: new mapkit.Padding(40, 40, 40, 40) });
+      const mins = Math.round(data.duration_s / 60);
+      const stats = document.getElementById('routeMapStats');
+      stats.innerHTML = `<span>Distance: ${(data.distance_m / 1000).toFixed(1)} km</span><span>Duration: ~ ${Math.floor(mins / 60)}h ${mins % 60}m</span>`;
+      stats.style.display = 'flex';
+      window.QA.routeOk = true; window.QA.km = data.distance_m / 1000; window.QA.min = data.duration_s / 60;
+      window.QA.linePoints = data.geometry.length; window.QA.line = data.geometry; window.QA.routeMs = Math.round(performance.now() - t0);
+    }).catch((e) => { window.QA.routeOk = false; window.QA.error = String(e); })
+    .finally(() => { setTimeout(() => { window.QA.ready = true; }, 2500); });
+})();
+</script></body></html>

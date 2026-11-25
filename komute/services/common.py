@@ -6,7 +6,7 @@ from komute.hashid_utils import encode_id
 
 
 def norm_name(value):
-    """A name as DL-Verification compares it: case, hyphens and extra
+    """A name as the verification node compares it: case, hyphens and extra
     spaces ignored."""
     return " ".join((value or "").replace("-", " ").split()).casefold()
 

@@ -4,6 +4,7 @@ from django.views.generic import RedirectView
 from .sitemaps import PublicPagesSitemap
 from .social import SocialSignupView
 from . import contact_email
+from .views_map import map_suggest_view, map_details_view, map_route_view, map_token_view
 from .views import (
     home_view, signup_view, login_view, profile_view, about_view,
     role_select_view, post_ride_view, how_it_works_view,
@@ -46,6 +47,10 @@ urlpatterns = [
     path('ride-booking/<str:ride_id>/', create_ride_booking, name='create-ride-booking'),
     path('my-rides/', my_rides_view, name='my-rides'),
     path('search-rides/', search_rides_view, name='search-rides'),
+    path('map/suggest/', map_suggest_view, name='map-suggest'),
+    path('map/details/', map_details_view, name='map-details'),
+    path('map/route/', map_route_view, name='map-route'),
+    path('map/token/', map_token_view, name='map-token'),
     path('logout/', logout_view, name='logout'),
     path('change-password/', change_password_view, name='change-password'),
     path('chat/<str:token>/', chat_view, name='chat'),

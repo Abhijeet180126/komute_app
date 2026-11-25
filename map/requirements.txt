@@ -1,0 +1,9 @@
+# Map node (map/): run-time packages. Same Python environment as the main app; every pin below is already in its requirements.txt.
+# Not yet included from the main requirements.txt: add "-r map/requirements.txt" when the node is wired in.
+fastapi==0.162.4
+pydantic==2.14.3
+pydantic-settings==2.16.2
+PyJWT[crypto]==2.15.1
+cryptography==50.0.0
+requests==2.34.2
+uvicorn==0.54.0

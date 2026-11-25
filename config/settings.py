@@ -312,9 +312,28 @@ REPLY_TO_EMAIL_RIDE_INVITE           = config('REPLY_TO_EMAIL_RIDE_INVITE',     
 REPLY_TO_EMAIL_SUPPORT_CONTACT       = config('REPLY_TO_EMAIL_SUPPORT_CONTACT',      default=CONTACT_EMAIL)
 
 
-# DL-Verification Node (external driver/vehicle verification microservice)
+# Verification node (verification_node/, run as its own process; see README). The setting names keep "DL_VERIFICATION".
 DL_VERIFICATION_API_URL = config('DL_VERIFICATION_API_URL', default='http://127.0.0.1:8080/api/v1/verify')
 DL_VERIFICATION_API_KEY = config('DL_VERIFICATION_API_KEY', default='')
+
+# Map node (map/, run as its own process; Apple Maps sits behind it). A blank .env line counts as "not set".
+MAP_API_URL = config('MAP_API_URL', default='') or 'http://127.0.0.1:8081'
+MAP_API_KEY = config('MAP_API_KEY', default='')
+# Where address suggestions come from: 'photon' (the public Photon server, the original) or 'apple' (the map node).
+# Flip it in .env to switch, or to roll back, without a redeploy. Anything else is read as 'photon'.
+MAP_AUTOCOMPLETE = config('MAP_AUTOCOMPLETE', default='photon')
+if MAP_AUTOCOMPLETE not in ('photon', 'apple'):
+    MAP_AUTOCOMPLETE = 'photon'
+# Where drive time and distance come from on the post-ride and edit-ride forms: 'osrm' (the public OSRM demo server,
+# the original) or 'apple' (the map node). Anything else is read as 'osrm'.
+MAP_ROUTES = config('MAP_ROUTES', default='osrm')
+if MAP_ROUTES not in ('osrm', 'apple'):
+    MAP_ROUTES = 'osrm'
+# The route map on the ride summary and booking pages: 'leaflet' (Leaflet, OpenStreetMap tiles and an OSRM line, the
+# original) or 'mapkit' (Apple's MapKit JS with Apple's own route). Apple's route is only ever drawn on Apple's map.
+MAP_DISPLAY = config('MAP_DISPLAY', default='leaflet')
+if MAP_DISPLAY not in ('leaflet', 'mapkit'):
+    MAP_DISPLAY = 'leaflet'
 # Version of the biometric notice shown before the verification selfie
 # (profile.html, #verifyConsentStep). Change it whenever that text changes,
 # so each BiometricConsent row records which wording the driver agreed to.
@@ -350,7 +369,7 @@ TASK_LOG_RETENTION_DAYS = config('TASK_LOG_RETENTION_DAYS', default=14, cast=int
 REPORT_RETENTION_DAYS = config('REPORT_RETENTION_DAYS', default=365, cast=int)
 STOP_DETOUR_MAX_KM  = config('STOP_DETOUR_MAX_KM',  default=30,  cast=int)
 STOP_DETOUR_MAX_PCT = config('STOP_DETOUR_MAX_PCT',  default=35,  cast=int)
-ACCOUNT_DELETION_GRACE_DAYS = config('ACCOUNT_DELETION_GRACE_DAYS', default=45, cast=int)
+ACCOUNT_DELETION_GRACE_DAYS = config('ACCOUNT_DELETION_GRACE_DAYS', default=30, cast=int)
 # Periodic identity re-verification (see komute/management/commands/expire_driver_verification.py)
 DRIVER_REVERIFY_DAYS          = config('DRIVER_REVERIFY_DAYS',          default=90, cast=int)
 DRIVER_REVERIFY_REMINDER_DAYS = config('DRIVER_REVERIFY_REMINDER_DAYS', default=10, cast=int)
@@ -395,6 +414,18 @@ RATE_LIMITS = {
                                config('RATE_LIMIT_DELETE_ACCOUNT_EMAIL_WINDOW', default=3600, cast=int)),
     'report-user':           (config('RATE_LIMIT_REPORT_USER_MAX',           default=10,  cast=int),
                                config('RATE_LIMIT_REPORT_USER_WINDOW',        default=3600, cast=int)),
+    # Address suggestions through the map node. Typing one address makes a few calls, and every call counts against
+    # Apple's shared daily allowance, so a script can't be allowed to burn it.
+    'map-suggest':           (config('RATE_LIMIT_MAP_SUGGEST_MAX',           default=90,  cast=int),
+                               config('RATE_LIMIT_MAP_SUGGEST_WINDOW',        default=60,  cast=int)),
+    'map-details':           (config('RATE_LIMIT_MAP_DETAILS_MAX',           default=60,  cast=int),
+                               config('RATE_LIMIT_MAP_DETAILS_WINDOW',        default=60,  cast=int)),
+    # A route is one Apple call per leg; the post-ride form re-asks as stops change (answers are cached for 5 minutes).
+    'map-route':             (config('RATE_LIMIT_MAP_ROUTE_MAX',             default=60,  cast=int),
+                               config('RATE_LIMIT_MAP_ROUTE_WINDOW',          default=60,  cast=int)),
+    # The browser map asks for a token when it starts and again when one expires (30 minutes).
+    'map-token':             (config('RATE_LIMIT_MAP_TOKEN_MAX',             default=30,  cast=int),
+                               config('RATE_LIMIT_MAP_TOKEN_WINDOW',          default=60,  cast=int)),
     # "Download my data" on the profile (audit P-9): builds a full export, so
     # a handful per hour per account is plenty.
     'data-export':           (config('RATE_LIMIT_DATA_EXPORT_MAX',           default=5,   cast=int),

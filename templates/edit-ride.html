@@ -1,4 +1,4 @@
-{% load static %}
+{% load static map_tags %}
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -351,7 +351,9 @@ body{font-family:'DM Sans',sans-serif;background:var(--light-bg);min-height:100v
 {{ stops_data|json_script:"stops-data" }}
 {{ preferences|json_script:"preferences-data" }}
 
+{% map_config %}
 <script src="{% static 'js/place-autocomplete.js' %}"></script>
+<script src="{% static 'js/map-routes.js' %}"></script>
 <script>
 /* ── SEAT COUNTER ── */
 let seats = {{ ride.seats_total }};
@@ -457,12 +459,9 @@ function triggerRouteSummary() {
   const summary = document.getElementById('routeSummary');
   summary.innerHTML = '<span style="font-size:.8rem;color:var(--text-muted);font-style:italic">Calculating route…</span>';
   summary.style.display = 'flex';
-  const waypoints = `${oLng},${oLat};${dLng},${dLat}`;
-  fetch(`https://router.project-osrm.org/route/v1/driving/${waypoints}?overview=false`)
-    .then(r => r.json())
-    .then(data => {
-      if (data.code !== 'Ok' || !data.routes.length) { summary.style.display = 'none'; return; }
-      const r = data.routes[0];
+  // static/js/map-routes.js: OSRM or Apple, per MAP_ROUTES. As before, this summary covers start to end only.
+  KomuteRoutes.summary([{ lat: oLat, lng: oLng }, { lat: dLat, lng: dLng }])
+    .then(r => {
       const km = (r.distance / 1000).toFixed(1);
       const mins = Math.round(r.duration / 60);
       const hrs = Math.floor(mins / 60), rem = mins % 60;

@@ -1,0 +1,4 @@
+backend/models/*.onnx
+backend/models/*.part
+__pycache__/
+.pytest_cache/
