@@ -8,6 +8,7 @@ from django.db import transaction
 from django.db.models import Q
 from allauth.account.models import EmailAddress
 from allauth.socialaccount.models import SocialAccount
+from axes.models import AccessAttempt, AccessLog
 from django.utils import timezone
 
 from komute.models import (
@@ -77,6 +78,12 @@ class Command(BaseCommand):
                     EmailAddress.objects.filter(user=user).delete()
                     # Google/Apple sign-in links (komute/social.py).
                     SocialAccount.objects.filter(user=user).delete()
+                    # axes sign-in records keep the email as plain text, not a
+                    # link to the user, so anonymizing the row doesn't reach
+                    # them (legal pack G-2). Older addresses are left to the
+                    # 180-day axes_reset_logs cron.
+                    AccessLog.objects.filter(username__iexact=original_email).delete()
+                    AccessAttempt.objects.filter(username__iexact=original_email).delete()
                     # Consent records stay as proof of what was agreed and
                     # when (against the anonymized row); the network details
                     # that could identify the person go.

@@ -14,6 +14,9 @@
 # are evaluated on their own clock before any cascade-delete from a ride purge.
 0 3 * * * /var/www/komute/venv/bin/python /var/www/komute/manage.py purge_old_messages >> /var/www/komute/logs/cron.log 2>&1
 
+# Retention: django-q2 task log and EmailLog, 14 days (audit F-6).
+30 3 * * * /var/www/komute/venv/bin/python /var/www/komute/manage.py purge_task_log >> /var/www/komute/logs/cron.log 2>&1
+
 # Retention: completed rides, 2 years after completion (item 5)
 15 3 * * * /var/www/komute/venv/bin/python /var/www/komute/manage.py purge_completed_rides >> /var/www/komute/logs/cron.log 2>&1
 
@@ -24,6 +27,10 @@
 # after the user confirms via the emailed link (item 8). Emails ADMIN_EMAIL a
 # summary of any accounts purged in the run.
 45 3 * * * /var/www/komute/venv/bin/python /var/www/komute/manage.py purge_deactivated_accounts >> /var/www/komute/logs/cron.log 2>&1
+
+# Retention: axes sign-in log (AccessLog), 180 days (legal pack G-2).
+# Failed attempts (AccessAttempt) expire on their own after 30 minutes.
+50 3 * * * /var/www/komute/venv/bin/python /var/www/komute/manage.py axes_reset_logs --age 180 >> /var/www/komute/logs/cron.log 2>&1
 
 # Retention: user reports, REPORT_RETENTION_DAYS (default 365) after staff
 # close them (ISSUES.md A1). Open reports are kept until closed.
