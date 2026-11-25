@@ -566,6 +566,20 @@ class PurgeDeactivatedAccountsCommandTests(TestCase):
         self.assertIsNone(acceptance.ip_address)
         self.assertEqual(acceptance.user_agent, '')
 
+    def test_purge_deletes_axes_sign_in_records_for_the_leaver_only(self):
+        from axes.models import AccessAttempt, AccessLog
+        now = timezone.now()
+        AccessLog.objects.create(username='Leaver@Example.com', ip_address='203.0.113.7',
+                                 user_agent='TestBrowser/1.0', attempt_time=now)
+        AccessAttempt.objects.create(username='leaver@example.com', ip_address='203.0.113.7',
+                                     user_agent='TestBrowser/1.0', attempt_time=now, failures_since_start=1)
+        AccessLog.objects.create(username='other_rider@example.com', ip_address='198.51.100.2',
+                                 user_agent='TestBrowser/1.0', attempt_time=now)
+        call_command('purge_deactivated_accounts')
+        self.assertFalse(AccessLog.objects.filter(username__iexact='leaver@example.com').exists())
+        self.assertFalse(AccessAttempt.objects.filter(username__iexact='leaver@example.com').exists())
+        self.assertTrue(AccessLog.objects.filter(username='other_rider@example.com').exists())
+
     def test_not_yet_eligible_account_untouched(self):
         call_command('purge_deactivated_accounts')
         self.recent_leaver.refresh_from_db()
