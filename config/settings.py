@@ -369,7 +369,7 @@ TASK_LOG_RETENTION_DAYS = config('TASK_LOG_RETENTION_DAYS', default=14, cast=int
 REPORT_RETENTION_DAYS = config('REPORT_RETENTION_DAYS', default=365, cast=int)
 STOP_DETOUR_MAX_KM  = config('STOP_DETOUR_MAX_KM',  default=30,  cast=int)
 STOP_DETOUR_MAX_PCT = config('STOP_DETOUR_MAX_PCT',  default=35,  cast=int)
-ACCOUNT_DELETION_GRACE_DAYS = config('ACCOUNT_DELETION_GRACE_DAYS', default=30, cast=int)
+ACCOUNT_DELETION_GRACE_DAYS = config('ACCOUNT_DELETION_GRACE_DAYS', default=45, cast=int)
 # Periodic identity re-verification (see komute/management/commands/expire_driver_verification.py)
 DRIVER_REVERIFY_DAYS          = config('DRIVER_REVERIFY_DAYS',          default=90, cast=int)
 DRIVER_REVERIFY_REMINDER_DAYS = config('DRIVER_REVERIFY_REMINDER_DAYS', default=10, cast=int)

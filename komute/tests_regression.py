@@ -508,10 +508,10 @@ class PurgeDeactivatedAccountsCommandTests(TestCase):
         Message.objects.create(ride=self.ride, sender=self.leaver, receiver=self.other_rider, body='hi')
         Message.objects.create(ride=self.ride, sender=self.other_rider, receiver=self.leaver, body='hi back')
 
-        # A not-yet-eligible deactivated user (only 10 days ago) -> must be skipped.
+        # A not-yet-eligible deactivated user (only 40 days ago) -> must be skipped.
         self.recent_leaver = make_user('recent_leaver@example.com')
         self.recent_leaver.is_active = False
-        self.recent_leaver.deactivated_at = timezone.now() - timedelta(days=10)
+        self.recent_leaver.deactivated_at = timezone.now() - timedelta(days=40)
         self.recent_leaver.save()
 
     def test_dry_run_changes_nothing(self):
