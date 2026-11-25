@@ -21,14 +21,12 @@ import re
 import uuid
 
 from django.conf import settings
-from django.core.cache import cache
 from django.core.exceptions import ValidationError
 from django.core.files.uploadhandler import MemoryFileUploadHandler
 from django.core.mail import EmailMultiAlternatives
 from django.urls import reverse
 from django.utils import timezone
 
-from komute.client_ip import client_ip
 from komute.models import BiometricConsent, EmailLog, VerificationLog
 from komute.private_media import open_stored_file
 from komute.services.images import resize_image
@@ -61,15 +59,6 @@ NODE_ERRORS = {
     "INVALID_FIELD": ("Some licence details on your profile aren't valid. Please check them and try again.",
                       400, "profile_invalid"),
 }
-
-
-def _give_back_attempt(request, user):
-    """Undo this call's count in the 'verify-driver' bucket: the node was busy or offline, not the driver's fault.
-    Same key as komute.views._rate_limited / api.common.throttles.rate_limited (per IP, per user)."""
-    try:
-        cache.decr(f"ratelimit:verify-driver:{client_ip(request)}:{user.id}")
-    except Exception:  # bucket gone or cache down: nothing to give back
-        pass
 
 
 class InMemoryUploadHandler(MemoryFileUploadHandler):
@@ -138,8 +127,8 @@ def record_biometric_consent(user, consent):
 
 
 def verify(request, user, license_file, license_back_file, selfie_file, consent):
-    """One verification attempt, after the caller's rate limit and
-    consent_error() check. Returns the result the driver is shown; raises
+    """One verification attempt, after the caller's consent_error()
+    check. Returns the result the driver is shown; raises
     VerificationError."""
     import requests as http_client
 
@@ -243,7 +232,6 @@ def verify(request, user, license_file, license_back_file, selfie_file, consent)
         resp.raise_for_status()
         result = resp.json()
     except http_client.exceptions.ConnectionError:
-        _give_back_attempt(request, user)
         raise VerificationError("Verification service is offline. Please try again later.",
                                 status=503, code='service_offline')
     except http_client.exceptions.HTTPError:
@@ -253,8 +241,6 @@ def verify(request, user, license_file, license_back_file, selfie_file, consent)
             node_code = None
         if node_code in NODE_ERRORS:
             upload_logger.warning("verification refused by node: user=%s code=%s", user.id, node_code)
-            if node_code == "BUSY":
-                _give_back_attempt(request, user)
             message, status, code = NODE_ERRORS[node_code]
             raise VerificationError(message, status=status, code=code)
         logger.exception("verify_driver_view: verification service call failed for user %s", user.id)

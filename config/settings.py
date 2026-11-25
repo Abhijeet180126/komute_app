@@ -405,8 +405,6 @@ RATE_LIMITS = {
     # full day.
     'send-invite-daily':     (config('RATE_LIMIT_SEND_INVITE_DAILY_MAX',     default=50,   cast=int),
                                config('RATE_LIMIT_SEND_INVITE_DAILY_WINDOW',  default=86400, cast=int)),
-    'verify-driver':         (config('RATE_LIMIT_VERIFY_DRIVER_MAX',         default=5,   cast=int),
-                               config('RATE_LIMIT_VERIFY_DRIVER_WINDOW',      default=3600, cast=int)),
     # Public account deletion page (ISSUES.md A2), same limits as forgot-password.
     'delete-account-ip':     (config('RATE_LIMIT_DELETE_ACCOUNT_IP_MAX',     default=10,  cast=int),
                                config('RATE_LIMIT_DELETE_ACCOUNT_IP_WINDOW',  default=3600, cast=int)),

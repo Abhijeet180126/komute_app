@@ -16,7 +16,6 @@ from unittest.mock import MagicMock, mock_open, patch
 import requests
 from django.conf import settings
 from django.core import mail
-from django.core.cache import cache
 from django.core.files.uploadedfile import InMemoryUploadedFile, SimpleUploadedFile
 from django.test import Client, override_settings
 from django.utils import timezone
@@ -199,7 +198,6 @@ class AttemptTests(VerificationTestCase):
             response, post = self.attempt(**fields)
             self.assertEqual(error(response)['code'], code, fields)
             post.assert_not_called()
-        cache.clear()  # the cases above used up the attempts allowed per hour
         Vehicle.objects.update(photo_url=None)
         self.assertEqual(error(self.attempt()[0])['code'], 'vehicle_photo_required')
 
@@ -237,20 +235,9 @@ class AttemptTests(VerificationTestCase):
         self.assertFalse(self.driver.driver_verified)
         self.assertFalse(VerificationLog.objects.exists())
 
-    @override_settings(RATE_LIMITS={**settings.RATE_LIMITS, 'verify-driver': (1, 3600)})
-    def test_busy_or_offline_does_not_use_an_attempt(self):
-        self.attempt(side_effect=[node_error(503, 'BUSY')])
-        self.attempt(side_effect=requests.exceptions.ConnectionError())
-        response, post = self.attempt()
-        self.assertEqual(response.status_code, 200, response.content)
-        self.assertEqual(self.attempt()[0].status_code, 429)
-
-    @override_settings(RATE_LIMITS={**settings.RATE_LIMITS, 'verify-driver': (1, 3600)})
-    def test_rate_limit(self):
-        self.attempt()
-        response, post = self.attempt()
-        self.assertEqual(response.status_code, 429)
-        post.assert_not_called()
+    def test_attempts_are_not_limited(self):
+        for _ in range(8):  # the old limit was five an hour
+            self.assertEqual(self.attempt()[0].status_code, 200)
 
     def test_needs_terms(self):
         self.driver.legal_acceptances.all().delete()

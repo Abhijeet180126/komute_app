@@ -2539,9 +2539,6 @@ def _verify_driver_view(request):
     if not user:
         return JsonResponse({"error": "Not authenticated"}, status=401)
 
-    if _rate_limited(request, 'verify-driver', extra_key=str(user.id)):
-        return JsonResponse({"error": "Too many verification attempts. Please try again later."}, status=429)
-
     # Biometric consent (privacy policy s.12): the driver must accept the
     # current notice on this attempt, before any image is read or sent. An
     # old version means the page predates a wording change, so the driver
