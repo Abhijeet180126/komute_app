@@ -7,12 +7,11 @@ from django.conf import settings
 from django.template.loader import render_to_string
 from django.urls import reverse
 from drf_spectacular.utils import extend_schema, inline_serializer
-from rest_framework import exceptions, serializers, status
+from rest_framework import exceptions, serializers
 from rest_framework.decorators import api_view, parser_classes, permission_classes
 from rest_framework.parsers import JSONParser, MultiPartParser
 from rest_framework.response import Response
 
-from api.common.throttles import rate_limited
 from api.v1.bookings.views import SIGNED_IN
 from komute.client_ip import client_ip
 from komute.services import profiles, verification
@@ -27,12 +26,6 @@ class VerificationRefused(exceptions.APIException):
     def __init__(self, error):
         self.status_code = error.status
         super().__init__(error.message, code=error.code)
-
-
-class TooManyAttempts(exceptions.APIException):
-    status_code = status.HTTP_429_TOO_MANY_REQUESTS
-    default_code = 'throttled'
-    default_detail = 'Too many verification attempts. Please try again later.'
 
 
 StatusSerializer = inline_serializer('VerificationStatus', {
@@ -112,7 +105,7 @@ def notice(request):
                            'invalid_license_back_image, selfie_required, invalid_selfie, '
                            'vehicle_photo_required, invalid_photo (retake it), profile_incomplete, profile_invalid '
                            '(fix the profile) (400), not_a_driver (403), throttled (429), service_offline, '
-                           'service_busy, service_error (503). Busy or offline does not use an attempt.')
+                           'service_busy, service_error (503).')
 @api_view(['POST'])
 @permission_classes(SIGNED_IN)
 @parser_classes([MultiPartParser])
@@ -122,9 +115,6 @@ def verify(request):
     request._request.upload_handlers = [verification.InMemoryUploadHandler(request._request)]
 
     user = request.user
-    if rate_limited(request, 'verify-driver', extra_key=str(user.id)):
-        raise TooManyAttempts()
-
     consent_flag = str(request.data.get('biometric_consent', '')).lower() in ('1', 'true', 'yes', 'on')
     refused = verification.consent_error(consent_flag, request.data.get('notice_version'))
     if refused:

@@ -508,10 +508,10 @@ class PurgeDeactivatedAccountsCommandTests(TestCase):
         Message.objects.create(ride=self.ride, sender=self.leaver, receiver=self.other_rider, body='hi')
         Message.objects.create(ride=self.ride, sender=self.other_rider, receiver=self.leaver, body='hi back')
 
-        # A not-yet-eligible deactivated user (only 10 days ago) -> must be skipped.
+        # A not-yet-eligible deactivated user (only 40 days ago) -> must be skipped.
         self.recent_leaver = make_user('recent_leaver@example.com')
         self.recent_leaver.is_active = False
-        self.recent_leaver.deactivated_at = timezone.now() - timedelta(days=10)
+        self.recent_leaver.deactivated_at = timezone.now() - timedelta(days=40)
         self.recent_leaver.save()
 
     def test_dry_run_changes_nothing(self):
@@ -3306,6 +3306,13 @@ class VerifyDriverViewGateTests(TestCase):
         self.assertIn('selfie', json.loads(resp.content)['error'].lower())
         mock_post.assert_not_called()
 
+    def test_attempts_are_not_limited(self):
+        driver = make_user('vd_nolimit@example.com', role='driver')
+        c = Client()
+        c.force_login(driver)
+        for _ in range(8):  # the old limit was five an hour; no consent, so each stops at 400
+            self.assertEqual(c.post(reverse('verify-driver')).status_code, 400)
+
     def test_rejected_response_does_not_verify_driver_or_vehicle(self):
         vehicle = self._make_verifiable()
         mock_resp = MagicMock()
@@ -3533,7 +3540,6 @@ class ImageUploadTests(TestCase):
     and an over-limit request gets an explanation page."""
 
     def setUp(self):
-        cache.clear()  # verify-driver's rate-limit bucket
         self._tmp = tempfile.mkdtemp()
         self._override = override_settings(PRIVATE_MEDIA_ROOT=Path(self._tmp), PRIVATE_MEDIA_USE_ACCEL=False)
         self._override.enable()

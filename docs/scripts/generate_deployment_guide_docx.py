@@ -715,7 +715,7 @@ add_para(
     "To roll back, stop komute-verify and start the old service again."
 )
 add_warn(
-    "The node handles one verification at a time. Drivers who verify at the same moment wait their turn in the Redis queue (up to 100 s); only past that do they see \"Verification is busy\", and that try does not use one of their attempts."
+    "The node handles one verification at a time. Drivers who verify at the same moment wait their turn in the Redis queue (up to 100 s); only past that do they see \"Verification is busy\"."
 )
 add_heading("Map node (Apple Maps)", level=2, color=BLUE)
 add_para('The map node (map/) holds the Apple Maps key and answers address search, routes and the browser map token for the site. It is a third small process in the same venv, on 127.0.0.1:8081, and stores nothing. Its packages come with requirements.txt from Step 6. Add these lines to /var/www/komute/.env:')
