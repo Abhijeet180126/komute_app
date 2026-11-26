@@ -241,7 +241,7 @@ add_para(
 )
 add_warn(
     "Komute calls the node at DL_VERIFICATION_API_URL (default http://127.0.0.1:8080/api/v1/verify), "
-    "with the key in DL_VERIFICATION_API_KEY. The node needs 2 GB of RAM or more and runs one "
+    "with the key in DL_VERIFICATION_API_KEY. The node uses about 200 MB, peaking under 300 MB, and runs one "
     "verification at a time. This guide runs it on the same droplet. To use a separate machine, change "
     "the URL, put TLS in front of the node and bind it to a private address."
 )
@@ -336,13 +336,13 @@ add_bullets([
 add_heading("Droplet Sizing", level=2, color=BLUE)
 add_para(
     "The verification node loads ONNX models (face, plate, barcode) into memory and runs CPU-only "
-    "inference (no GPU needed). One verification peaks near 1.2 GB. The node needs 2 GB of RAM or more "
-    "on top of Postgres, Redis and Daphne. Undersizing this will cause OOM kills."
+    "inference (no GPU needed). Measured 26 Nov 2026 with SFace: about 200 MB idle, peak about 230 MB (under 300 MB with full-size phone photos), "
+    "on top of Postgres, Redis and Daphne. Check GET /health (rss_mb) and free -m after the first verifications."
 )
 add_table(
     ["Plan", "vCPU / RAM", "Suitability"],
     [
-        ['Current test droplet', '1 vCPU / 961 MB', 'Testing only, until it is resized. A verification peaks near 1.2 GB: add 2 GB of swap first (below).'],
+        ['Current test droplet', '1 vCPU / 961 MB', 'Runs the verification node: it peaks under 300 MB. Add 2 GB of swap as a safety net (below) and watch free -m.'],
         ["Basic Premium AMD, 4 GB", "2 vCPU / 4 GB", "Minimum viable — acceptable for staging/low traffic. Watch memory closely."],
         ["Basic Premium AMD, 8 GB (recommended)", "4 vCPU / 8 GB", "Comfortable headroom for Postgres + Redis + Daphne + the verification node."],
     ],
@@ -352,7 +352,7 @@ add_bullets([
     "OS image: Ubuntu 22.04 LTS x64 (used throughout this guide).",
     "Enable weekly backups or snapshots (small extra cost, cheap insurance).",
     "25 GB+ SSD disk recommended — the node's five models take about 50 MB.",
-    'On the 961 MB test droplet, add a 2 GB swap file before starting the verification node, or a verification can be killed for lack of memory: sudo fallocate -l 2G /swapfile && sudo chmod 600 /swapfile && sudo mkswap /swapfile && sudo swapon /swapfile (add it to /etc/fstab to keep it after a reboot).',
+    'On the 961 MB test droplet, add a 2 GB swap file before starting the verification node, as a safety net for memory spikes: sudo fallocate -l 2G /swapfile && sudo chmod 600 /swapfile && sudo mkswap /swapfile && sudo swapon /swapfile (add it to /etc/fstab to keep it after a reboot).',
 ])
 page_break()
 

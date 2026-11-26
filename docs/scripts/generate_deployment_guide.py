@@ -152,7 +152,7 @@ p("Komute is a Django 5.2 app served over ASGI (Django Channels + Daphne) for We
   "It stores nothing: Komute keeps only the outcome.")
 warn_("Komute calls the node at <font face='Courier'>DL_VERIFICATION_API_URL</font> (default "
       "<font face='Courier'>http://127.0.0.1:8080/api/v1/verify</font>), with the key in "
-      "<font face='Courier'>DL_VERIFICATION_API_KEY</font>. The node needs <b>2 GB of RAM or more</b> "
+      "<font face='Courier'>DL_VERIFICATION_API_KEY</font>. The node uses about 200 MB, peaking under 300 MB, "
       "and runs one verification at a time. This guide runs it on the same droplet. To use a separate "
       "machine, change the URL, put TLS in front of the node and bind it to a private address.")
 
@@ -243,12 +243,12 @@ bullets([
 ])
 h2_("Droplet Sizing")
 p("The verification node loads ONNX models (face, plate, barcode) into memory and runs CPU-only "
-  "inference (no GPU needed). One verification peaks near 1.2 GB. The node needs 2 GB of RAM or more "
-  "on top of Postgres, Redis and Daphne. Undersizing this will cause OOM kills.")
+  "inference (no GPU needed). Measured 26 Nov 2026 with SFace: about 200 MB idle, peak about 230 MB (under 300 MB with full-size phone photos), "
+  "on top of Postgres, Redis and Daphne. Check GET /health (rss_mb) and free -m after the first verifications.")
 table(
     ["Plan", "vCPU / RAM", "Suitability"],
     [
-        ['Current test droplet', '1 vCPU / 961 MB', 'Testing only, until it is resized. A verification peaks near 1.2 GB: add 2 GB of swap first (below).'],
+        ['Current test droplet', '1 vCPU / 961 MB', 'Runs the verification node: it peaks under 300 MB. Add 2 GB of swap as a safety net (below) and watch free -m.'],
         ["Basic Premium AMD, 4 GB", "2 vCPU / 4 GB", "Minimum viable — acceptable for staging/low traffic. Watch memory closely."],
         ["Basic Premium AMD, 8 GB (recommended)", "4 vCPU / 8 GB", "Comfortable headroom for Postgres + Redis + Daphne + the verification node."],
     ],
@@ -258,7 +258,7 @@ bullets([
     "OS image: <b>Ubuntu 22.04 LTS x64</b> (used throughout this guide).",
     "Enable weekly backups or snapshots (small extra cost, cheap insurance).",
     "25 GB+ SSD disk recommended — the node's five models take about 50 MB.",
-    "On the 961 MB test droplet, add a 2 GB swap file before starting the verification node, or a verification can be killed for lack of memory: <font face='Courier'>sudo fallocate -l 2G /swapfile && sudo chmod 600 /swapfile && sudo mkswap /swapfile && sudo swapon /swapfile</font> (add it to /etc/fstab to keep it after a reboot).",
+    "On the 961 MB test droplet, add a 2 GB swap file before starting the verification node, as a safety net for memory spikes: <font face='Courier'>sudo fallocate -l 2G /swapfile && sudo chmod 600 /swapfile && sudo mkswap /swapfile && sudo swapon /swapfile</font> (add it to /etc/fstab to keep it after a reboot).",
 ])
 
 page_break()

@@ -4,7 +4,7 @@
 #
 # Settings: the node reads /var/www/komute/.env itself (the working directory below). Do NOT use EnvironmentFile:
 # systemd parses .env differently (no inline "#" comments, other quoting).
-# One verification at a time (--workers 1). One verification peaks near 1.2 GB RAM: use a server with 2 GB or more.
+# One verification at a time (--workers 1). One verification peaks under 300 MB RAM (about 200 MB idle).
 #
 #   sudo cp verification_node/deploy/komute-verify.service /etc/systemd/system/
 #   sudo systemctl daemon-reload && sudo systemctl enable --now komute-verify
