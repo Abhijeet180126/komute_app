@@ -1,7 +1,7 @@
 """/api/v1/auth/ (module 1)."""
 from django.urls import path
 
-from api.v1.auth import views
+from api.v1.auth import app_handoff, views
 
 urlpatterns = [
     path('signup/', views.signup, name='signup'),
@@ -10,6 +10,9 @@ urlpatterns = [
     path('session/', views.session, name='session'),
     path('social/token/', views.social_token, name='social-token'),
     path('social/signup/', views.social_signup, name='social-signup'),
+    path('app/start/', app_handoff.start, name='app-start'),
+    path('app/finish/', app_handoff.finish, name='app-finish'),
+    path('app/exchange/', app_handoff.exchange, name='app-exchange'),
     path('role/', views.role, name='role'),
     path('email/verify/', views.send_verification, name='email-verify'),
     path('email/change/', views.change_email, name='email-change'),
